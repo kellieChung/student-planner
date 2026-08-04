@@ -1,20 +1,29 @@
-
 "use client";
-import {useState} from "react";
+import {useState, useEffect} from "react";
 
 type AssignmentCardProps = {
+    id: string;
     name: string;
     due: string;
     course: string;
 };
 
 export default function AssignmentCard({
+    id,
     name,
     due,
     course,
 }: AssignmentCardProps) {
 
     const [completed, setCompleted] = useState(false);
+
+    useEffect(() => {
+        const saved = localStorage.getItem(id);
+
+        if (saved === "true") {
+            setCompleted(true);
+        }
+    }, [id]);
 
     let courseColor = "bg-gray-700";
 
@@ -38,7 +47,11 @@ export default function AssignmentCard({
                 <input
                     type = "checkbox"
                     checked = {completed}
-                    onChange = {() => setCompleted(!completed)}
+                    onChange = {() => {
+                        const newValue = !completed;
+                        setCompleted(newValue);
+                        localStorage.setItem(id, String(newValue));
+                    }}
                 />
                 
                 {name}

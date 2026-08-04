@@ -4,16 +4,19 @@ import AssignmentCard from "@/components/AssignmentCard";
 export default function Home() {
   const assignments = [
     {
+      id: "physics-lab-1",
       name: "Physics Lab",
       due: "Tomorrow",
       course: "Physics",
     },
     {
+      id: "english-essay-1",
       name: "Essay Draft",
       due: "Friday",
       course: "English",
     },
     {
+      id: "math-homework-1",
       name: "Math Homework",
       due: "Monday",
       course: "Math",
@@ -32,7 +35,8 @@ export default function Home() {
       <div className = "grid gap-4 md:grid-cols-2">
         {assignments.map((assignment) => (
           <AssignmentCard
-            key = {assignment.name}
+            key = {assignment.id}
+            id = {assignment.id}
             name = {assignment.name}
             due = {assignment.due}
             course = {assignment.course}
