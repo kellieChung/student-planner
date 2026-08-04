@@ -1,3 +1,7 @@
+
+"use client";
+import {useState} from "react";
+
 type AssignmentCardProps = {
     name: string;
     due: string;
@@ -9,6 +13,9 @@ export default function AssignmentCard({
     due,
     course,
 }: AssignmentCardProps) {
+
+    const [completed, setCompleted] = useState(false);
+
     let courseColor = "bg-gray-700";
 
     if (course === "Physics") {
@@ -28,7 +35,13 @@ export default function AssignmentCard({
                 {course}
             </p>
             <h3 className = "text-xl font-semibold">
-                ☐ {name}
+                <input
+                    type = "checkbox"
+                    checked = {completed}
+                    onChange = {() => setCompleted(!completed)}
+                />
+                
+                {name}
             </h3>
             <p className = "text-gray-400">
                 Due: {due}
