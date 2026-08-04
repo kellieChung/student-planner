@@ -16,23 +16,29 @@ export default function Home() {
     {
       name: "Math Homework",
       due: "Monday",
-      course: "Calculus",
+      course: "Math",
     },
   ]
   return (
-    <main>
-      <h1>Student Planner</h1>
+    <main className = "min-h-screen bg-slate-950 p-8">
+      <h1 className = "text-4xl font-bold mb-8 text-blue-400">
+        Student Planner
+      </h1>
 
-      <h2>Upcoming Assignments</h2>
-
-      {assignments.map((assignment) => (
-        <AssignmentCard
-          key = {assignment.name}
-          name = {assignment.name}
-          due = {assignment.due}
-          course = {assignment.course}
-        />
-      ))}
+      <h2 className = "text-2xl font-semibold mb-4">
+        Upcoming Assignments
+      </h2>
+      
+      <div className = "grid gap-4 md:grid-cols-2">
+        {assignments.map((assignment) => (
+          <AssignmentCard
+            key = {assignment.name}
+            name = {assignment.name}
+            due = {assignment.due}
+            course = {assignment.course}
+          />
+        ))}
+      </div>
 
     </main>
   );
