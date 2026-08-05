@@ -22,7 +22,7 @@ export function calculateGridSpan(
     const dueOffset = Math.floor((due - monday) / msPerDay);
 
     const startColumn = Math.max(1, Math.min(7, startOffset+1));
-    const endColumn = Math.max(startColumn+1, Math.min(8, dueOffset + 2));
+    const endColumn = Math.max(startColumn+1, Math.min(8, dueOffset + 3));
 
     return `${startColumn} / ${endColumn}`;
 }

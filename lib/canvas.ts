@@ -32,14 +32,38 @@ export function transformAssignment(
     assignment: any,
     courseName: string
 ) {
+    if (!assignment.due_at) {
+        return {
+            id: String(assignment.id),
+            name: assignment.name,
+            due: null,
+            course: courseName,
+            daysRemaining: 0,
+        };
+    }
+
+    const localDueDate = new Date(assignment.due_at);
+
+    const year = localDueDate.getFullYear();
+    const month = localDueDate.getMonth();
+    const day = localDueDate.getDate();
+
+    const formattedDue = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+    const localDueDateMidnight = new Date(year, month, day).getTime();
+    
+    const today = new Date();
+    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const diffDays = Math.round((localDueDateMidnight - todayMidnight) / msPerDay);
+
     return {
         id: String(assignment.id),
         name: assignment.name,
-        due: assignment.due_at,
+        due: formattedDue,
         course: courseName,
-        daysRemaining: Math.ceil(
-            (new Date(assignment.due_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-        )
+        daysRemaining: diffDays,
     };
 }
 
@@ -69,9 +93,10 @@ export async function getAllAssignments() {
 
         allAssignments.push(...transformed);
     }
-    return allAssignments.sort(
-        (a, b) => 
-            new Date(a.due).getTime() -
-            new Date(b.due).getTime()
-    );
+    return allAssignments.sort((a, b) => {
+        const timeA = a.due ? new Date(a.due).getTime() : Infinity;
+        const timeB = b.due ? new Date(b.due).getTime() : Infinity;
+
+        return timeA - timeB;
+    });
 }

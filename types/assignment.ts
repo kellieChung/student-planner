@@ -4,4 +4,5 @@ export type Assignment = {
     due: string;
     course: string;
     daysRemaining: number;
+    completed?: boolean;
 }
