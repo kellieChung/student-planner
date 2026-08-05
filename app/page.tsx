@@ -21,7 +21,7 @@ export default async function TestPage() {
                 key = {assignment.id}
                 id = {assignment.id}
                 name = {assignment.name}
-                due = {assignment.due}
+                due = {assignment.due ? new Date(assignment.due).toLocaleDateString() : "No due date"}
                 course = {assignment.course}
                 />
             ))}

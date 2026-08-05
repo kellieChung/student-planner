@@ -35,9 +35,7 @@ export function transformAssignment(
     return {
         id: String(assignment.id),
         name: assignment.name,
-        due: assignment.due_at
-            ? new Date(assignment.due_at).toLocaleDateString()
-            : "No due date",
+        due: assignment.due_at,
         course: courseName,
     };
 }
@@ -68,5 +66,9 @@ export async function getAllAssignments() {
 
         allAssignments.push(...transformed);
     }
-    return allAssignments;
+    return allAssignments.sort(
+        (a, b) => 
+            new Date(a.due).getTime() -
+            new Date(b.due).getTime()
+    );
 }

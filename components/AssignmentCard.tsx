@@ -38,6 +38,13 @@ export default function AssignmentCard({
     if (course === "Math") {
         courseColor = "bg-red-700";
     }
+
+    const dueDate = new Date(due);
+    const today = new Date();
+    const daysRemaining = Math.ceil(
+        (dueDate.getTime() - today.getTime()) / (1000*60*60*24)
+    );
+
     return (
         <div className = "bg-slate-900 rounded-xl shadow-md p-5 mb-4">
             <p className = {`${courseColor} rounded-full px-3 py-1 inline-block text-sm text-white`}>
@@ -57,7 +64,7 @@ export default function AssignmentCard({
                 {name}
             </h3>
             <p className = "text-gray-400">
-                Due: {due}
+                Due: {due} ({daysRemaining} days remaining)
             </p>
         </div>
     );
