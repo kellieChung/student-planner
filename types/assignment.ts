@@ -3,4 +3,5 @@ export type Assignment = {
     name: string;
     due: string;
     course: string;
+    daysRemaining: number;
 }

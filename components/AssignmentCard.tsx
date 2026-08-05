@@ -6,6 +6,7 @@ type AssignmentCardProps = {
     name: string;
     due: string;
     course: string;
+    daysRemaining: number;
 };
 
 export default function AssignmentCard({
@@ -13,6 +14,7 @@ export default function AssignmentCard({
     name,
     due,
     course,
+    daysRemaining,
 }: AssignmentCardProps) {
 
     const [completed, setCompleted] = useState(false);
@@ -40,10 +42,8 @@ export default function AssignmentCard({
     }
 
     const dueDate = new Date(due);
-    const today = new Date();
-    const daysRemaining = Math.ceil(
-        (dueDate.getTime() - today.getTime()) / (1000*60*60*24)
-    );
+
+    const urgency = Math.max(0, Math.min(100, 100 - daysRemaining*5));
 
     return (
         <div className = "bg-slate-900 rounded-xl shadow-md p-5 mb-4">
@@ -66,6 +66,15 @@ export default function AssignmentCard({
             <p className = "text-gray-400">
                 Due: {due} ({daysRemaining} days remaining)
             </p>
+
+            <div className = "w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                <div className = "h-full bg-gradient-to-r from-amber-500 to-rose-500 transition-all duration-300"
+                    style = {{
+                        width: `${urgency}%`
+                    }}
+                >
+                </div>
+            </div>
         </div>
     );
 }

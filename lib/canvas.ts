@@ -37,6 +37,9 @@ export function transformAssignment(
         name: assignment.name,
         due: assignment.due_at,
         course: courseName,
+        daysRemaining: Math.ceil(
+            (new Date(assignment.due_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+        )
     };
 }
 
