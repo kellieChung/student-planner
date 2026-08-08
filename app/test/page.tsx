@@ -5,62 +5,55 @@ import { Assignment } from "@/types/assignment";
 
 // Temporary test array in app/page.tsx
 const mockAssignments = [
-  // 1. Mon -> Wed Span (3 Days)
+  // 1. Overdue / Late Task (Due yesterday)
   {
-    id: "1",
-    name: "The Great Gatsby Reading 1-3",
+    id: "test-1",
+    name: "Read Chapter 4: Photosynthesis",
+    course: "Biology",
+    due: "2026-08-06",
+  },
+  // 2. Due Today (Single-day focal task)
+  {
+    id: "test-2",
+    name: "Submit Lab Safety Quiz",
+    course: "Chemistry",
+    due: "2026-08-07",
+  },
+  // 3. Multi-day span (Wed -> Fri)
+  {
+    id: "test-3",
+    name: "Draft Essay: Comparative Literature",
     course: "English",
-    due: "2026-08-05", // Wednesday
-    daysRemaining: 0,
+    due: "2026-08-07",
   },
-  // 2. Mon -> Fri Span (5 Days - Large Bar)
+  // 4. Multi-day span (Mon -> Sat)
   {
-    id: "2",
-    name: "Midterm Presentation Prep",
-    course: "Physics",
-    due: "2026-08-07", // Friday
-    daysRemaining: 2,
-  },
-  // 3. Mon -> Sat Span (6 Days)
-  {
-    id: "3",
-    name: "Vocabulary List & Quiz",
+    id: "test-4",
+    name: "Problem Set #3: Linear Algebra",
     course: "Math",
-    due: "2026-08-08", // Saturday
-    daysRemaining: 3,
+    due: "2026-08-08",
   },
-  // 4. Overlapping Wed -> Thu Task (2 Days)
+  // 5. Weekend Task (Due Saturday)
   {
-    id: "4",
-    name: "Lab Report: Wave Interference",
-    course: "Physics",
-    due: "2026-08-06", // Thursday
-    daysRemaining: 1,
-  },
-  // 5. Single Day Task (Due Wednesday)
-  {
-    id: "5",
-    name: "Submit Rough Draft Outline",
-    course: "English",
-    due: "2026-08-05", // Wednesday
-    daysRemaining: 0,
-  },
-  // 6. Weekend Only Task: Fri -> Sun (3 Days)
-  {
-    id: "6",
-    name: "Problem Set #4: Calculus Integrals",
-    course: "Math",
-    due: "2026-08-09", // Sunday
-    daysRemaining: 4,
-  },
-  // 7. Full Week Heavyweight Task: Mon -> Sun (7 Days)
-  {
-    id: "7",
-    name: "Final Capstone Research Paper",
+    id: "test-5",
+    name: "Group Project Outline",
     course: "History",
-    due: "2026-08-09", // Sunday
-    daysRemaining: 4,
-  }
+    due: "2026-08-08",
+  },
+  // 6. Full Week Span (Mon -> Sun)
+  {
+    id: "test-6",
+    name: "Final Portfolio Submission",
+    course: "Art",
+    due: "2026-08-09",
+  },
+  // 7. Custom Personal Task Example
+  {
+    id: "custom-test-7",
+    name: "Study Session with Alex",
+    course: "Personal",
+    due: "2026-08-09",
+  },
 ];
 
 export default async function TestPage() {
