@@ -7,6 +7,7 @@ import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
 import {getTaskStates, saveTaskState} from "@/lib/taskState";
 import {TaskState} from "@/types/taskState";
+import EditTaskModal from "./EditTaskModal";
 
 type WeeklyPlannerProps = {
     assignments: Assignment[];
@@ -17,6 +18,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
+    const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
+
 
     const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -128,6 +131,22 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         )
     }
 
+    const handleSaveTask = (updatedTask: Assignment) => {
+        const updatedTasks = tasks.map((task) =>
+            task.id === updatedTask.id ? updatedTask : task
+        );
+
+        setTasks(updatedTasks);
+
+        const customTasks = updatedTasks.filter((task) =>
+            task.id.startsWith("custom-")
+        );
+
+        localStorage.setItem("custom_tasks", JSON.stringify(customTasks));
+
+
+    }
+
     return (
         <div className = "w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
             <button
@@ -142,6 +161,15 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 onClose = {() => setIsModalOpen(false)}
                 onAddTask = {handleAddTask}
             />
+
+            <EditTaskModal
+                task = {selectedTask}
+                isOpen = {selectedTask !== null}
+                onClose = {() => setSelectedTask(null)}
+                onSaveTask = {handleSaveTask}
+                onDeleteTask = {handleDelete}
+            />
+
             <div className = "grid grid-cols-7 gap-2 border-b border-slate-800 pb-4 mb-4 text-center">
                 {days.map((day, idx) => (
                     <div key={idx} className = "flex flex-col items-center">
@@ -185,6 +213,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                 completed = {taskStates[task.id]?.completed ?? false}
                                 onToggleComplete = {handleToggleComplete}
                                 onDelete = {handleDelete}
+                                onOpen={() => setSelectedTask(task)}
                             />
                         );
                     })}

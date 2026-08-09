@@ -1,3 +1,5 @@
+import {Announcement} from "@/types/announcement";
+
 const CANVAS_URL = "https://davidsononline.instructure.com";
 
 const headers = {
@@ -38,7 +40,6 @@ export function transformAssignment(
             name: assignment.name,
             due: null,
             course: courseName,
-            daysRemaining: 0,
         };
     }
 
@@ -56,14 +57,12 @@ export function transformAssignment(
     const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
 
     const msPerDay = 1000 * 60 * 60 * 24;
-    const diffDays = Math.round((localDueDateMidnight - todayMidnight) / msPerDay);
 
     return {
         id: String(assignment.id),
         name: assignment.name,
         due: formattedDue,
         course: courseName,
-        daysRemaining: diffDays,
     };
 }
 
@@ -99,4 +98,65 @@ export async function getAllAssignments() {
 
         return timeA - timeB;
     });
+}
+
+export async function getAnnouncements(courseId: number) {
+        const response = await fetch(
+            `${CANVAS_URL}/api/v1/announcements?context_codes[]=course_${courseId}`,
+            {
+                headers,
+            }
+        );
+        
+        const data = await response.json();
+
+        console.log("Announcement response:", courseId, data);
+
+        return data;
+}
+
+export function transformAnnouncement(
+    announcement: any,
+    courseName: string
+): Announcement {
+    return {
+        id: String(announcement.id),
+        title: announcement.title,
+        message: announcement.message,
+        course: courseName,
+        postedAt: announcement.posted_at,
+    };
+}
+
+export async function getAllAnnouncements() {
+    const courses = await getCourses();
+    const allAnnouncements: Announcement[] = [];
+
+    for (const course of courses) {
+        if (!course.id || !course.name) {
+            console.log("Skipping invalid course:", course);
+            continue;
+        }
+
+        const announcements = await getAnnouncements(course.id);
+
+        if(!Array.isArray(announcements)) {
+            console.log(
+                "Skipping invalid announcements response:",
+                announcements
+            );
+            continue;
+        }
+
+        const transformed = announcements.map((announcement:any) =>
+            transformAnnouncement(
+                announcement,
+                course.name
+            )
+        );
+
+        allAnnouncements.push(...transformed);
+    }
+
+    return allAnnouncements
 }
