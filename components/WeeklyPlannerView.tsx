@@ -1,7 +1,7 @@
 "use client";
 
 import React, {useEffect, useState} from "react";
-import {calculateGridSpan, getTodayString} from "@/lib/utils";
+import {calculateGridSpan, getTodayString, parseLocalDate} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
@@ -19,6 +19,11 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
+    const [activeWeekStart, setActiveWeekStart] = useState(() => {
+        const start = new Date(weekStartDate);
+        start.setHours(0, 0, 0, 0);
+        return start;
+    });
 
 
     const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -44,6 +49,38 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         return new Date(a.due ?? "").getTime()
             - new Date(b.due ?? "").getTime();
     });
+
+    const activeWeekEnd = new Date(activeWeekStart);
+    activeWeekEnd.setDate(activeWeekStart.getDate() + 7);
+
+    const tasksForActiveWeek = sortedTasks.filter((task) => {
+        if (!task.due) return false;
+
+        const dueDate = parseLocalDate(task.due);
+        return dueDate >= activeWeekStart && dueDate < activeWeekEnd;
+    });
+
+    const weekLabel = `${activeWeekStart.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+    })} – ${new Date(activeWeekEnd.getTime() - 1).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+    })}`;
+
+    const changeWeek = (numberOfWeeks: number) => {
+        setActiveWeekStart((currentWeekStart) => {
+            const nextWeekStart = new Date(currentWeekStart);
+            nextWeekStart.setDate(nextWeekStart.getDate() + numberOfWeeks * 7);
+            return nextWeekStart;
+        });
+    };
+
+    const returnToCurrentWeek = () => {
+        const currentWeekStart = new Date(weekStartDate);
+        currentWeekStart.setHours(0, 0, 0, 0);
+        setActiveWeekStart(currentWeekStart);
+    };
 
     useEffect(() => {
         const storedTasks = localStorage.getItem("custom_tasks");
@@ -149,12 +186,43 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
     return (
         <div className = "w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
-            <button
-                onClick = {() => setIsModalOpen(true)}
-                className = "bg-blue-600 px-4 py-2 rounded"
-            >
-                + Add Task
-            </button>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <button
+                    onClick = {() => setIsModalOpen(true)}
+                    className = "bg-blue-600 px-4 py-2 rounded"
+                >
+                    + Add Task
+                </button>
+
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => changeWeek(-1)}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                        aria-label="Show previous week"
+                    >
+                        ← Previous
+                    </button>
+                    <div className="min-w-28 text-center text-sm font-semibold text-slate-200">
+                        {weekLabel}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={returnToCurrentWeek}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                    >
+                        This week
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => changeWeek(1)}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                        aria-label="Show next week"
+                    >
+                        Next →
+                    </button>
+                </div>
+            </div>
 
             <AddTaskModal
                 isOpen = {isModalOpen}
@@ -192,14 +260,14 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 </div>
 
                 <div className = "grid grid-cols-7 gap-y-3 gap-x-2 relative z-10 py-2">
-                    {sortedTasks.map((task) => {
+                    {tasksForActiveWeek.map((task) => {
                         const taskState = taskStates[task.id];
                         const gridSpan = calculateGridSpan(
                             {
                                 dueDate: task.due,
                                 startDate: taskState?.completedAt ?? undefined
                             },
-                            weekStartDate
+                            activeWeekStart
                         );
 
                         return (
