@@ -28,6 +28,18 @@ function normalizeXp(value: unknown): number {
     );
 }
 
+function xpFromEstimatedMinutes(estimatedMinutes: unknown): number | null {
+    const minutes = typeof estimatedMinutes === "number" ? estimatedMinutes : Number(estimatedMinutes);
+
+    if (!Number.isFinite(minutes) || minutes <= 0) return null;
+    if (minutes <= 15) return 10;
+    if (minutes <= 30) return 20;
+    if (minutes <= 60) return 35;
+    if (minutes <= 120) return 50;
+    if (minutes <= 240) return 75;
+    return 100;
+}
+
 function latePenalty(daysLate: number): number {
     if (daysLate <= 0) return 1;
     if (daysLate === 1) return 0.8;
@@ -52,7 +64,7 @@ function applyLatePenalty(baseXp: number, daysLate: number): number {
 }
 
 export async function POST(request: Request) {
-    let task: Pick<Assignment, "name" | "course" | "due"> & { completedAt?: string };
+    let task: Pick<Assignment, "name" | "course" | "due"> & { completedAt?: string; estimatedMinutes?: number };
 
     try {
         task = await request.json();
@@ -65,10 +77,11 @@ export async function POST(request: Request) {
     }
 
     const daysLate = calculateDaysLate(task.due, task.completedAt ?? "");
+    const timeBasedXp = xpFromEstimatedMinutes(task.estimatedMinutes);
     const fallbackBase = fallbackXp(task);
     const fallback = {
         ...fallbackBase,
-        xp: applyLatePenalty(fallbackBase.xp, daysLate),
+        xp: applyLatePenalty(timeBasedXp ?? fallbackBase.xp, daysLate),
     };
 
     try {
@@ -84,7 +97,7 @@ export async function POST(request: Request) {
                 messages: [
                     {
                         role: "system",
-                        content: "Estimate only the expected workload of this student task. Do not judge quality, effort, or how well it was completed. Return only JSON: {\"xp\": number}. Choose exactly one base XP value: 10 for a quick routine task, 20 for a small task, 35 for typical homework/quiz/lab, 50 for a substantial assignment, 75 for a major paper/project/exam, or 100 for an exceptional capstone. Do not default to 50: if the title is vague, choose 20.",
+                        content: "Estimate only the expected workload of this student task. Do not judge quality, effort, or how well it was completed. Return only JSON: {\"xp\": number}. Choose exactly one base XP value: 10 for a quick routine task, 20 for a small task, 35 for typical homework/quiz/lab, 50 for a substantial assignment, 75 for a major paper/project/exam, or 100 for an exceptional capstone. Do not default to 50: if the title is vague, choose 20. If estimatedMinutes is provided, keep the XP aligned with it: 15 minutes or less is 10 XP, 30 is 20 XP, 60 is 35 XP, 120 is 50 XP, 240 is 75 XP, and longer is 100 XP.",
                     },
                     {
                         role: "user",
@@ -100,7 +113,7 @@ export async function POST(request: Request) {
         const scoredTask = JSON.parse(result.message?.content ?? "{}") as { xp?: unknown };
 
         return NextResponse.json({
-            xp: applyLatePenalty(normalizeXp(scoredTask.xp), daysLate),
+            xp: applyLatePenalty(timeBasedXp ?? normalizeXp(scoredTask.xp), daysLate),
             source: "ollama",
         } satisfies XpAward);
     } catch {

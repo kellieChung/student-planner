@@ -10,6 +10,8 @@ import {TaskState} from "@/types/taskState";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
+import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates} from "@/lib/taskPlanning";
+import {TaskPlanningEstimates} from "@/types/taskPlanning";
 
 type WeeklyPlannerProps = {
     assignments: Assignment[];
@@ -23,6 +25,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
+    const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
         start.setHours(0, 0, 0, 0);
@@ -48,6 +51,13 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         if (aCompleted !== bCompleted) {
             return aCompleted ? 1 : -1;
+        }
+
+        const aPriority = getTaskPriority(a, taskPlanning[a.id]?.importance);
+        const bPriority = getTaskPriority(b, taskPlanning[b.id]?.importance);
+
+        if (aPriority.rank !== bPriority.rank) {
+            return aPriority.rank - bPriority.rank;
         }
 
         return new Date(a.due ?? "").getTime()
@@ -94,9 +104,11 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         const storedTasks = localStorage.getItem("custom_tasks");
         const savedStates = getTaskStates();
         const savedGamification = getGamificationState();
+        const savedTaskPlanning = getTaskPlanningEstimates();
 
         setTaskStates(savedStates);
         setGamification(savedGamification);
+        setTaskPlanning(savedTaskPlanning);
 
         const customTasks = storedTasks
             ? JSON.parse(storedTasks)
@@ -118,7 +130,61 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setTasks(visibleTasks);
     }, [assignments]);
 
-    const awardXpForTask = async (task: Assignment, completedAt: string | null) => {
+    useEffect(() => {
+        const tasksNeedingEstimates = tasks.filter((task) =>
+            taskPlanning[task.id]?.signature !== getTaskSignature(task)
+        );
+
+        if (tasksNeedingEstimates.length === 0) return;
+
+        const controller = new AbortController();
+
+        const estimateTasks = async () => {
+            try {
+                const response = await fetch("/api/task-planning", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        tasks: tasksNeedingEstimates.map(({ id, name, course }) => ({ id, name, course })),
+                    }),
+                });
+
+                if (!response.ok) return;
+
+                const data = await response.json() as {
+                    estimates: Array<{ id: string; estimatedMinutes: number; importance: "low" | "medium" | "high" }>;
+                };
+
+                setTaskPlanning((current) => {
+                    const next = { ...current };
+
+                    for (const estimate of data.estimates) {
+                        const task = tasksNeedingEstimates.find(({ id }) => id === estimate.id);
+                        if (!task) continue;
+
+                        next[estimate.id] = {
+                            ...estimate,
+                            signature: getTaskSignature(task),
+                        };
+                    }
+
+                    saveTaskPlanningEstimates(next);
+                    return next;
+                });
+            } catch (error) {
+                if ((error as Error).name !== "AbortError") {
+                    console.error("Could not estimate task planning details", error);
+                }
+            }
+        };
+
+        void estimateTasks();
+
+        return () => controller.abort();
+    }, [tasks, taskPlanning]);
+
+    const awardXpForTask = async (task: Assignment, completedAt: string | null, estimatedMinutes?: number) => {
         if (gamification.awardedTaskIds.includes(task.id)) return;
 
         let award: XpAward = { xp: 20, source: "fallback" };
@@ -127,7 +193,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             const response = await fetch("/api/task-xp", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: task.name, course: task.course, due: task.due, completedAt }),
+                body: JSON.stringify({ name: task.name, course: task.course, due: task.due, completedAt, estimatedMinutes }),
             });
 
             if (response.ok) {
@@ -151,7 +217,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setLatestXpAward(award);
     };
 
-    const handleToggleComplete = (task: Assignment) => {
+    const handleToggleComplete = (task: Assignment, estimatedMinutes?: number) => {
         const { id } = task;
         const currentState = taskStates[id] ?? {
             completed: false,
@@ -175,7 +241,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         saveTaskState(id, newState);
 
         if (newCompleted) {
-            void awardXpForTask(task, newState.completedAt);
+            void awardXpForTask(task, newState.completedAt, estimatedMinutes);
         }
 
     }
@@ -324,6 +390,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                         <div className = "grid grid-cols-7 gap-y-3 gap-x-2 relative z-10 py-2">
                             {tasksForActiveWeek.map((task) => {
                                 const taskState = taskStates[task.id];
+                                const estimate = taskPlanning[task.id];
+                                const priority = getTaskPriority(task, estimate?.importance);
                                 const gridSpan = calculateGridSpan(
                                     {
                                         dueDate: task.due,
@@ -342,7 +410,9 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         gridSpan = {gridSpan}
                                         completed = {taskStates[task.id]?.completed ?? false}
                                         completedAt = {taskStates[task.id]?.completedAt ?? null}
-                                        onToggleComplete = {() => handleToggleComplete(task)}
+                                        estimatedMinutes = {estimate?.estimatedMinutes}
+                                        priority = {priority}
+                                        onToggleComplete = {() => handleToggleComplete(task, estimate?.estimatedMinutes)}
                                         onDelete = {handleDelete}
                                         onOpen={() => setSelectedTask(task)}
                                     />
@@ -368,6 +438,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                     <div className="space-y-2">
                         {tasksWithoutDueDate.map((task) => {
                             const completed = taskStates[task.id]?.completed ?? false;
+                            const estimate = taskPlanning[task.id];
+                            const priority = getTaskPriority(task, estimate?.importance);
 
                             return (
                                 <div
@@ -379,13 +451,15 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         type="checkbox"
                                         checked={completed}
                                         onClick={(event) => event.stopPropagation()}
-                                        onChange={() => handleToggleComplete(task)}
+                                        onChange={() => handleToggleComplete(task, estimate?.estimatedMinutes)}
                                         aria-label={`Mark ${task.name} as complete`}
                                         className="h-4 w-4 cursor-pointer rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0"
                                     />
                                     <div className="min-w-0 flex-1">
                                         <p className={`truncate font-medium ${completed ? "line-through" : "text-slate-100"}`}>{task.name}</p>
-                                        <p className="text-xs text-slate-400">{task.course || "General"}</p>
+                                        <p className="text-xs text-slate-400">
+                                            {task.course || "General"}{estimate ? ` · Est. ${estimate.estimatedMinutes} min · ${priority.label}` : ""}
+                                        </p>
                                     </div>
                                     <button
                                         type="button"

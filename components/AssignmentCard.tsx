@@ -1,5 +1,7 @@
 "use client";
 
+import {TaskPriority} from "@/types/taskPlanning";
+
 type AssignmentCardProps = {
     id: string;
     name: string;
@@ -8,6 +10,8 @@ type AssignmentCardProps = {
     gridSpan?: string;
     completed: boolean;
     completedAt: string | null;
+    estimatedMinutes?: number;
+    priority: TaskPriority;
     onToggleComplete: (id: string) => void;
     onDelete?: (id: string) => void;
     onOpen: () => void;
@@ -21,6 +25,8 @@ export default function AssignmentCard({
     gridSpan,
     completed,
     completedAt,
+    estimatedMinutes,
+    priority,
     onToggleComplete,
     onDelete,
     onOpen,
@@ -55,6 +61,18 @@ export default function AssignmentCard({
             wasCompletedLate = completedDate > dueDate;
         }
     }
+
+    const estimatedTime = estimatedMinutes
+        ? estimatedMinutes >= 60
+            ? `${Math.floor(estimatedMinutes / 60)}h${estimatedMinutes % 60 ? ` ${estimatedMinutes % 60}m` : ""}`
+            : `${estimatedMinutes}m`
+        : null;
+
+    const priorityClass = priority.level === "high"
+        ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+        : priority.level === "medium"
+            ? "border-sky-500/40 bg-sky-500/10 text-sky-200"
+            : "border-slate-600 bg-slate-800 text-slate-300";
     return (
         <div
             style = {{ gridColumn: gridSpan }}
@@ -92,6 +110,12 @@ export default function AssignmentCard({
                                 </span>
                             )}
 
+                            {priority.level !== "critical" && (
+                                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${priorityClass}`}>
+                                    {priority.label}
+                                </span>
+                            )}
+
                         </div>
 
 
@@ -101,7 +125,7 @@ export default function AssignmentCard({
 
 
                         <p className={`text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-gray-400"}`}>
-                            Due: {due}
+                            Due: {due}{estimatedTime ? ` · Est. ${estimatedTime}` : ""}
                         </p>
 
                     </div>
