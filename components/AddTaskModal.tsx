@@ -18,7 +18,7 @@ export default function AddTaskModal({isOpen, onClose, onAddTask}: AddTaskModalP
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if(!name || !due) return;
+        if(!name) return;
 
         const newTask: Assignment = {
             id: `custom-${Date.now()}`,

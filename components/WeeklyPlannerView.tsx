@@ -8,6 +8,8 @@ import AddTaskModal from "./AddTaskModal";
 import {getTaskStates, saveTaskState} from "@/lib/taskState";
 import {TaskState} from "@/types/taskState";
 import EditTaskModal from "./EditTaskModal";
+import {getGamificationState, saveGamificationState} from "@/lib/gamification";
+import {GamificationState, XpAward} from "@/types/gamification";
 
 type WeeklyPlannerProps = {
     assignments: Assignment[];
@@ -19,6 +21,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
+    const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
+    const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
         start.setHours(0, 0, 0, 0);
@@ -29,8 +33,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
     const days = Array.from({length: 7}).map((_,index) => {
-        const date = new Date(weekStartDate);
-        date.setDate(weekStartDate.getDate() + index);
+        const date = new Date(activeWeekStart);
+        date.setDate(activeWeekStart.getDate() + index);
 
         return {
             name: dayNames[index],
@@ -60,6 +64,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         return dueDate >= activeWeekStart && dueDate < activeWeekEnd;
     });
 
+    const tasksWithoutDueDate = sortedTasks.filter((task) => !task.due);
+    const level = Math.floor(gamification.totalXp / 100) + 1;
+    const xpTowardsNextLevel = gamification.totalXp % 100;
+
     const weekLabel = `${activeWeekStart.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -85,8 +93,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     useEffect(() => {
         const storedTasks = localStorage.getItem("custom_tasks");
         const savedStates = getTaskStates();
+        const savedGamification = getGamificationState();
 
         setTaskStates(savedStates);
+        setGamification(savedGamification);
 
         const customTasks = storedTasks
             ? JSON.parse(storedTasks)
@@ -108,7 +118,41 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setTasks(visibleTasks);
     }, [assignments]);
 
-    const handleToggleComplete = (id: string) => {
+    const awardXpForTask = async (task: Assignment) => {
+        if (gamification.awardedTaskIds.includes(task.id)) return;
+
+        let award: XpAward = { xp: 20, reason: "A completed task", source: "fallback" };
+
+        try {
+            const response = await fetch("/api/task-xp", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: task.name, course: task.course, due: task.due }),
+            });
+
+            if (response.ok) {
+                award = await response.json() as XpAward;
+            }
+        } catch {
+            // The fallback award keeps completion usable if the API is unavailable.
+        }
+
+        setGamification((current) => {
+            if (current.awardedTaskIds.includes(task.id)) return current;
+
+            const nextState = {
+                totalXp: current.totalXp + award.xp,
+                awardedTaskIds: [...current.awardedTaskIds, task.id],
+            };
+
+            saveGamificationState(nextState);
+            return nextState;
+        });
+        setLatestXpAward(award);
+    };
+
+    const handleToggleComplete = (task: Assignment) => {
+        const { id } = task;
         const currentState = taskStates[id] ?? {
             completed: false,
             completedAt: null
@@ -129,6 +173,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         });
 
         saveTaskState(id, newState);
+
+        if (newCompleted) {
+            void awardXpForTask(task);
+        }
 
     }
     const handleAddTask = (newTask: Assignment) => {
@@ -186,7 +234,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
     return (
         <div className = "w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
                 <button
                     onClick = {() => setIsModalOpen(true)}
                     className = "bg-blue-600 px-4 py-2 rounded"
@@ -194,34 +242,19 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                     + Add Task
                 </button>
 
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => changeWeek(-1)}
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
-                        aria-label="Show previous week"
-                    >
-                        ← Previous
-                    </button>
-                    <div className="min-w-28 text-center text-sm font-semibold text-slate-200">
-                        {weekLabel}
+                <div className="min-w-52 rounded-xl border border-indigo-900/70 bg-indigo-950/30 px-4 py-2.5">
+                    <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm font-bold text-indigo-200">Level {level}</span>
+                        <span className="text-xs font-semibold text-indigo-300">{gamification.totalXp} XP</span>
                     </div>
-                    <button
-                        type="button"
-                        onClick={returnToCurrentWeek}
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
-                    >
-                        This week
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => changeWeek(1)}
-                        className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
-                        aria-label="Show next week"
-                    >
-                        Next →
-                    </button>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
+                        <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${xpTowardsNextLevel}%` }} />
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                        {latestXpAward ? `+${latestXpAward.xp} XP — ${latestXpAward.reason}` : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
+                    </p>
                 </div>
+
             </div>
 
             <AddTaskModal
@@ -238,55 +271,139 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 onDeleteTask = {handleDelete}
             />
 
-            <div className = "grid grid-cols-7 gap-2 border-b border-slate-800 pb-4 mb-4 text-center">
-                {days.map((day, idx) => (
-                    <div key={idx} className = "flex flex-col items-center">
-                        <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">
-                            {day.name}
-                        </span>
-                        <span className = "text-base font-semibold text-slate-200 mt-1">
-                            {day.dateNumber}
-                        </span>
+            <>
+                    <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+                        <button
+                            type="button"
+                            onClick={() => changeWeek(-1)}
+                            className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                            aria-label="Show previous week"
+                        >
+                            ← Previous
+                        </button>
+                        <div className="min-w-28 text-center text-sm font-semibold text-slate-200">
+                            {weekLabel}
+                        </div>
+                        <button
+                            type="button"
+                            onClick={returnToCurrentWeek}
+                            className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                        >
+                            This week
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => changeWeek(1)}
+                            className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                            aria-label="Show next week"
+                        >
+                            Next →
+                        </button>
                     </div>
-                ))}
-            </div>
 
-            <div className = "relative min-h-[400px]">
-                <div className = "absolute inset-0 grid grid-cols-7 gap-2 pointer-events-none">
-                    {Array.from({length: 7}).map((_, idx) => (
-                        <div key = {idx} className = "border-r border-slate-800/80 h-full rounded-lg bg-slate-900/30"
-                        />
-                    ))}
+                    <div className = "grid grid-cols-7 gap-2 border-b border-slate-800 pb-4 mb-4 text-center">
+                        {days.map((day, idx) => (
+                            <div key={idx} className = "flex flex-col items-center">
+                                <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                    {day.name}
+                                </span>
+                                <span className = "text-base font-semibold text-slate-200 mt-1">
+                                    {day.dateNumber}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className = "relative min-h-[400px]">
+                        <div className = "absolute inset-0 grid grid-cols-7 gap-2 pointer-events-none">
+                            {Array.from({length: 7}).map((_, idx) => (
+                                <div key = {idx} className = "border-r border-slate-800/80 h-full rounded-lg bg-slate-900/30" />
+                            ))}
+                        </div>
+
+                        <div className = "grid grid-cols-7 gap-y-3 gap-x-2 relative z-10 py-2">
+                            {tasksForActiveWeek.map((task) => {
+                                const taskState = taskStates[task.id];
+                                const gridSpan = calculateGridSpan(
+                                    {
+                                        dueDate: task.due,
+                                        startDate: taskState?.completedAt ?? undefined
+                                    },
+                                    activeWeekStart
+                                );
+
+                                return (
+                                    <AssignmentCard
+                                        key = {task.id}
+                                        id = {task.id}
+                                        name = {task.name}
+                                        due = {task.due}
+                                        course = {task.course}
+                                        gridSpan = {gridSpan}
+                                        completed = {taskStates[task.id]?.completed ?? false}
+                                        completedAt = {taskStates[task.id]?.completedAt ?? null}
+                                        onToggleComplete = {() => handleToggleComplete(task)}
+                                        onDelete = {handleDelete}
+                                        onOpen={() => setSelectedTask(task)}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+            </>
+
+            <section className="mx-auto mt-8 max-w-2xl border-t border-slate-800 pt-6">
+                <div className="mb-4">
+                    <h2 className="text-lg font-semibold text-slate-100">
+                        Tasks without a due date ({tasksWithoutDueDate.length})
+                    </h2>
+                    <p className="text-sm text-slate-400">Click a task to view or edit its details.</p>
                 </div>
 
-                <div className = "grid grid-cols-7 gap-y-3 gap-x-2 relative z-10 py-2">
-                    {tasksForActiveWeek.map((task) => {
-                        const taskState = taskStates[task.id];
-                        const gridSpan = calculateGridSpan(
-                            {
-                                dueDate: task.due,
-                                startDate: taskState?.completedAt ?? undefined
-                            },
-                            activeWeekStart
-                        );
+                {tasksWithoutDueDate.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
+                        Every task has a due date.
+                    </p>
+                ) : (
+                    <div className="space-y-2">
+                        {tasksWithoutDueDate.map((task) => {
+                            const completed = taskStates[task.id]?.completed ?? false;
 
-                        return (
-                            <AssignmentCard
-                                key = {task.id}
-                                id = {task.id}
-                                name = {task.name}
-                                due = {task.due}
-                                course = {task.course}
-                                gridSpan = {gridSpan}
-                                completed = {taskStates[task.id]?.completed ?? false}
-                                onToggleComplete = {handleToggleComplete}
-                                onDelete = {handleDelete}
-                                onOpen={() => setSelectedTask(task)}
-                            />
-                        );
-                    })}
-                </div>
-            </div>
+                            return (
+                                <div
+                                    key={task.id}
+                                    onClick={() => setSelectedTask(task)}
+                                    className={`group flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${completed ? "border-slate-800 bg-slate-900/50 text-slate-500" : "border-slate-700 bg-slate-900 hover:border-slate-600"}`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={completed}
+                                        onClick={(event) => event.stopPropagation()}
+                                        onChange={() => handleToggleComplete(task)}
+                                        aria-label={`Mark ${task.name} as complete`}
+                                        className="h-4 w-4 cursor-pointer rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <p className={`truncate font-medium ${completed ? "line-through" : "text-slate-100"}`}>{task.name}</p>
+                                        <p className="text-xs text-slate-400">{task.course || "General"}</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleDelete(task.id);
+                                        }}
+                                        className="rounded px-2 py-1 text-xs text-slate-400 opacity-0 transition-opacity hover:bg-rose-950/40 hover:text-rose-400 group-hover:opacity-100 focus:opacity-100"
+                                        aria-label={`Delete ${task.name}`}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
         </div>
     );
 }

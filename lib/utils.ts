@@ -13,6 +13,12 @@ export function calculateGridSpan(
     const due = parseLocalDate(task.dueDate).setHours(0, 0, 0, 0);
 
     const today = new Date().setHours(0, 0, 0, 0)
+
+    if (due < today) {
+        const dueColumn = Math.max(1, Math.min(7, Math.floor((due - monday) / msPerDay) + 1));
+        return `${dueColumn} / ${dueColumn + 1}`;
+    }
+
     const weekEnd = monday + msPerDay * 7;
     const effectiveStart = today >= weekEnd
         ? monday

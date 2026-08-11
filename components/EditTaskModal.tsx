@@ -34,7 +34,7 @@ export default function EditTaskModal({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if(!name || !due) return;
+        if(!name) return;
 
         onSaveTask({
             ...task,
@@ -99,7 +99,6 @@ export default function EditTaskModal({
               </label>
               <input
                 type="date"
-                required
                 value={due}
                 onChange={(e) => setDue(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 color-scheme-dark"

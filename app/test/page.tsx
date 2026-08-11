@@ -5,54 +5,138 @@ import { Assignment } from "@/types/assignment";
 
 // Temporary test array in app/page.tsx
 const mockAssignments = [
-  // 1. Overdue / Late Task (Due yesterday)
+  // --- MONDAY (Aug 10) ---
   {
-    id: "test-1",
-    name: "Read Chapter 4: Photosynthesis",
-    course: "Biology",
-    due: "2026-08-06",
+    id: "test-101",
+    name: "Read Chapter 1: Foundations of Data Structures",
+    course: "Computer Science",
+    due: "2026-08-10",
   },
-  // 2. Due Today (Single-day focal task)
   {
-    id: "test-2",
-    name: "Submit Lab Safety Quiz",
-    course: "Chemistry",
-    due: "2026-08-07",
-  },
-  // 3. Multi-day span (Wed -> Fri)
-  {
-    id: "test-3",
-    name: "Draft Essay: Comparative Literature",
-    course: "English",
-    due: "2026-08-07",
-  },
-  // 4. Multi-day span (Mon -> Sat)
-  {
-    id: "test-4",
-    name: "Problem Set #3: Linear Algebra",
+    id: "test-102",
+    name: "Syllabus Quiz & Academic Integrity Form",
     course: "Math",
-    due: "2026-08-08",
+    due: "2026-08-10",
   },
-  // 5. Weekend Task (Due Saturday)
   {
-    id: "test-5",
-    name: "Group Project Outline",
+    id: "test-103",
+    name: "Discussion Board Intro: Favorite Authors",
+    course: "English",
+    due: "2026-08-10",
+  },
+
+  // --- TUESDAY (Aug 11 - TODAY) ---
+  {
+    id: "test-104",
+    name: "Lab Safety & Equipment Quiz",
+    course: "Physics",
+    due: "2026-08-11",
+  },
+  {
+    id: "test-105",
+    name: "Problem Set #1: Linear Equations",
+    course: "Math",
+    due: "2026-08-11",
+  },
+  {
+    id: "test-106",
+    name: "Spanish Vocabulary Flashcards Set 1",
+    course: "Spanish",
+    due: "2026-08-11",
+  },
+
+  // --- WEDNESDAY (Aug 12) ---
+  {
+    id: "test-107",
+    name: "Annotated Bibliography Draft",
+    course: "English",
+    due: "2026-08-12",
+  },
+  {
+    id: "test-108",
+    name: "Python Basics Worksheets 1 & 2",
+    course: "Computer Science",
+    due: "2026-08-12",
+  },
+  {
+    id: "test-109",
+    name: "Primary Source Analysis: Revolutionary War",
     course: "History",
-    due: "2026-08-08",
+    due: "2026-08-12",
   },
-  // 6. Full Week Span (Mon -> Sun)
+
+  // --- THURSDAY (Aug 13) ---
   {
-    id: "test-6",
-    name: "Final Portfolio Submission",
-    course: "Art",
-    due: "2026-08-09",
+    id: "test-110",
+    name: "Kinematics Numerical Exercises",
+    course: "Physics",
+    due: "2026-08-13",
   },
-  // 7. Custom Personal Task Example
   {
-    id: "custom-test-7",
-    name: "Study Session with Alex",
+    id: "test-111",
+    name: "Spanish Listening Comprehension Module",
+    course: "Spanish",
+    due: "2026-08-13",
+  },
+  {
+    id: "test-112",
+    name: "Group Project: Topic Selection",
+    course: "History",
+    due: "2026-08-13",
+  },
+
+  // --- FRIDAY (Aug 14) ---
+  {
+    id: "test-113",
+    name: "Weekly Essay: Modern Prose Critique",
+    course: "English",
+    due: "2026-08-14",
+  },
+  {
+    id: "test-114",
+    name: "Calculus Quiz 1",
+    course: "Math",
+    due: "2026-08-14",
+  },
+  {
+    id: "test-115",
+    name: "Physics Lab Report #1 - Freefall Motion",
+    course: "Physics",
+    due: "2026-08-14",
+  },
+
+  // --- SATURDAY (Aug 15) ---
+  {
+    id: "test-116",
+    name: "Peer Review Assignment #1",
+    course: "English",
+    due: "2026-08-15",
+  },
+  {
+    id: "test-117",
+    name: "Study Group Prep: CS Algorithm Review",
     course: "Personal",
-    due: "2026-08-09",
+    due: "2026-08-15",
+  },
+
+  // --- SUNDAY (Aug 16) ---
+  {
+    id: "test-118",
+    name: "Weekly Summary Video Quiz",
+    course: "Spanish",
+    due: "2026-08-16",
+  },
+  {
+    id: "test-119",
+    name: "Weekly Coding Challenge: Array Operations",
+    course: "Computer Science",
+    due: "2026-08-16",
+  },
+  {
+    id: "test-120",
+    name: "Plan Schedule for Next Week",
+    course: "Personal",
+    due: "2026-08-16",
   },
 ];
 
