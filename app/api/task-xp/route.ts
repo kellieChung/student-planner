@@ -8,14 +8,14 @@ function fallbackXp(task: Pick<Assignment, "name" | "course">): XpAward {
     const taskText = `${task.name} ${task.course}`.toLowerCase();
 
     if (/(exam|midterm|final|research paper|presentation|project)/.test(taskText)) {
-        return { xp: 75, reason: "A substantial assignment", source: "fallback" };
+        return { xp: 75, source: "fallback" };
     }
 
     if (/(essay|lab|quiz|problem set|homework)/.test(taskText)) {
-        return { xp: 35, reason: "A standard course assignment", source: "fallback" };
+        return { xp: 35, source: "fallback" };
     }
 
-    return { xp: 20, reason: "A routine task", source: "fallback" };
+    return { xp: 20, source: "fallback" };
 }
 
 function normalizeXp(value: unknown): number {
@@ -28,8 +28,31 @@ function normalizeXp(value: unknown): number {
     );
 }
 
+function latePenalty(daysLate: number): number {
+    if (daysLate <= 0) return 1;
+    if (daysLate === 1) return 0.8;
+    if (daysLate <= 3) return 0.6;
+    if (daysLate <= 7) return 0.4;
+    return 0.2;
+}
+
+function calculateDaysLate(due: string, completedAt: string): number {
+    if (!due || !completedAt) return 0;
+
+    const dueDate = new Date(`${due}T00:00:00`).getTime();
+    const completedDate = new Date(`${completedAt}T00:00:00`).getTime();
+
+    if (!Number.isFinite(dueDate) || !Number.isFinite(completedDate)) return 0;
+
+    return Math.max(0, Math.floor((completedDate - dueDate) / (1000 * 60 * 60 * 24)));
+}
+
+function applyLatePenalty(baseXp: number, daysLate: number): number {
+    return Math.max(5, Math.floor((baseXp * latePenalty(daysLate)) / 5) * 5);
+}
+
 export async function POST(request: Request) {
-    let task: Pick<Assignment, "name" | "course" | "due">;
+    let task: Pick<Assignment, "name" | "course" | "due"> & { completedAt?: string };
 
     try {
         task = await request.json();
@@ -41,7 +64,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "A task name is required" }, { status: 400 });
     }
 
-    const fallback = fallbackXp(task);
+    const daysLate = calculateDaysLate(task.due, task.completedAt ?? "");
+    const fallbackBase = fallbackXp(task);
+    const fallback = {
+        ...fallbackBase,
+        xp: applyLatePenalty(fallbackBase.xp, daysLate),
+    };
 
     try {
         const response = await fetch(`${process.env.OLLAMA_URL ?? "http://127.0.0.1:11434"}/api/chat`, {
@@ -56,7 +84,7 @@ export async function POST(request: Request) {
                 messages: [
                     {
                         role: "system",
-                        content: "You score a student's completed task for a motivating planner. Return only JSON with xp and reason. Choose exactly one XP value: 10, 20, 35, 50, 75, or 100. Use task scope and likely effort, not the task's due date. Keep reason under 10 words.",
+                        content: "Estimate only the expected workload of this student task. Do not judge quality, effort, or how well it was completed. Return only JSON: {\"xp\": number}. Choose exactly one base XP value: 10 for a quick routine task, 20 for a small task, 35 for typical homework/quiz/lab, 50 for a substantial assignment, 75 for a major paper/project/exam, or 100 for an exceptional capstone. Do not default to 50: if the title is vague, choose 20.",
                     },
                     {
                         role: "user",
@@ -69,11 +97,10 @@ export async function POST(request: Request) {
         if (!response.ok) return NextResponse.json(fallback);
 
         const result = await response.json() as { message?: { content?: string } };
-        const scoredTask = JSON.parse(result.message?.content ?? "{}") as { xp?: unknown; reason?: unknown };
+        const scoredTask = JSON.parse(result.message?.content ?? "{}") as { xp?: unknown };
 
         return NextResponse.json({
-            xp: normalizeXp(scoredTask.xp),
-            reason: typeof scoredTask.reason === "string" ? scoredTask.reason.slice(0, 120) : fallback.reason,
+            xp: applyLatePenalty(normalizeXp(scoredTask.xp), daysLate),
             source: "ollama",
         } satisfies XpAward);
     } catch {

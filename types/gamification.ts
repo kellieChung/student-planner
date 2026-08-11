@@ -5,6 +5,5 @@ export type GamificationState = {
 
 export type XpAward = {
     xp: number;
-    reason: string;
     source: "ollama" | "fallback";
 };

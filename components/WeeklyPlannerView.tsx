@@ -118,16 +118,16 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setTasks(visibleTasks);
     }, [assignments]);
 
-    const awardXpForTask = async (task: Assignment) => {
+    const awardXpForTask = async (task: Assignment, completedAt: string | null) => {
         if (gamification.awardedTaskIds.includes(task.id)) return;
 
-        let award: XpAward = { xp: 20, reason: "A completed task", source: "fallback" };
+        let award: XpAward = { xp: 20, source: "fallback" };
 
         try {
             const response = await fetch("/api/task-xp", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: task.name, course: task.course, due: task.due }),
+                body: JSON.stringify({ name: task.name, course: task.course, due: task.due, completedAt }),
             });
 
             if (response.ok) {
@@ -175,7 +175,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         saveTaskState(id, newState);
 
         if (newCompleted) {
-            void awardXpForTask(task);
+            void awardXpForTask(task, newState.completedAt);
         }
 
     }
@@ -251,7 +251,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                         <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${xpTowardsNextLevel}%` }} />
                     </div>
                     <p className="mt-1 text-[11px] text-slate-400">
-                        {latestXpAward ? `+${latestXpAward.xp} XP — ${latestXpAward.reason}` : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
+                        {latestXpAward ? `+${latestXpAward.xp} XP earned` : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
                     </p>
                 </div>
 
