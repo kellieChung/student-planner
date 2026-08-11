@@ -37,10 +37,10 @@ export default function AddTaskModal({isOpen, onClose, onAddTask}: AddTaskModalP
         onClose();
     }
 return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-[var(--overlay)] backdrop-blur-sm">
         <form
             onSubmit = {handleSubmit}
-            className = "bg-slate-900 rounded-xl p-6 w-[400px] space-y-4 border border-slate-700"
+            className = "theme-surface planner-shell bg-slate-900 rounded-xl p-6 w-[400px] space-y-4 border border-slate-700 shadow-2xl"
         >
             <h2 className = "text-xl font-semibold">
                 Add Task

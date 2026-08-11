@@ -47,8 +47,8 @@ export default function EditTaskModal({
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-white">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
+            <div className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-white">
                 <div className="flex justify-between items-start mb-4">
                     <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-slate-700 bg-slate-800 text-slate-300">
@@ -77,7 +77,7 @@ export default function EditTaskModal({
                             required
                             value = {name}
                             onChange = {(e) => setName(e.target.value)}
-                            className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus: outline-none focus: border-indigo-500 resize-none"
+                            className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
                         />
                     </div>
                 <div className="grid grid-cols-2 gap-3">

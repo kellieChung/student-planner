@@ -1,8 +1,64 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ── Dark: Enchanted Forest ── */
+:root,
+html[data-theme="dark"] {
+  --background: #e8f5e9;
+  --foreground: #ecfdf5;
+  --app-background: #0a1410;
+  --app-gradient: radial-gradient(ellipse 120% 80% at 50% -20%, rgb(34 88 58 / 0.45), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 100% 100%, rgb(88 28 135 / 0.12), transparent 50%),
+    linear-gradient(180deg, #0c1812 0%, #0a1210 45%, #071008 100%);
+  --heading: #a7f3d0;
+  --heading-glow: rgb(52 211 153 / 0.35);
+  --muted: #86b09a;
+  --panel: #142820;
+  --panel-raised: #1c3528;
+  --panel-muted: #254232;
+  --border: #3d6b52;
+  --accent: #34d399;
+  --accent-hover: #6ee7b7;
+  --accent-soft: rgb(52 211 153 / 0.16);
+  --accent-secondary: #a78bfa;
+  --xp-bar: #fbbf24;
+  --xp-track: #1c3528;
+  --quest-glow: rgb(52 211 153 / 0.14);
+  --overlay: rgb(4 12 8 / 0.78);
+  --shadow: 0 24px 70px rgb(4 20 12 / 0.55);
+  --status-overdue-bg: rgb(127 29 29 / 0.55);
+  --status-overdue-text: #fecaca;
+  --status-done-bg: rgb(20 83 45 / 0.45);
+  --status-done-text: #86efac;
+}
+
+/* ── Light: Cozy Tavern ── */
+html[data-theme="light"] {
+  --background: #431407;
+  --foreground: #431407;
+  --app-background: #fff7ed;
+  --app-gradient: radial-gradient(ellipse 100% 60% at 50% 0%, rgb(251 146 60 / 0.28), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 0% 100%, rgb(234 88 12 / 0.12), transparent 45%),
+    linear-gradient(180deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%);
+  --heading: #c2410c;
+  --heading-glow: rgb(234 88 12 / 0.2);
+  --muted: #9a3412;
+  --panel: #fffbeb;
+  --panel-raised: #fef3c7;
+  --panel-muted: #fde68a;
+  --border: #fdba74;
+  --accent: #ea580c;
+  --accent-hover: #c2410c;
+  --accent-soft: rgb(234 88 12 / 0.14);
+  --accent-secondary: #b45309;
+  --xp-bar: #f59e0b;
+  --xp-track: #fed7aa;
+  --quest-glow: rgb(234 88 12 / 0.1);
+  --overlay: rgb(67 20 7 / 0.42);
+  --shadow: 0 24px 70px rgb(180 83 9 / 0.18);
+  --status-overdue-bg: rgb(254 202 202 / 0.85);
+  --status-overdue-text: #991b1b;
+  --status-done-bg: rgb(187 247 208 / 0.7);
+  --status-done-text: #166534;
 }
 
 @theme inline {
@@ -12,15 +68,204 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background-color: var(--app-background);
+  background-image: var(--app-gradient);
+  background-attachment: fixed;
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  transition: background-color 220ms ease, color 220ms ease;
 }
 
-body {
-  background: #0f172a;
-  color: #f8fafc;
-  font-family: Arial, Helvetica, sans-serif;
+/* Full-page header theming */
+.app-header h1 {
+  color: var(--heading);
+  transition: color 220ms ease, text-shadow 220ms ease;
+}
+
+html[data-theme="dark"] .app-header h1 {
+  text-shadow: 0 0 28px var(--heading-glow);
+}
+
+html[data-theme="light"] .app-header h1 {
+  text-shadow: 0 1px 0 rgb(255 255 255 / 0.6);
+}
+
+.app-header p {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* Remap Tailwind slate/indigo utilities inside themed surfaces */
+.theme-surface,
+.planner-shell {
+  color: var(--foreground);
+  box-shadow: var(--shadow);
+}
+
+.theme-surface[class*="bg-slate-950"],
+.planner-shell[class*="bg-slate-950"] {
+  background-color: var(--panel) !important;
+  border-color: var(--border) !important;
+}
+
+.theme-surface [class*="bg-slate-900"],
+.planner-shell [class*="bg-slate-900"] {
+  background-color: var(--panel-raised) !important;
+}
+
+.theme-surface [class*="bg-slate-800"],
+.planner-shell [class*="bg-slate-800"] {
+  background-color: var(--panel-muted) !important;
+}
+
+.theme-surface [class*="bg-slate-700"],
+.planner-shell [class*="bg-slate-700"] {
+  background-color: var(--border) !important;
+}
+
+.theme-surface [class*="border-slate-"],
+.planner-shell [class*="border-slate-"] {
+  border-color: var(--border) !important;
+}
+
+.theme-surface [class*="bg-blue-600"],
+.theme-surface [class*="bg-indigo-600"],
+.planner-shell [class*="bg-blue-600"],
+.planner-shell [class*="bg-indigo-600"] {
+  background-color: var(--accent) !important;
+  color: #fff !important;
+}
+
+html[data-theme="light"] .theme-surface [class*="bg-blue-600"],
+html[data-theme="light"] .theme-surface [class*="bg-indigo-600"],
+html[data-theme="light"] .planner-shell [class*="bg-blue-600"],
+html[data-theme="light"] .planner-shell [class*="bg-indigo-600"] {
+  color: #fffbeb !important;
+}
+
+.theme-surface [class*="hover:bg-blue-500"]:hover,
+.theme-surface [class*="hover:bg-indigo-500"]:hover,
+.planner-shell [class*="hover:bg-blue-500"]:hover,
+.planner-shell [class*="hover:bg-indigo-500"]:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+.theme-surface [class*="text-white"],
+.theme-surface [class*="text-slate-100"],
+.theme-surface [class*="text-slate-200"],
+.planner-shell [class*="text-white"],
+.planner-shell [class*="text-slate-100"],
+.planner-shell [class*="text-slate-200"] {
+  color: var(--foreground) !important;
+}
+
+.theme-surface [class*="text-slate-3"],
+.theme-surface [class*="text-slate-4"],
+.theme-surface [class*="text-slate-5"],
+.theme-surface [class*="text-slate-6"],
+.planner-shell [class*="text-slate-3"],
+.planner-shell [class*="text-slate-4"],
+.planner-shell [class*="text-slate-5"],
+.planner-shell [class*="text-slate-6"] {
+  color: var(--muted) !important;
+}
+
+.theme-surface [class*="text-indigo-2"],
+.theme-surface [class*="text-indigo-3"],
+.planner-shell [class*="text-indigo-2"],
+.planner-shell [class*="text-indigo-3"] {
+  color: var(--heading) !important;
+}
+
+.theme-surface [class*="border-indigo-"],
+.planner-shell [class*="border-indigo-"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border)) !important;
+}
+
+.theme-surface [class*="bg-indigo-950"],
+.planner-shell [class*="bg-indigo-950"] {
+  background-color: var(--quest-glow) !important;
+}
+
+.theme-surface [class*="bg-indigo-600"],
+.planner-shell [class*="bg-indigo-600"] {
+  background-color: var(--accent) !important;
+}
+
+.theme-surface [class*="bg-indigo-500"],
+.planner-shell [class*="bg-indigo-500"] {
+  background-color: var(--xp-bar) !important;
+}
+
+.theme-surface .xp-track,
+.planner-shell .xp-track {
+  background-color: var(--xp-track) !important;
+}
+
+.theme-surface .xp-fill,
+.planner-shell .xp-fill {
+  background: linear-gradient(90deg, var(--accent), var(--xp-bar)) !important;
+}
+
+html[data-theme="dark"] .theme-surface .xp-fill,
+html[data-theme="dark"] .planner-shell .xp-fill {
+  background: linear-gradient(90deg, var(--accent), var(--xp-bar), var(--accent-secondary)) !important;
+}
+
+.theme-surface input,
+.theme-surface textarea,
+.theme-surface select,
+.planner-shell input,
+.planner-shell textarea,
+.planner-shell select {
+  color: var(--foreground);
+}
+
+html[data-theme="light"] .theme-surface input[type="date"],
+html[data-theme="light"] .planner-shell input[type="date"] {
+  color-scheme: light;
+}
+
+html[data-theme="dark"] .theme-surface input[type="date"],
+html[data-theme="dark"] .planner-shell input[type="date"] {
+  color-scheme: dark;
+}
+
+/* Status badges */
+html[data-theme="light"] .theme-surface [class*="bg-green-950"],
+html[data-theme="light"] .theme-surface [class*="bg-green-900"],
+html[data-theme="light"] .planner-shell [class*="bg-green-950"],
+html[data-theme="light"] .planner-shell [class*="bg-green-900"] {
+  background-color: var(--status-done-bg) !important;
+}
+
+html[data-theme="light"] .theme-surface [class*="bg-rose-950"],
+html[data-theme="light"] .theme-surface [class*="bg-rose-950/"],
+html[data-theme="light"] .planner-shell [class*="bg-rose-950"],
+html[data-theme="light"] .planner-shell [class*="bg-rose-950/"] {
+  background-color: var(--status-overdue-bg) !important;
+}
+
+html[data-theme="light"] .theme-surface [class*="text-rose-1"],
+html[data-theme="light"] .theme-surface [class*="text-rose-2"],
+html[data-theme="light"] .theme-surface [class*="text-rose-4"],
+html[data-theme="light"] .theme-surface [class*="text-rose-5"],
+html[data-theme="light"] .planner-shell [class*="text-rose-1"],
+html[data-theme="light"] .planner-shell [class*="text-rose-2"],
+html[data-theme="light"] .planner-shell [class*="text-rose-4"],
+html[data-theme="light"] .planner-shell [class*="text-rose-5"] {
+  color: var(--status-overdue-text) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="bg-green-900"],
+html[data-theme="dark"] .planner-shell [class*="bg-green-900"] {
+  background-color: var(--status-done-bg) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="bg-rose-950"],
+html[data-theme="dark"] .theme-surface [class*="bg-rose-950/"],
+html[data-theme="dark"] .planner-shell [class*="bg-rose-950"],
+html[data-theme="dark"] .planner-shell [class*="bg-rose-950/"] {
+  background-color: var(--status-overdue-bg) !important;
 }
