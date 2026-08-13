@@ -189,6 +189,8 @@ If a task has no identifiable due date, use:
 
 "dueReference": null
 
+Do NOT use null unless there is no choice. You will very rarely need to use null.
+
 11. Each task must have the date that applies specifically to THAT task.
 
 Do not leave dueReference null when a due date for that task is explicitly
