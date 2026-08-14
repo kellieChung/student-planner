@@ -1,6 +1,7 @@
 import { getAllAssignments } from "@/lib/canvas";
 import WeeklyPlannerView from "@/components/WeeklyPlannerView";
 import { Assignment } from "@/types/assignment";
+import SignInButton from "@/components/SignInButton";
 
 export default async function TestPage() {
 
@@ -18,6 +19,7 @@ export default async function TestPage() {
     return (
         <main className="min-h-screen p-8">
             <div className="app-header w-full px-4 mx-auto">
+                <SignInButton />
                 <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--muted)] opacity-70">
                     Your quest log
                 </p>
