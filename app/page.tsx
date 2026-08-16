@@ -2,8 +2,11 @@ import { getAllAssignments } from "@/lib/canvas";
 import WeeklyPlannerView from "@/components/WeeklyPlannerView";
 import { Assignment } from "@/types/assignment";
 import SignInButton from "@/components/SignInButton";
+import {auth} from "@/auth"
+import UserMenu from "@/components/UserMenu";
 
 export default async function TestPage() {
+    const session = await auth();
 
     const assignments: Assignment[] = (await getAllAssignments()).map((assignment) => ({
         ...assignment,
@@ -20,6 +23,10 @@ export default async function TestPage() {
         <main className="min-h-screen p-8">
             <div className="app-header w-full px-4 mx-auto">
                 <SignInButton />
+                <UserMenu
+                    name = {session?.user?.name}
+                    email = {session?.user?.email}
+                />
                 <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--muted)] opacity-70">
                     Your quest log
                 </p>
