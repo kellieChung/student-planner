@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Student Planner Canvas",
+  "version": "0.1.0",
+  "description": "Connects Canvas to Student Planner.",
+
+  "permissions": [],
+
+  "host_permissions": [
+    "https://*.instructure.com/"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["https://*.instructure.com/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
