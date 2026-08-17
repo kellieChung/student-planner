@@ -4,9 +4,14 @@ import { Assignment } from "@/types/assignment";
 import SignInButton from "@/components/SignInButton";
 import {auth} from "@/auth"
 import UserMenu from "@/components/UserMenu";
+import {redirect} from "next/navigation";
 
 export default async function TestPage() {
     const session = await auth();
+
+    if (!session?.user) {
+        redirect("/login");
+    }
 
     const assignments: Assignment[] = (await getAllAssignments()).map((assignment) => ({
         ...assignment,
