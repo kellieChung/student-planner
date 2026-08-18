@@ -89,4 +89,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         return true;
     }
+
+    if (message.type === "GET_ANNOUNCEMENTS") {
+        const courseId = message.courseId;
+
+        fetch(
+            `${message.canvasOrigin}/api/v1/announcements?context_codes[]=course_${courseId}&active_only=true`
+        )
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`Canvas returned ${response.status}`);
+                }
+
+                return response.json();
+            })
+            .then((announcements) => {
+                sendResponse({
+                    success: true,
+                    announcements: announcements,
+                });
+            })
+            .catch((error) => {
+                console.error("Canvas announcement request failed:", error);
+
+                sendResponse({
+                    success: false,
+                    error: error.message,
+                });
+            });
+
+        return true;
+    }
 });
