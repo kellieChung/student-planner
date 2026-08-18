@@ -5,7 +5,8 @@
   "description": "Connects Canvas to Student Planner.",
 
   "permissions": [
-    "storage"
+    "storage",
+    "identity"
   ],
 
   "host_permissions": [
