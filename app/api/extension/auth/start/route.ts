@@ -1,54 +1,38 @@
-import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
 import { randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 
-export async function GET(request: Request) {
-    const session = await auth();
+const EXTENSION_ORIGIN =
+    "chrome-extension://knlfelipiolfnoicdagnagoecdjdijil";
 
-    if (!session?.user?.email) {
-        return NextResponse.json(
-            {
-                success: false,
-                error: "Not authenticated",
-            },
-            { status: 401 }
-        );
-    }
-
-    const user = await prisma.user.findUnique({
-        where: {
-            email: session.user.email,
-        },
-    });
-
-    if (!user) {
-        return NextResponse.json(
-            {
-                success: false,
-                error: "User not found",
-            },
-            { status: 404 }
-        );
-    }
-
-    const token = randomBytes(32).toString("hex");
+export async function GET() {
     const state = randomBytes(32).toString("hex");
 
-    await prisma.extensionSession.create({
-        data: {
-            token,
+    return NextResponse.json(
+        {
+            success: true,
             state,
-            userId: user.id,
-            expiresAt: new Date(
-                Date.now() + 10 * 60 * 1000
-            ),
         },
-    });
+        {
+            headers: {
+                "Access-Control-Allow-Origin":
+                    EXTENSION_ORIGIN,
+            },
+        }
+    );
+}
 
-    return NextResponse.json({
-        success: true,
-        token,
-        state,
+export async function OPTIONS() {
+    return new Response(null, {
+        status: 204,
+        headers: {
+            "Access-Control-Allow-Origin":
+                EXTENSION_ORIGIN,
+
+            "Access-Control-Allow-Methods":
+                "GET, OPTIONS",
+
+            "Access-Control-Allow-Headers":
+                "Content-Type",
+        },
     });
 }

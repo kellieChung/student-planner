@@ -10,7 +10,8 @@
   ],
 
   "host_permissions": [
-    "https://*/*"
+    "https://*/*",
+    "http://localhost:300/*"
   ],
 
   "action": {

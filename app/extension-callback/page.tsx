@@ -1,7 +1,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
-import crypto from "crypto";
 
 export default async function ExtensionCallbackPage({
     searchParams,
@@ -30,25 +30,54 @@ export default async function ExtensionCallbackPage({
     });
 
     if (!user) {
-        return <p>❌ Could not find your Student Planner account.</p>;
+        return (
+            <p>
+                ❌ Could not find your Student Planner account.
+            </p>
+        );
     }
 
-    const token = crypto.randomUUID();
+    // Check whether this authentication attempt
+    // has already created an ExtensionSession.
+    const existingSession =
+        await prisma.extensionSession.findUnique({
+            where: {
+                state,
+            },
+        });
 
-    const extensionSession = await prisma.extensionSession.create({
-        data: {
-            userId: user.id,
-            state,
-            token,
-            expiresAt: new Date(
-                Date.now() + 30 * 24 * 60 * 60 * 1000
-            ),
-        },
-});
+    let token: string;
+
+    if (existingSession) {
+        // The callback was already processed.
+        token = existingSession.token;
+
+        console.log(
+            "🔐 Extension session already exists for this state."
+        );
+    } else {
+        // First time processing this authentication attempt.
+        token = randomBytes(32).toString("hex");
+
+        await prisma.extensionSession.create({
+            data: {
+                userId: user.id,
+                state,
+                token,
+                expiresAt: new Date(
+                    Date.now() + 30 * 24 * 60 * 60 * 1000
+                ),
+            },
+        });
+
+        console.log(
+            "🎉 Extension session created successfully."
+        );
+    }
 
     return (
         <main className="min-h-screen flex items-center justify-center">
-            <div>
+            <div className="text-center">
                 <h1>Student Planner</h1>
 
                 <p>✅ You're signed in!</p>
