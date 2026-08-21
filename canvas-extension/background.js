@@ -10,66 +10,68 @@ async function getCanvasData(url) {
     return response.json();
 }
 
-
-// ============================================================
-// EXTENSION AUTH
-// ============================================================
+console.log("🎓 Background service worker loaded!");
 
 async function startExtensionAuth() {
     console.log("🔐 Starting extension authentication...");
 
-    // Ask the server for a temporary authentication state
-    const startResponse = await fetch(
-        "http://localhost:3000/api/extension/auth/start"
-    );
+    try {
+        const response = await fetch(
+            "http://localhost:3000/api/extension/auth/start"
+        );
 
-    if (!startResponse.ok) {
-        throw new Error(
-            `Auth start failed: ${startResponse.status}`
+        const data = await response.json();
+
+        console.log(
+            "🔐 Auth start response:",
+            data
+        );
+
+        if (!response.ok) {
+            throw new Error(
+                data.error ||
+                `Server returned ${response.status}`
+            );
+        }
+
+        const state = data.state;
+
+        console.log(
+            "🔐 Got auth state:",
+            state
+        );
+
+        await chrome.storage.local.set({
+            extensionAuthState: state,
+        });
+
+        await chrome.tabs.create({
+            url:
+                `http://localhost:3000/extension-login?state=${encodeURIComponent(state)}`,
+        });
+
+        console.log(
+            "🔐 Login page opened!"
+        );
+
+        await watchAuthState(state);
+
+    } catch (error) {
+        console.error(
+            "❌ Extension auth failed:",
+            error
         );
     }
+}
 
-    const startData = await startResponse.json();
-
-    console.log(
-        "🔐 Auth start response:",
-        startData
-    );
-
-    if (!startData.success || !startData.state) {
-        throw new Error(
-            startData.error || "No auth state received"
-        );
-    }
-
-    const state = startData.state;
-
-    await chrome.storage.local.set({
-        extensionAuthState: state,
-    });
-
-    console.log(
-        "🔐 Got auth state:",
-        state
-    );
-
-    // Open the website login page
-    await chrome.tabs.create({
-        url:
-            `http://localhost:3000/extension-login?state=${encodeURIComponent(
-                state
-            )}`,
-    });
-
-    console.log("🔐 Login page opened!");
-
-    // Wait for the website to finish authentication
+async function watchAuthState(state) {
     console.log(
         "🔐 Watching auth state:",
         state
     );
 
     for (let i = 0; i < 60; i++) {
+
         try {
             const response = await fetch(
                 "http://localhost:3000/api/extension/auth/exchange",
@@ -92,6 +94,7 @@ async function startExtensionAuth() {
             );
 
             if (data.success) {
+
                 await chrome.storage.local.set({
                     extensionToken: data.token,
                 });
@@ -100,9 +103,7 @@ async function startExtensionAuth() {
                     "🎉 Extension successfully authenticated!"
                 );
 
-                return {
-                    success: true,
-                };
+                return;
             }
 
         } catch (error) {
@@ -112,23 +113,20 @@ async function startExtensionAuth() {
             );
         }
 
-        await new Promise(resolve =>
-            setTimeout(resolve, 2000)
+        await new Promise(
+            resolve => setTimeout(resolve, 2000)
         );
     }
 
-    throw new Error(
-        "Authentication timed out."
+    console.log(
+        "❌ Extension authentication timed out."
     );
 }
 
-
-// ============================================================
-// GOOGLE AUTH
-// ============================================================
-
 async function signInWithGoogle() {
-    const redirectUri = chrome.identity.getRedirectURL();
+
+    const redirectUri =
+        chrome.identity.getRedirectURL();
 
     console.log(
         "🔐 Extension redirect URI:",
@@ -143,12 +141,8 @@ async function signInWithGoogle() {
         `?client_id=${encodeURIComponent(clientId)}` +
         `&response_type=token` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&scope=${encodeURIComponent(
-            "openid email profile"
-        )}` +
-        `&prompt=${encodeURIComponent(
-            "select_account consent"
-        )}`;
+        `&scope=${encodeURIComponent("openid email profile")}` +
+        `&prompt=select_account`;
 
     const responseUrl =
         await chrome.identity.launchWebAuthFlow({
@@ -160,11 +154,13 @@ async function signInWithGoogle() {
         "🔐 Google authentication complete!"
     );
 
-    const url = new URL(responseUrl);
+    const url =
+        new URL(responseUrl);
 
-    const fragment = new URLSearchParams(
-        url.hash.substring(1)
-    );
+    const fragment =
+        new URLSearchParams(
+            url.hash.substring(1)
+        );
 
     const accessToken =
         fragment.get("access_token");
@@ -178,32 +174,18 @@ async function signInWithGoogle() {
     return accessToken;
 }
 
-
-// ============================================================
-// MESSAGE HANDLER
-// ============================================================
-
 chrome.runtime.onMessage.addListener(
     (message, sender, sendResponse) => {
 
-        // ----------------------------------------------------
-        // START EXTENSION AUTH
-        // ----------------------------------------------------
+        if (message.type === "START_EXTENSION_AUTH") {
 
-        if (
-            message.type ===
-            "START_EXTENSION_AUTH"
-        ) {
             startExtensionAuth()
-                .then((result) => {
-                    sendResponse(result);
+                .then(() => {
+                    sendResponse({
+                        success: true,
+                    });
                 })
                 .catch((error) => {
-                    console.error(
-                        "❌ Extension auth failed:",
-                        error
-                    );
-
                     sendResponse({
                         success: false,
                         error: error.message,
@@ -213,15 +195,8 @@ chrome.runtime.onMessage.addListener(
             return true;
         }
 
+        if (message.type === "SIGN_IN_GOOGLE") {
 
-        // ----------------------------------------------------
-        // GOOGLE SIGN IN
-        // ----------------------------------------------------
-
-        if (
-            message.type ===
-            "SIGN_IN_GOOGLE"
-        ) {
             signInWithGoogle()
                 .then(async (accessToken) => {
 
@@ -250,15 +225,8 @@ chrome.runtime.onMessage.addListener(
             return true;
         }
 
+        if (message.type === "GET_COURSES") {
 
-        // ----------------------------------------------------
-        // GET COURSES
-        // ----------------------------------------------------
-
-        if (
-            message.type ===
-            "GET_COURSES"
-        ) {
             getCanvasData(
                 `${message.canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
             )
@@ -266,7 +234,7 @@ chrome.runtime.onMessage.addListener(
 
                     sendResponse({
                         success: true,
-                        courses: courses,
+                        courses,
                     });
                 })
                 .catch((error) => {
@@ -285,15 +253,8 @@ chrome.runtime.onMessage.addListener(
             return true;
         }
 
+        if (message.type === "GET_ASSIGNMENTS") {
 
-        // ----------------------------------------------------
-        // GET ASSIGNMENTS
-        // ----------------------------------------------------
-
-        if (
-            message.type ===
-            "GET_ASSIGNMENTS"
-        ) {
             const courseId =
                 message.courseId;
 
@@ -304,8 +265,7 @@ chrome.runtime.onMessage.addListener(
 
                     sendResponse({
                         success: true,
-                        assignments:
-                            assignments,
+                        assignments,
                     });
                 })
                 .catch((error) => {
@@ -324,15 +284,8 @@ chrome.runtime.onMessage.addListener(
             return true;
         }
 
+        if (message.type === "GET_DISCUSSIONS") {
 
-        // ----------------------------------------------------
-        // GET DISCUSSIONS
-        // ----------------------------------------------------
-
-        if (
-            message.type ===
-            "GET_DISCUSSIONS"
-        ) {
             const courseId =
                 message.courseId;
 
@@ -343,8 +296,7 @@ chrome.runtime.onMessage.addListener(
 
                     sendResponse({
                         success: true,
-                        discussions:
-                            discussions,
+                        discussions,
                     });
                 })
                 .catch((error) => {
@@ -363,15 +315,8 @@ chrome.runtime.onMessage.addListener(
             return true;
         }
 
+        if (message.type === "GET_ANNOUNCEMENTS") {
 
-        // ----------------------------------------------------
-        // GET ANNOUNCEMENTS
-        // ----------------------------------------------------
-
-        if (
-            message.type ===
-            "GET_ANNOUNCEMENTS"
-        ) {
             const courseId =
                 message.courseId;
 
@@ -382,8 +327,7 @@ chrome.runtime.onMessage.addListener(
 
                     sendResponse({
                         success: true,
-                        announcements:
-                            announcements,
+                        announcements,
                     });
                 })
                 .catch((error) => {
@@ -402,15 +346,7 @@ chrome.runtime.onMessage.addListener(
             return true;
         }
 
-
-        // ----------------------------------------------------
-        // SYNC CANVAS
-        // ----------------------------------------------------
-
-        if (
-            message.type ===
-            "SYNC_CANVAS"
-        ) {
+        if (message.type === "SYNC_CANVAS") {
 
             (async () => {
 
@@ -434,10 +370,7 @@ chrome.runtime.onMessage.addListener(
 
                     const courseData = [];
 
-                    for (
-                        const course
-                        of courses
-                    ) {
+                    for (const course of courses) {
 
                         console.log(
                             `🔍 Syncing: ${course.name}`
@@ -478,28 +411,55 @@ chrome.runtime.onMessage.addListener(
                         "🚀 Sending Canvas data to Student Planner..."
                     );
 
+                    const authResult =
+                        await chrome.storage.local.get(
+                            "extensionToken"
+                        );
+
+                    if (!authResult.extensionToken) {
+                        throw new Error(
+                            "Extension is not authenticated."
+                        );
+                    }
+
+                    console.log(
+                        "📤 Sending canvasOrigin:",
+                        canvasOrigin
+                    );
+
+                    console.log(
+                        "📤 Sending course count:",
+                        courseData.length
+                    );
+
                     const backendResponse =
                         await fetch(
                             "http://localhost:3000/api/canvas/sync",
                             {
                                 method: "POST",
-
                                 headers: {
                                     "Content-Type":
                                         "application/json",
+                                    "Authorization":
+                                        `Bearer ${authResult.extensionToken}`,
                                 },
-
                                 body: JSON.stringify({
+                                    canvasOrigin,
                                     courses:
                                         courseData,
                                 }),
                             }
                         );
 
-                    if (
-                        !backendResponse.ok
-                    ) {
+                    if (!backendResponse.ok) {
+
+                        const errorData =
+                            await backendResponse
+                                .json()
+                                .catch(() => null);
+
                         throw new Error(
+                            errorData?.error ||
                             `Student Planner returned ${backendResponse.status}`
                         );
                     }
@@ -530,8 +490,7 @@ chrome.runtime.onMessage.addListener(
 
                     sendResponse({
                         success: false,
-                        error:
-                            error.message,
+                        error: error.message,
                     });
                 }
 

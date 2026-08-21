@@ -16,6 +16,10 @@ model User {
   accounts      Account[]
   sessions      Session[]
   extensionSessions ExtensionSession[]
+  canvasCourses     CanvasCourse[]
+  assignments       Assignment[]
+  discussions       Discussion[]
+  announcements     Announcement[]
 }
 
 model Account {
@@ -54,5 +58,85 @@ model ExtensionSession {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
+}
+
+model CanvasCourse {
+  id              String   @id @default(cuid())
+  canvasId        String
+  canvasOrigin    String
+  name            String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  assignments     Assignment[]
+  discussions     Discussion[]
+  announcements   Announcement[]
+
+  @@unique([userId, canvasOrigin, canvasId])
+  @@index([userId])
+}
+
+model Assignment {
+  id              String   @id @default(cuid())
+  canvasId        String
+  name            String
+  description     String?
+  dueAt           DateTime?
+  htmlUrl         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  courseId        String
+  course          CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, canvasId])
+  @@index([userId])
+}
+
+model Discussion {
+  id          String        @id @default(cuid())
+  canvasId    String
+  title       String
+  message     String?
+  htmlUrl     String?
+  postedAt    DateTime?
+  dueAt       DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  courseId    String
+  course      CanvasCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, canvasId])
+  @@index([userId])
+}
+
+model Announcement {
+  id              String   @id @default(cuid())
+  canvasId        String
+  title           String
+  message         String?
+  htmlUrl         String?
+  postedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  courseId        String
+  course          CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, canvasId])
   @@index([userId])
 }
