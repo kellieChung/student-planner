@@ -5,6 +5,7 @@ import SignInButton from "@/components/SignInButton";
 import {auth} from "@/auth"
 import UserMenu from "@/components/UserMenu";
 import {redirect} from "next/navigation";
+import AnalyzeAnnouncementsButton from "@/components/AnalyzeAnnouncementsButton";
 
 export default async function TestPage() {
     const session = await auth();
@@ -38,6 +39,7 @@ export default async function TestPage() {
                 <h1 className="mb-2 text-4xl font-bold tracking-tight">ATLAS Planner</h1>
                 <p className="mb-8 text-[var(--muted)]">Weekly calendar overview</p>
 
+                <AnalyzeAnnouncementsButton />
                 <WeeklyPlannerView assignments={assignments} weekStartDate={monday} />
             </div>
         </main>

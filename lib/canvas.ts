@@ -1,4 +1,5 @@
 import {Announcement} from "@/types/announcement";
+import {prisma} from "@/lib/prisma";
 
 const CANVAS_URL = "https://davidsononline.instructure.com";
 
@@ -67,52 +68,46 @@ export function transformAssignment(
 }
 
 export async function getAllAssignments() {
-    const courses = await getCourses();
-    const allAssignments = [];
+    const courses = await prisma.canvasCourse.findMany({
+        include: {
+            assignments: true,
+        },
+    });
 
-    for (const course of courses) {
-        if (!course.id || !course.name) {
-            console.log("Skipping invalid course:", course);
-            continue;
-        }
+    const allAssignments = courses.flatMap((course) =>
+        course.assignments.map((assignment) => {
+            let due = "";
 
-        const assignments = await getAssignments(course.id);
+            if (assignment.dueAt) {
+                const localDueDate = new Date(assignment.dueAt);
 
-        if (!Array.isArray(assignments)) {
-            console.log("Skipping invalid assignments response:", assignments);
-            continue;
-        }
+                const year = localDueDate.getFullYear();
+                const month = localDueDate.getMonth();
+                const day = localDueDate.getDate();
 
-        const transformed = assignments.map((assignment:any) =>
-            transformAssignment(
-                assignment,
-                course.name
-            )
-        );
+                due = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            }
 
-        allAssignments.push(...transformed);
-    }
+            return {
+                id: assignment.id,
+                name: assignment.name,
+                due,
+                course: course.name,
+            };
+        })
+    );
+
     return allAssignments.sort((a, b) => {
-        const timeA = a.due ? new Date(a.due).getTime() : Infinity;
-        const timeB = b.due ? new Date(b.due).getTime() : Infinity;
+        const timeA = a.due
+            ? new Date(a.due).getTime()
+            : Infinity;
+
+        const timeB = b.due
+            ? new Date(b.due).getTime()
+            : Infinity;
 
         return timeA - timeB;
     });
-}
-
-export async function getAnnouncements(courseId: number) {
-        const response = await fetch(
-            `${CANVAS_URL}/api/v1/announcements?context_codes[]=course_${courseId}`,
-            {
-                headers,
-            }
-        );
-        
-        const data = await response.json();
-
-        console.log("Announcement response:", courseId, data);
-
-        return data;
 }
 
 export function transformAnnouncement(
@@ -129,34 +124,23 @@ export function transformAnnouncement(
 }
 
 export async function getAllAnnouncements() {
-    const courses = await getCourses();
-    const allAnnouncements: Announcement[] = [];
+    const courses = await prisma.canvasCourse.findMany({
+        include: {
+            announcements: true,
+        },
+    });
 
-    for (const course of courses) {
-        if (!course.id || !course.name) {
-            console.log("Skipping invalid course:", course);
-            continue;
-        }
+    const allAnnouncements: Announcement[] = courses.flatMap(
+        (course) =>
+            course.announcements.map((announcement) => ({
+                id: announcement.id,
+                title: announcement.title,
+                message: announcement.message ?? "",
+                course: course.name,
+                postedAt:
+                    announcement.postedAt?.toISOString() ?? "",
+            }))
+    );
 
-        const announcements = await getAnnouncements(course.id);
-
-        if(!Array.isArray(announcements)) {
-            console.log(
-                "Skipping invalid announcements response:",
-                announcements
-            );
-            continue;
-        }
-
-        const transformed = announcements.map((announcement:any) =>
-            transformAnnouncement(
-                announcement,
-                course.name
-            )
-        );
-
-        allAnnouncements.push(...transformed);
-    }
-
-    return allAnnouncements
+    return allAnnouncements;
 }

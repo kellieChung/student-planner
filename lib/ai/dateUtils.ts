@@ -128,6 +128,56 @@ export function resolveDueDate(
     }
 
     // ----------------------------------------
+    // Weekday + numeric date
+    //
+    // Wednesday, 9/2
+    // Wed, 9/2
+    // Wednesday, 9/2/2026
+    // ----------------------------------------
+
+    const weekdayNumericDateMatch = reference.match(
+        /^(sunday|sun|monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thurs|friday|fri|saturday|sat),?\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/
+    );
+
+    if (weekdayNumericDateMatch) {
+        const month = Number(weekdayNumericDateMatch[2]) - 1;
+        const day = Number(weekdayNumericDateMatch[3]);
+
+        const year = weekdayNumericDateMatch[4]
+            ? Number(weekdayNumericDateMatch[4])
+            : baseDate.getFullYear();
+
+        const result = new Date(year, month, day);
+
+        return formatDate(result);
+    }
+
+    // ----------------------------------------
+    // Weekday + month-name date
+    //
+    // Wednesday, September 2
+    // Wed, September 2
+    // Wednesday, September 2, 2026
+    // ----------------------------------------
+
+    const weekdayMonthNameMatch = reference.match(
+        /^(sunday|sun|monday|mon|tuesday|tue|tues|wednesday|wed|thursday|thu|thurs|friday|fri|saturday|sat),?\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:,\s*(\d{4}))?$/
+    );
+
+    if (weekdayMonthNameMatch) {
+        const month = MONTHS[weekdayMonthNameMatch[2]];
+        const day = Number(weekdayMonthNameMatch[3]);
+
+        const year = weekdayMonthNameMatch[4]
+            ? Number(weekdayMonthNameMatch[4])
+            : baseDate.getFullYear();
+
+        const result = new Date(year, month, day);
+
+        return formatDate(result);
+    }
+
+    // ----------------------------------------
     // Full date with month name
     //
     // September 18
