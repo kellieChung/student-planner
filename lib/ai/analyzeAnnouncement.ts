@@ -1,240 +1,190 @@
 import { Announcement } from "@/types/announcement";
 import { ProposedTask } from "@/types/proposedTask";
-import { resolveDueDate } from "@/lib/ai/dateUtils";
 
 const OLLAMA_URL = "http://localhost:11434/api/chat";
 const MODEL = "qwen2.5:3b-instruct";
 
-
 type AIExtractedTask = {
     name: string;
-    dueReference: string | null;
+    description: string;
+    evidence: string;
+    dueText: string | null;
     confidence: "high" | "medium" | "low";
 };
+
 
 export async function analyzeAnnouncement(
     announcement: Announcement
 ): Promise<ProposedTask[]> {
     const prompt = `
-You extract student tasks from teacher announcements.
+You analyze a teacher announcement and identify student work.
 
-Your job is to identify every piece of work that the student is actually
-expected to do based on this announcement.
+Your ONLY job is to determine what the student actually needs to do.
 
-Return ONLY JSON. No markdown. No explanation.
+Do NOT compare against Canvas assignments.
+Do NOT try to determine whether something is a duplicate.
+Do NOT calculate dates.
 
-The JSON must have exactly this structure:
+Return ONLY valid JSON.
+
+Use exactly this format:
 
 {
   "tasks": [
     {
-      "name": "task name",
-      "dueReference": "date phrase or null",
+      "name": "short actionable task name",
+      "description": "what the student needs to do",
+      "evidence": "short quote or paraphrase from the announcement",
+      "dueText": "original date wording or null",
       "confidence": "high"
     }
   ]
 }
 
-For EVERY task, you MUST include all three fields:
-- name
-- dueReference
-- confidence
+confidence means how strongly the announcement indicates that the
+student should actually do the work.
 
-confidence MUST be exactly one of:
-- "high" — the teacher explicitly assigns the work or clearly tells students to do it
-- "medium" — the work is strongly implied and students would reasonably be expected to do it
-- "low" — the work is optional, uncertain, or only weakly implied
+HIGH:
+The teacher explicitly assigns the work.
 
-Never omit confidence.
+Example:
+"Complete problems 1-10."
 
-IMPORTANT TASK RULES:
+MEDIUM:
+The work is strongly implied or preparation is clearly expected.
 
-1. ONLY create a task when the student actually has something to do.
+Example:
+"Come prepared to discuss chapters 3-5."
+
+LOW:
+The work is optional or only weakly suggested.
+
+Example:
+"You might want to review chapters 1-3."
+
+IMPORTANT RULES:
+
+1. Only create a task when the student actually has something to do.
 
 Do NOT create tasks for:
+
 - events happening in class
-- quizzes or tests merely being announced
-- room changes
+- tests or quizzes merely being announced
 - schedule changes
-- information or reminders
+- room changes
+- information
+- reminders
 - things the teacher says they will provide
-- things the teacher says are happening
-- casual statements or encouragement
+- things that are simply happening
+- casual encouragement
 
-For example:
+Example:
 
-"There is no homework tonight. Enjoy your evening!"
-→ tasks should be []
+"There is no homework tonight."
 
-"We will be moving to room 204 on Wednesday."
-→ tasks should be []
+→ tasks: []
 
-"I'll provide the readings in class."
-→ tasks should be []
+Example:
+
+"We will discuss Beowulf on Wednesday."
+
+→ tasks: []
+
+unless students are also told to read, prepare, complete something, etc.
 
 2. Do NOT invent work.
 
-Only extract work that is explicitly assigned or strongly implied
-by the announcement.
+Only extract work that is explicitly assigned or strongly implied.
 
-Do NOT assume that students need to:
-- study for a test
-- prepare for a presentation
-- read something
-- review notes
-unless the announcement actually indicates that they should.
+Do not assume students should:
 
-3. Optional work should generally have LOW confidence.
+- study
+- review
+- read
+- prepare
+- practice
 
-For example:
+unless the announcement actually indicates this.
 
-"If you're having trouble, try the extra problems."
-→ create the task with confidence "low"
+3. Keep task names concise and actionable.
 
-"Review the slides if you'd like."
-→ create the task with confidence "low"
-
-4. Work that is explicitly assigned should have HIGH confidence.
-
-For example:
-
-"Complete problems 1-10 by Friday."
-→ confidence "high"
-
-"Please read chapters 2-3 before Wednesday."
-→ confidence "high"
-
-5. Strongly implied preparation can have MEDIUM confidence.
-
-For example:
-
-"We will discuss chapters 3-5 on Wednesday. Come prepared to discuss them."
-→ create a task for preparing/reading the chapters
-→ confidence "medium"
-
-6. Only extract work belonging to THIS course.
-
-Ignore references to assignments belonging to other courses,
-teachers, or students.
-
-For example:
-
-"Read chapters 10-12 by Friday. The history reading is also due Friday,
-but that's for Mr. Chen's class."
-
-→ Only extract the English assignment.
-→ Do NOT create a task for the history reading.
-
-7. Make task names actionable and concise.
-
-Prefer:
+Good:
 "Read chapters 2-3"
 
-instead of:
-"Be familiar with chapters 2-3"
+Good:
+"Complete response questions"
 
-Prefer:
-"Complete problems 1-10"
+Bad:
+"Homework for chapters 2-3"
 
-instead of:
-"Homework"
+4. If multiple distinct pieces of work are assigned, create separate tasks.
 
-Prefer:
-"Read lab procedure"
+Example:
 
-instead of:
-"Understand the procedure"
+"Read chapters 2-3 and complete the response questions."
 
-8. If multiple distinct pieces of work are assigned, create separate tasks.
+→
 
-For example:
+Task 1:
+"Read chapters 2-3"
 
-"Read pages 20-25 and complete questions 1-5 by Friday."
+Task 2:
+"Complete response questions"
 
-should produce TWO tasks:
-
-- "Read pages 20-25"
-- "Complete questions 1-5"
-
-Both should have the same dueReference.
-
-9. Do not create a task simply because something is mentioned.
-
-The announcement must indicate that the student needs to perform the action.
-
-10. If there are no actual student tasks, return:
-
-{
-  "tasks": []
-}
-
-DATE RULES:
-
-- "dueReference" must contain the exact date wording from the announcement.
-- Do NOT calculate a date.
-- Do NOT convert dates to YYYY-MM-DD.
-- Preserve weekday and date wording when possible.
+5. Preserve date wording exactly as it appears.
 
 Examples:
 
 "Wednesday" → "Wednesday"
-"Wed" → "Wed"
+
 "tomorrow" → "tomorrow"
+
 "next Monday" → "next Monday"
-"9/18" → "9/18"
+
 "September 18" → "September 18"
-"Wednesday, September 2" → "Wednesday, September 2"
 
-If a task has no identifiable due date, use:
+"by Friday" → "Friday"
 
-"dueReference": null
+Do NOT convert dates to YYYY-MM-DD.
 
-Do NOT use null unless there is no choice. You will very rarely need to use null.
+Do NOT attempt to calculate dates.
 
-11. Each task must have the date that applies specifically to THAT task.
+If there is no identifiable due date:
 
-Do not leave dueReference null when a due date for that task is explicitly
-given anywhere in the announcement.
+"dueText": null
 
-For example:
+6. Tables may appear in the announcement.
 
-"Read the lab instructions before Wednesday. The lab itself is Thursday,
-and your lab report is due Monday, August 17."
+Tables are important.
 
-must produce:
+They may contain:
 
-{
-  "tasks": [
-    {
-      "name": "Read the lab instructions",
-      "dueReference": "Wednesday",
-      "confidence": "high"
-    },
-    {
-      "name": "Complete the lab",
-      "dueReference": "Thursday",
-      "confidence": "medium"
-    },
-    {
-      "name": "Submit the lab report",
-      "dueReference": "Monday, August 17",
-      "confidence": "high"
-    }
-  ]
-}
+- assignments
+- readings
+- instructions
+- due dates
+- preparation requirements
+- submission instructions
 
-Never assign one task's date to another task.
-Never discard an explicit date that clearly applies to a task.
+Use information from table rows and column headers together.
 
-Here is the announcement:
+Do NOT turn every table cell into a task.
 
-COURSE:
+Only create a task when the table indicates that the student
+actually needs to perform an action.
+
+7. The evidence field should make it easy for a student to understand
+why the AI created the task.
+
+Keep it short.
+
+ANNOUNCEMENT COURSE:
 ${announcement.course}
 
-TITLE:
+ANNOUNCEMENT TITLE:
 ${announcement.title}
 
-MESSAGE:
+ANNOUNCEMENT MESSAGE:
 ${announcement.message}
 `;
 
@@ -255,8 +205,6 @@ ${announcement.message}
         }),
     });
 
-    console.log(response)
-
     if (!response.ok) {
         throw new Error(
             `Ollama request failed: ${response.status} ${response.statusText}`
@@ -265,36 +213,42 @@ ${announcement.message}
 
     const data = await response.json();
 
-    console.log("Raw Ollama response:", data);
+    const content = data.message?.content;
 
-    const content = data.message.content;
+    if (!content) {
+        throw new Error("Ollama returned no content.");
+    }
 
-    const parsed: {
+    let parsed: {
         tasks: AIExtractedTask[];
-    } = JSON.parse(content);
+    };
 
-    console.log("Parsed AI response:", parsed);
+    try {
+        parsed = JSON.parse(content);
+    } catch {
+        console.error("❌ Invalid Ollama JSON:", content);
+        throw new Error("Ollama returned invalid JSON.");
+    }
 
-    console.log(
-        "AI date references:",
-        parsed.tasks.map((task) => ({
-            name: task.name,
-            dueReference: task.dueReference,
-        }))
-    );
+    if (!Array.isArray(parsed.tasks)) {
+        throw new Error("Ollama response did not contain a tasks array.");
+    }
 
-    const proposedTasks: ProposedTask[] = parsed.tasks.map(
-        (task: AIExtractedTask) => ({
-            name: task.name,
-            course: announcement.course,
-            due: resolveDueDate(
-                task.dueReference,
-                new Date(announcement.postedAt)
-            ),
-            sourceAnnouncementId: announcement.id,
-            confidence: task.confidence,
-        })
-    );
+    return parsed.tasks.map((task) => ({
+        name: task.name,
+        course: announcement.course,
+        due: null,
+        dueText: task.dueText,
+        description: task.description,
+        evidence: task.evidence,
+        sourceAnnouncementId: announcement.id,
+        confidence: task.confidence,
 
-    return proposedTasks;
+        // Duplicate checking happens separately.
+        canvasMatch: {
+            status: "none",
+            assignmentId: null,
+            reason: "",
+        },
+    }));
 }

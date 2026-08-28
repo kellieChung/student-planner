@@ -6,6 +6,8 @@ import {auth} from "@/auth"
 import UserMenu from "@/components/UserMenu";
 import {redirect} from "next/navigation";
 import AnalyzeAnnouncementsButton from "@/components/AnalyzeAnnouncementsButton";
+import AIReviewPanel from "@/components/AIReviewPanel";
+
 
 export default async function TestPage() {
     const session = await auth();
@@ -41,6 +43,7 @@ export default async function TestPage() {
 
                 <AnalyzeAnnouncementsButton />
                 <WeeklyPlannerView assignments={assignments} weekStartDate={monday} />
+                <AIReviewPanel />
             </div>
         </main>
     );
