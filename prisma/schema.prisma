@@ -20,6 +20,7 @@ model User {
   assignments       Assignment[]
   discussions       Discussion[]
   announcements     Announcement[]
+  musicPlaylists MusicPlaylist[]
 }
 
 model Account {
@@ -139,4 +140,32 @@ model Announcement {
 
   @@unique([courseId, canvasId])
   @@index([userId])
+}
+
+model MusicPlaylist {
+  id        String   @id @default(cuid())
+  name      String
+  sourceUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tracks MusicTrack[]
+
+  @@index([userId])
+}
+
+model MusicTrack {
+  id         String   @id @default(cuid())
+  title      String
+  sourceUrl  String
+  thumbnail  String?
+  position   Int      @default(0)
+
+  playlistId String
+  playlist   MusicPlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+
+  @@index([playlistId])
 }

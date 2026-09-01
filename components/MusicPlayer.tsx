@@ -5,11 +5,20 @@ import { useEffect, useRef, useState } from "react";
 type Track = {
     id: string;
     title: string;
-    videoId: string;
+    sourceUrl: string;
+    thumbnail?: string | null;
+    position: number;
+};
+
+type Playlist = {
+    id: string;
+    name: string;
+    sourceUrl?: string | null;
+    tracks: Track[];
 };
 
 type StoredState = {
-    tracks: Track[];
+    playlistId: string | null;
     currentIndex: number;
     volume: number;
 };
@@ -62,8 +71,6 @@ declare global {
 
 const STORAGE_KEY = "tavern_radio";
 
-const DEFAULT_TRACKS: Track[] = [];
-
 const DEFAULT_VOLUME = 70;
 
 function getYouTubeVideoId(input: string): string | null {
@@ -102,107 +109,105 @@ function formatTime(seconds: number): string {
 export default function MusicPlayer() {
     const playerRef = useRef<YouTubePlayer | null>(null);
     const playerContainerRef = useRef<HTMLDivElement | null>(null);
-    const apiReadyRef = useRef(false);
 
-    const [tracks, setTracks] =
-        useState<Track[]>(DEFAULT_TRACKS);
+    const [playlists, setPlaylists] = useState<Playlist[]>([]);
+    const [selectedPlaylistId, setSelectedPlaylistId] =
+        useState<string | null>(null);
 
-    const [currentIndex, setCurrentIndex] =
-        useState(0);
+    const [tracks, setTracks] = useState<Track[]>([]);
+    const [currentIndex, setCurrentIndex] = useState(0);
 
-    const [volume, setVolume] =
-        useState(DEFAULT_VOLUME);
+    const [volume, setVolume] = useState(DEFAULT_VOLUME);
 
-    const [isPlaying, setIsPlaying] =
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isReady, setIsReady] = useState(false);
+
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+
+    const [showAddTrack, setShowAddTrack] = useState(false);
+    const [showPlaylists, setShowPlaylists] = useState(false);
+    const [showCreatePlaylist, setShowCreatePlaylist] =
         useState(false);
 
-    const [isReady, setIsReady] =
-        useState(false);
+    const [titleInput, setTitleInput] = useState("");
+    const [urlInput, setUrlInput] = useState("");
 
-    const [currentTime, setCurrentTime] =
-        useState(0);
-
-    const [duration, setDuration] =
-        useState(0);
-
-    const [showAddTrack, setShowAddTrack] =
-        useState(false);
-
-    const [titleInput, setTitleInput] =
+    const [playlistNameInput, setPlaylistNameInput] =
         useState("");
 
-    const [urlInput, setUrlInput] =
-        useState("");
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
 
-    const [hydrated, setHydrated] =
-        useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const currentTrack = tracks[currentIndex];
 
     /*
      * ---------------------------------------------------------
-     * LOAD SAVED TAVERN RADIO STATE
+     * LOAD LOCAL UI STATE
      * ---------------------------------------------------------
      */
 
     useEffect(() => {
-        const stored =
-            localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(STORAGE_KEY);
 
-        if (stored) {
-            try {
-                const parsed =
-                    JSON.parse(stored) as StoredState;
-
-                if (Array.isArray(parsed.tracks)) {
-                    setTracks(parsed.tracks);
-
-                    if (
-                        typeof parsed.currentIndex ===
-                        "number"
-                    ) {
-                        setCurrentIndex(
-                            Math.min(
-                                Math.max(
-                                    parsed.currentIndex,
-                                    0
-                                ),
-                                Math.max(
-                                    parsed.tracks.length - 1,
-                                    0
-                                )
-                            )
-                        );
-                    }
-
-                    if (
-                        typeof parsed.volume ===
-                            "number" &&
-                        parsed.volume >= 0 &&
-                        parsed.volume <= 100
-                    ) {
-                        setVolume(parsed.volume);
-                    }
-                }
-            } catch {
-                localStorage.removeItem(STORAGE_KEY);
-            }
+        if (!stored) {
+            return;
         }
 
-        setHydrated(true);
+        try {
+            const parsed = JSON.parse(
+                stored
+            ) as StoredState;
+
+            if (
+                typeof parsed.playlistId === "string" ||
+                parsed.playlistId === null
+            ) {
+                setSelectedPlaylistId(
+                    parsed.playlistId
+                );
+            }
+
+            if (
+                typeof parsed.currentIndex ===
+                "number"
+            ) {
+                setCurrentIndex(
+                    Math.max(
+                        parsed.currentIndex,
+                        0
+                    )
+                );
+            }
+
+            if (
+                typeof parsed.volume === "number" &&
+                parsed.volume >= 0 &&
+                parsed.volume <= 100
+            ) {
+                setVolume(parsed.volume);
+            }
+        } catch {
+            localStorage.removeItem(STORAGE_KEY);
+        }
     }, []);
 
     /*
      * ---------------------------------------------------------
-     * SAVE STATE
+     * SAVE LOCAL UI STATE
+     * ---------------------------------------------------------
+     *
+     * IMPORTANT:
+     * Tracks/playlists are NOT stored here anymore.
+     * PostgreSQL is the source of truth for those.
      * ---------------------------------------------------------
      */
 
     useEffect(() => {
-        if (!hydrated) return;
-
         const savedState: StoredState = {
-            tracks,
+            playlistId: selectedPlaylistId,
             currentIndex,
             volume,
         };
@@ -212,11 +217,326 @@ export default function MusicPlayer() {
             JSON.stringify(savedState)
         );
     }, [
-        tracks,
+        selectedPlaylistId,
         currentIndex,
         volume,
-        hydrated,
     ]);
+
+    /*
+     * ---------------------------------------------------------
+     * LOAD PLAYLISTS FROM DATABASE
+     * ---------------------------------------------------------
+     */
+
+    useEffect(() => {
+        async function loadPlaylists() {
+            try {
+                setIsLoading(true);
+                setError(null);
+
+                const response = await fetch(
+                    "/api/music/playlists"
+                );
+
+                if (!response.ok) {
+                    throw new Error(
+                        `Failed to load playlists (${response.status})`
+                    );
+                }
+
+                const data =
+                    (await response.json()) as Playlist[];
+
+                let loadedPlaylists = data;
+
+                /*
+                 * If the user has no playlists yet,
+                 * create the default Tavern Radio playlist.
+                 */
+
+                if (loadedPlaylists.length === 0) {
+                    const createResponse =
+                        await fetch(
+                            "/api/music/playlists",
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type":
+                                        "application/json",
+                                },
+                                body: JSON.stringify({
+                                    name: "Tavern Radio",
+                                }),
+                            }
+                        );
+
+                    if (!createResponse.ok) {
+                        throw new Error(
+                            "Failed to create Tavern Radio playlist."
+                        );
+                    }
+
+                    const newPlaylist =
+                        (await createResponse.json()) as Playlist;
+
+                    loadedPlaylists = [
+                        newPlaylist,
+                    ];
+                }
+
+                setPlaylists(loadedPlaylists);
+
+                /*
+                 * Restore previous playlist if it still exists.
+                 * Otherwise use the first playlist.
+                 */
+
+                const savedPlaylist =
+                    loadedPlaylists.find(
+                        (playlist) =>
+                            playlist.id ===
+                            selectedPlaylistId
+                    );
+
+                const playlistToUse =
+                    savedPlaylist ??
+                    loadedPlaylists[0];
+
+                setSelectedPlaylistId(
+                    playlistToUse.id
+                );
+
+                setTracks(
+                    playlistToUse.tracks ?? []
+                );
+
+                /*
+                 * Make sure the saved track index
+                 * is still valid.
+                 */
+
+                setCurrentIndex((index) =>
+                    Math.min(
+                        index,
+                        Math.max(
+                            playlistToUse.tracks
+                                .length - 1,
+                            0
+                        )
+                    )
+                );
+            } catch (err) {
+                console.error(
+                    "Failed to load music playlists:",
+                    err
+                );
+
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to load playlists."
+                );
+            } finally {
+                setIsLoading(false);
+            }
+        }
+
+        loadPlaylists();
+
+        // We intentionally only want this to run once.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /*
+     * ---------------------------------------------------------
+     * SELECT PLAYLIST
+     * ---------------------------------------------------------
+     */
+
+    const selectPlaylist = (
+        playlist: Playlist
+    ) => {
+        setSelectedPlaylistId(
+            playlist.id
+        );
+
+        setTracks(
+            playlist.tracks ?? []
+        );
+
+        setCurrentIndex(0);
+        setCurrentTime(0);
+        setDuration(0);
+        setIsPlaying(false);
+        setIsReady(false);
+
+        setShowPlaylists(false);
+    };
+
+    /*
+     * ---------------------------------------------------------
+     * CREATE PLAYLIST
+     * ---------------------------------------------------------
+     */
+
+    const createPlaylist = async () => {
+        const name =
+            playlistNameInput.trim();
+
+        if (!name) {
+            return;
+        }
+
+        try {
+            setIsSaving(true);
+            setError(null);
+
+            const response =
+                await fetch(
+                    "/api/music/playlists",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            name,
+                        }),
+                    }
+                );
+
+            if (!response.ok) {
+                const data =
+                    await response
+                        .json()
+                        .catch(() => null);
+
+                throw new Error(
+                    data?.error ||
+                        "Failed to create playlist."
+                );
+            }
+
+            const playlist =
+                (await response.json()) as Playlist;
+
+            setPlaylists((current) => [
+                ...current,
+                playlist,
+            ]);
+
+            selectPlaylist(playlist);
+
+            setPlaylistNameInput("");
+            setShowCreatePlaylist(false);
+        } catch (err) {
+            console.error(
+                "Failed to create playlist:",
+                err
+            );
+
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to create playlist."
+            );
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    /*
+     * ---------------------------------------------------------
+     * DELETE PLAYLIST
+     * ---------------------------------------------------------
+     */
+
+    const deletePlaylist = async (
+        playlistId: string
+    ) => {
+        /*
+         * Don't allow deleting the last playlist.
+         * The app should always have somewhere to put music.
+         */
+
+        if (playlists.length <= 1) {
+            return;
+        }
+
+        try {
+            setIsSaving(true);
+            setError(null);
+
+            const response =
+                await fetch(
+                    `/api/music/${playlistId}`,
+                    {
+                        method: "DELETE",
+                    }
+                );
+
+            if (!response.ok) {
+                const data =
+                    await response
+                        .json()
+                        .catch(() => null);
+
+                throw new Error(
+                    data?.error ||
+                        "Failed to delete playlist."
+                );
+            }
+
+            const remaining =
+                playlists.filter(
+                    (playlist) =>
+                        playlist.id !==
+                        playlistId
+                );
+
+            setPlaylists(remaining);
+
+            /*
+             * If we deleted the active playlist,
+             * switch to another one.
+             */
+
+            if (
+                selectedPlaylistId ===
+                playlistId
+            ) {
+                const nextPlaylist =
+                    remaining[0];
+
+                setSelectedPlaylistId(
+                    nextPlaylist.id
+                );
+
+                setTracks(
+                    nextPlaylist.tracks ?? []
+                );
+
+                setCurrentIndex(0);
+                setCurrentTime(0);
+                setDuration(0);
+                setIsPlaying(false);
+            }
+        } catch (err) {
+            console.error(
+                "Failed to delete playlist:",
+                err
+            );
+
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to delete playlist."
+            );
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     /*
      * ---------------------------------------------------------
@@ -226,7 +546,6 @@ export default function MusicPlayer() {
 
     useEffect(() => {
         if (window.YT?.Player) {
-            apiReadyRef.current = true;
             return;
         }
 
@@ -238,22 +557,25 @@ export default function MusicPlayer() {
         const previousCallback =
             window.onYouTubeIframeAPIReady;
 
-        window.onYouTubeIframeAPIReady = () => {
-            apiReadyRef.current = true;
-
-            previousCallback?.();
-        };
+        window.onYouTubeIframeAPIReady =
+            () => {
+                previousCallback?.();
+            };
 
         if (!existingScript) {
             const script =
-                document.createElement("script");
+                document.createElement(
+                    "script"
+                );
 
             script.src =
                 "https://www.youtube.com/iframe_api";
 
             script.async = true;
 
-            document.head.appendChild(script);
+            document.head.appendChild(
+                script
+            );
         }
 
         return () => {
@@ -269,89 +591,135 @@ export default function MusicPlayer() {
      */
 
     useEffect(() => {
-        if (!hydrated) return;
-        if (!currentTrack?.videoId) return;
-        if (!playerContainerRef.current) return;
+        if (isLoading) return;
+        if (!currentTrack?.sourceUrl) return;
+        if (!playerContainerRef.current)
+            return;
+
+        const videoId =
+            getYouTubeVideoId(
+                currentTrack.sourceUrl
+            );
+
+        if (!videoId) {
+            return;
+        }
 
         let cancelled = false;
 
         const createPlayer = () => {
             if (cancelled) return;
             if (!window.YT?.Player) return;
-            if (!playerContainerRef.current) return;
+            if (!playerContainerRef.current)
+                return;
 
             playerRef.current?.destroy();
 
-            playerRef.current = new window.YT.Player(
-                playerContainerRef.current,
-                {
-                    width: "200",
-                    height: "200",
-                    videoId: currentTrack.videoId,
-                    playerVars: {
-                        playsinline: 1,
-                        controls: 0,
-                        rel: 0,
-                    },
-                    events: {
-                        onReady: (event) => {
-                            if (cancelled) return;
+            playerRef.current =
+                new window.YT.Player(
+                    playerContainerRef.current,
+                    {
+                        width: "200",
+                        height: "200",
+                        videoId,
 
-                            event.target.setVolume(volume);
-
-                            setIsReady(true);
-                            setDuration(
-                                event.target.getDuration()
-                            );
+                        playerVars: {
+                            playsinline: 1,
+                            controls: 0,
+                            rel: 0,
                         },
 
-                        onStateChange: (event) => {
-                            if (cancelled) return;
+                        events: {
+                            onReady: (
+                                event
+                            ) => {
+                                if (
+                                    cancelled
+                                ) {
+                                    return;
+                                }
 
-                            const playing =
-                                window.YT?.PlayerState
-                                    .PLAYING;
-
-                            const paused =
-                                window.YT?.PlayerState
-                                    .PAUSED;
-
-                            const ended =
-                                window.YT?.PlayerState
-                                    .ENDED;
-
-                            if (
-                                event.data ===
-                                playing
-                            ) {
-                                setIsPlaying(true);
-                            }
-
-                            if (
-                                event.data ===
-                                paused
-                            ) {
-                                setIsPlaying(false);
-                            }
-
-                            if (
-                                event.data ===
-                                ended
-                            ) {
-                                setIsPlaying(false);
-
-                                setCurrentIndex(
-                                    (index) =>
-                                        tracks.length === 0
-                                            ? 0
-                                            : (index + 1) %
-                                              tracks.length
+                                event.target.setVolume(
+                                    volume
                                 );
-                            }
+
+                                setIsReady(
+                                    true
+                                );
+
+                                setDuration(
+                                    event.target.getDuration()
+                                );
+                            },
+
+                            onStateChange: (
+                                event
+                            ) => {
+                                if (
+                                    cancelled
+                                ) {
+                                    return;
+                                }
+
+                                const playing =
+                                    window.YT
+                                        ?.PlayerState
+                                        .PLAYING;
+
+                                const paused =
+                                    window.YT
+                                        ?.PlayerState
+                                        .PAUSED;
+
+                                const ended =
+                                    window.YT
+                                        ?.PlayerState
+                                        .ENDED;
+
+                                if (
+                                    event.data ===
+                                    playing
+                                ) {
+                                    setIsPlaying(
+                                        true
+                                    );
+                                }
+
+                                if (
+                                    event.data ===
+                                    paused
+                                ) {
+                                    setIsPlaying(
+                                        false
+                                    );
+                                }
+
+                                if (
+                                    event.data ===
+                                    ended
+                                ) {
+                                    setIsPlaying(
+                                        false
+                                    );
+
+                                    setCurrentIndex(
+                                        (
+                                            index
+                                        ) =>
+                                            tracks.length ===
+                                            0
+                                                ? 0
+                                                : (
+                                                      index +
+                                                      1
+                                                  ) %
+                                                  tracks.length
+                                    );
+                                }
+                            },
                         },
-                    },
-                }
-            );
+                    }
+                );
         };
 
         if (window.YT?.Player) {
@@ -362,8 +730,6 @@ export default function MusicPlayer() {
 
             window.onYouTubeIframeAPIReady =
                 () => {
-                    apiReadyRef.current = true;
-
                     previousCallback?.();
 
                     createPlayer();
@@ -372,6 +738,7 @@ export default function MusicPlayer() {
 
         return () => {
             cancelled = true;
+
             setIsReady(false);
             setIsPlaying(false);
 
@@ -379,25 +746,29 @@ export default function MusicPlayer() {
             playerRef.current = null;
         };
     }, [
-        hydrated,
-        currentTrack?.videoId,
+        isLoading,
+        currentTrack?.id,
     ]);
 
     /*
      * ---------------------------------------------------------
-     * UPDATE PLAYBACK PROGRESS
+     * PLAYBACK PROGRESS
      * ---------------------------------------------------------
      */
 
     useEffect(() => {
-        if (!isPlaying) return;
+        if (!isPlaying) {
+            return;
+        }
 
         const interval =
             window.setInterval(() => {
                 const player =
                     playerRef.current;
 
-                if (!player) return;
+                if (!player) {
+                    return;
+                }
 
                 setCurrentTime(
                     player.getCurrentTime()
@@ -409,7 +780,9 @@ export default function MusicPlayer() {
             }, 500);
 
         return () =>
-            window.clearInterval(interval);
+            window.clearInterval(
+                interval
+            );
     }, [isPlaying]);
 
     /*
@@ -419,21 +792,24 @@ export default function MusicPlayer() {
      */
 
     useEffect(() => {
-        if (!playerRef.current) return;
-
-        playerRef.current.setVolume(volume);
+        playerRef.current?.setVolume(
+            volume
+        );
     }, [volume]);
 
     /*
      * ---------------------------------------------------------
-     * CONTROLS
+     * PLAY / PAUSE
      * ---------------------------------------------------------
      */
 
     const togglePlay = () => {
-        const player = playerRef.current;
+        const player =
+            playerRef.current;
 
-        if (!player || !isReady) return;
+        if (!player || !isReady) {
+            return;
+        }
 
         if (isPlaying) {
             player.pauseVideo();
@@ -442,8 +818,16 @@ export default function MusicPlayer() {
         }
     };
 
+    /*
+     * ---------------------------------------------------------
+     * PREVIOUS
+     * ---------------------------------------------------------
+     */
+
     const previousTrack = () => {
-        if (tracks.length === 0) return;
+        if (tracks.length === 0) {
+            return;
+        }
 
         setCurrentIndex((index) =>
             index === 0
@@ -455,8 +839,16 @@ export default function MusicPlayer() {
         setCurrentTime(0);
     };
 
+    /*
+     * ---------------------------------------------------------
+     * NEXT
+     * ---------------------------------------------------------
+     */
+
     const nextTrack = () => {
-        if (tracks.length === 0) return;
+        if (tracks.length === 0) {
+            return;
+        }
 
         setCurrentIndex(
             (index) =>
@@ -467,14 +859,24 @@ export default function MusicPlayer() {
         setCurrentTime(0);
     };
 
-    const selectTrack = (index: number) => {
-        if (index === currentIndex) {
+    /*
+     * ---------------------------------------------------------
+     * SELECT TRACK
+     * ---------------------------------------------------------
+     */
+
+    const selectTrack = (
+        index: number
+    ) => {
+        if (
+            index === currentIndex
+        ) {
             return;
         }
 
         setCurrentIndex(index);
-        setIsPlaying(false);
         setCurrentTime(0);
+        setIsPlaying(false);
     };
 
     /*
@@ -487,7 +889,9 @@ export default function MusicPlayer() {
         event: React.ChangeEvent<HTMLInputElement>
     ) => {
         const seconds =
-            Number(event.target.value);
+            Number(
+                event.target.value
+            );
 
         setCurrentTime(seconds);
 
@@ -499,81 +903,267 @@ export default function MusicPlayer() {
 
     /*
      * ---------------------------------------------------------
-     * ADD TRACK
+     * ADD TRACK TO DATABASE
      * ---------------------------------------------------------
      */
 
-    const addTrack = () => {
+    const addTrack = async () => {
+        if (!selectedPlaylistId) {
+            return;
+        }
+
         const videoId =
-            getYouTubeVideoId(urlInput);
+            getYouTubeVideoId(
+                urlInput
+            );
 
         if (!videoId) {
             return;
         }
 
-        const newTrack: Track = {
-            id: `track-${Date.now()}`,
-            title:
-                titleInput.trim() ||
-                "Untitled Tavern Track",
-            videoId,
-        };
+        const title =
+            titleInput.trim() ||
+            "Untitled Tavern Track";
 
-        setTracks((current) => [
-            ...current,
-            newTrack,
-        ]);
+        try {
+            setIsSaving(true);
+            setError(null);
 
-        setCurrentIndex(tracks.length);
+            const response =
+                await fetch(
+                    `/api/music/${selectedPlaylistId}/tracks`,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            title,
+                            sourceUrl:
+                                urlInput.trim(),
+                            thumbnail:
+                                `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+                        }),
+                    }
+                );
 
-        setTitleInput("");
-        setUrlInput("");
-        setShowAddTrack(false);
-        setIsPlaying(false);
+            if (!response.ok) {
+                const data =
+                    await response
+                        .json()
+                        .catch(() => null);
+
+                throw new Error(
+                    data?.error ||
+                        "Failed to add track."
+                );
+            }
+
+            const newTrack =
+                (await response.json()) as Track;
+
+            setTracks((current) => [
+                ...current,
+                newTrack,
+            ]);
+
+            /*
+             * Update the playlist copy in memory too.
+             */
+
+            setPlaylists((current) =>
+                current.map(
+                    (playlist) =>
+                        playlist.id ===
+                        selectedPlaylistId
+                            ? {
+                                  ...playlist,
+                                  tracks: [
+                                      ...playlist.tracks,
+                                      newTrack,
+                                  ],
+                              }
+                            : playlist
+                )
+            );
+
+            /*
+             * If this is the first song,
+             * make it the current track.
+             */
+
+            if (tracks.length === 0) {
+                setCurrentIndex(0);
+            }
+
+            setTitleInput("");
+            setUrlInput("");
+            setShowAddTrack(false);
+        } catch (err) {
+            console.error(
+                "Failed to add track:",
+                err
+            );
+
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to add track."
+            );
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     /*
      * ---------------------------------------------------------
-     * REMOVE TRACK
+     * DELETE TRACK FROM DATABASE
      * ---------------------------------------------------------
      */
 
-    const removeTrack = (index: number) => {
-        setTracks((current) => {
-            const next = current.filter(
-                (_, i) => i !== index
+    const removeTrack = async (
+        trackId: string,
+        index: number
+    ) => {
+        if (!selectedPlaylistId) {
+            return;
+        }
+
+        try {
+            setIsSaving(true);
+            setError(null);
+
+            const response =
+                await fetch(
+                    `/api/music/${selectedPlaylistId}/tracks?trackId=${encodeURIComponent(
+                        trackId
+                    )}`,
+                    {
+                        method: "DELETE",
+                    }
+                );
+
+            if (!response.ok) {
+                const data =
+                    await response
+                        .json()
+                        .catch(() => null);
+
+                throw new Error(
+                    data?.error ||
+                        "Failed to remove track."
+                );
+            }
+
+            const nextTracks =
+                tracks.filter(
+                    (_, i) => i !== index
+                );
+
+            setTracks(nextTracks);
+
+            /*
+             * Keep playlist state synchronized.
+             */
+
+            setPlaylists((current) =>
+                current.map(
+                    (playlist) =>
+                        playlist.id ===
+                        selectedPlaylistId
+                            ? {
+                                  ...playlist,
+                                  tracks:
+                                      nextTracks,
+                              }
+                            : playlist
+                )
             );
 
-            return next;
-        });
+            /*
+             * Fix current track index.
+             */
 
-        setCurrentIndex((current) => {
-            if (tracks.length <= 1) {
-                return 0;
-            }
+            setCurrentIndex(
+                (current) => {
+                    if (
+                        nextTracks.length ===
+                        0
+                    ) {
+                        return 0;
+                    }
 
-            if (index < current) {
-                return current - 1;
-            }
+                    if (
+                        index < current
+                    ) {
+                        return current - 1;
+                    }
 
-            if (
-                index === current &&
-                current >= tracks.length - 1
-            ) {
-                return tracks.length - 2;
-            }
+                    if (
+                        index === current &&
+                        current >=
+                            nextTracks.length
+                    ) {
+                        return (
+                            nextTracks.length -
+                            1
+                        );
+                    }
 
-            return current;
-        });
+                    return current;
+                }
+            );
 
-        setIsPlaying(false);
-        setCurrentTime(0);
+            setIsPlaying(false);
+            setCurrentTime(0);
+        } catch (err) {
+            console.error(
+                "Failed to remove track:",
+                err
+            );
+
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to remove track."
+            );
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const progress =
         duration > 0
-            ? (currentTime / duration) * 100
+            ? (currentTime / duration) *
+              100
             : 0;
+
+    const currentPlaylist =
+        playlists.find(
+            (playlist) =>
+                playlist.id ===
+                selectedPlaylistId
+        );
+
+    /*
+     * ---------------------------------------------------------
+     * LOADING STATE
+     * ---------------------------------------------------------
+     */
+
+    if (isLoading) {
+        return (
+            <section className="w-full max-w-md overflow-hidden rounded-2xl border border-amber-900/60 bg-slate-900/90 shadow-lg">
+                <div className="px-5 py-8 text-center">
+                    <p className="text-sm text-slate-400">
+                        🎻 The bard is tuning his
+                        instruments...
+                    </p>
+                </div>
+            </section>
+        );
+    }
 
     return (
         <section className="w-full max-w-md overflow-hidden rounded-2xl border border-amber-900/60 bg-slate-900/90 shadow-lg">
@@ -583,30 +1173,39 @@ export default function MusicPlayer() {
             ------------------------------------------------- */}
 
             <div className="border-b border-amber-900/40 bg-amber-950/20 px-5 py-4">
+
                 <div className="flex items-center justify-between">
 
-                    <div>
+                    <div className="min-w-0">
+
                         <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-500">
                             Tavern Radio
                         </p>
 
-                        <h2 className="mt-1 text-lg font-bold text-slate-100">
+                        <h2 className="mt-1 truncate text-lg font-bold text-slate-100">
                             🎵 Music for your quest
                         </h2>
+
                     </div>
 
                     <button
                         type="button"
                         onClick={() =>
                             setShowAddTrack(
-                                (open) => !open
+                                (open) =>
+                                    !open
                             )
                         }
-                        className="rounded-lg border border-amber-800/60 px-3 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-950/40"
+                        disabled={
+                            !selectedPlaylistId
+                        }
+                        className="shrink-0 rounded-lg border border-amber-800/60 px-3 py-2 text-xs font-semibold text-amber-300 transition hover:bg-amber-950/40 disabled:opacity-30"
                     >
                         + Add
                     </button>
+
                 </div>
+
             </div>
 
             {/* -------------------------------------------------
@@ -615,16 +1214,221 @@ export default function MusicPlayer() {
 
             <div className="absolute -left-[9999px] h-[200px] w-[200px] overflow-hidden">
                 <div
-                    ref={playerContainerRef}
+                    ref={
+                        playerContainerRef
+                    }
                     className="h-[200px] w-[200px]"
                 />
             </div>
+
+            {/* -------------------------------------------------
+                PLAYLIST SELECTOR
+            ------------------------------------------------- */}
+
+            <div className="border-b border-slate-800 px-5 py-3">
+
+                <div className="flex items-center justify-between">
+
+                    <button
+                        type="button"
+                        onClick={() =>
+                            setShowPlaylists(
+                                (open) =>
+                                    !open
+                            )
+                        }
+                        className="flex min-w-0 items-center gap-2 text-left"
+                    >
+                        <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                            Playlist
+                        </span>
+
+                        <span className="truncate text-sm font-semibold text-amber-300">
+                            {currentPlaylist
+                                ?.name ??
+                                "Tavern Radio"}
+                        </span>
+
+                        <span className="text-xs text-slate-600">
+                            {showPlaylists
+                                ? "▲"
+                                : "▼"}
+                        </span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() =>
+                            setShowCreatePlaylist(
+                                (open) =>
+                                    !open
+                            )
+                        }
+                        className="text-xs text-amber-500 transition hover:text-amber-300"
+                    >
+                        + New
+                    </button>
+
+                </div>
+
+                {showPlaylists && (
+                    <div className="mt-3 space-y-1">
+
+                        {playlists.map(
+                            (playlist) => (
+                                <div
+                                    key={
+                                        playlist.id
+                                    }
+                                    className={`group flex items-center gap-2 rounded-lg px-3 py-2 ${
+                                        playlist.id ===
+                                        selectedPlaylistId
+                                            ? "bg-amber-950/40"
+                                            : "hover:bg-slate-800/50"
+                                    }`}
+                                >
+
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            selectPlaylist(
+                                                playlist
+                                            )
+                                        }
+                                        className="min-w-0 flex-1 text-left"
+                                    >
+                                        <p
+                                            className={`truncate text-sm ${
+                                                playlist.id ===
+                                                selectedPlaylistId
+                                                    ? "font-semibold text-amber-300"
+                                                    : "text-slate-300"
+                                            }`}
+                                        >
+                                            {playlist.name}
+                                        </p>
+
+                                        <p className="text-[10px] text-slate-600">
+                                            {
+                                                playlist
+                                                    .tracks
+                                                    .length
+                                            }{" "}
+                                            tracks
+                                        </p>
+                                    </button>
+
+                                    {playlists.length >
+                                        1 && (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                deletePlaylist(
+                                                    playlist.id
+                                                )
+                                            }
+                                            disabled={
+                                                isSaving
+                                            }
+                                            className="text-xs text-slate-700 opacity-0 transition hover:text-red-400 group-hover:opacity-100 disabled:opacity-30"
+                                            aria-label={`Delete ${playlist.name}`}
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+
+                                </div>
+                            )
+                        )}
+
+                    </div>
+                )}
+
+                {showCreatePlaylist && (
+                    <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+
+                        <input
+                            value={
+                                playlistNameInput
+                            }
+                            onChange={(
+                                event
+                            ) =>
+                                setPlaylistNameInput(
+                                    event.target
+                                        .value
+                                )
+                            }
+                            placeholder="Playlist name"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-600"
+                            onKeyDown={(
+                                event
+                            ) => {
+                                if (
+                                    event.key ===
+                                    "Enter"
+                                ) {
+                                    createPlaylist();
+                                }
+                            }}
+                        />
+
+                        <div className="mt-2 flex gap-2">
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowCreatePlaylist(
+                                        false
+                                    );
+                                    setPlaylistNameInput(
+                                        ""
+                                    );
+                                }}
+                                className="flex-1 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={
+                                    createPlaylist
+                                }
+                                disabled={
+                                    !playlistNameInput.trim() ||
+                                    isSaving
+                                }
+                                className="flex-1 rounded-lg bg-amber-700 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-40"
+                            >
+                                Create
+                            </button>
+
+                        </div>
+
+                    </div>
+                )}
+
+            </div>
+
+            {/* -------------------------------------------------
+                ERROR
+            ------------------------------------------------- */}
+
+            {error && (
+                <div className="border-b border-red-900/40 bg-red-950/20 px-5 py-3">
+                    <p className="text-xs text-red-400">
+                        {error}
+                    </p>
+                </div>
+            )}
 
             {/* -------------------------------------------------
                 CURRENT TRACK
             ------------------------------------------------- */}
 
             <div className="px-5 pt-5">
+
                 <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
 
                     <div className="flex items-center gap-3">
@@ -646,9 +1450,11 @@ export default function MusicPlayer() {
                             </p>
 
                         </div>
+
                     </div>
 
                 </div>
+
             </div>
 
             {/* -------------------------------------------------
@@ -666,7 +1472,9 @@ export default function MusicPlayer() {
                         currentTime,
                         duration || 0
                     )}
-                    onChange={handleSeek}
+                    onChange={
+                        handleSeek
+                    }
                     disabled={
                         !currentTrack ||
                         !isReady ||
@@ -678,11 +1486,15 @@ export default function MusicPlayer() {
 
                 <div className="mt-1 flex justify-between text-[10px] text-slate-600">
                     <span>
-                        {formatTime(currentTime)}
+                        {formatTime(
+                            currentTime
+                        )}
                     </span>
 
                     <span>
-                        {formatTime(duration)}
+                        {formatTime(
+                            duration
+                        )}
                     </span>
                 </div>
 
@@ -698,9 +1510,12 @@ export default function MusicPlayer() {
 
                     <button
                         type="button"
-                        onClick={previousTrack}
+                        onClick={
+                            previousTrack
+                        }
                         disabled={
-                            tracks.length === 0
+                            tracks.length ===
+                            0
                         }
                         className="rounded-full p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-30"
                         aria-label="Previous track"
@@ -710,7 +1525,9 @@ export default function MusicPlayer() {
 
                     <button
                         type="button"
-                        onClick={togglePlay}
+                        onClick={
+                            togglePlay
+                        }
                         disabled={
                             !currentTrack ||
                             !isReady
@@ -729,9 +1546,12 @@ export default function MusicPlayer() {
 
                     <button
                         type="button"
-                        onClick={nextTrack}
+                        onClick={
+                            nextTrack
+                        }
                         disabled={
-                            tracks.length === 0
+                            tracks.length ===
+                            0
                         }
                         className="rounded-full p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-30"
                         aria-label="Next track"
@@ -754,10 +1574,14 @@ export default function MusicPlayer() {
                         min="0"
                         max="100"
                         value={volume}
-                        onChange={(event) =>
+                        onChange={(
+                            event
+                        ) =>
                             setVolume(
                                 Number(
-                                    event.target.value
+                                    event
+                                        .target
+                                        .value
                                 )
                             )
                         }
@@ -785,10 +1609,15 @@ export default function MusicPlayer() {
                     </p>
 
                     <input
-                        value={titleInput}
-                        onChange={(event) =>
+                        value={
+                            titleInput
+                        }
+                        onChange={(
+                            event
+                        ) =>
                             setTitleInput(
-                                event.target.value
+                                event.target
+                                    .value
                             )
                         }
                         placeholder="Track name"
@@ -796,10 +1625,15 @@ export default function MusicPlayer() {
                     />
 
                     <input
-                        value={urlInput}
-                        onChange={(event) =>
+                        value={
+                            urlInput
+                        }
+                        onChange={(
+                            event
+                        ) =>
                             setUrlInput(
-                                event.target.value
+                                event.target
+                                    .value
                             )
                         }
                         placeholder="Paste YouTube URL"
@@ -811,9 +1645,15 @@ export default function MusicPlayer() {
                         <button
                             type="button"
                             onClick={() => {
-                                setShowAddTrack(false);
-                                setTitleInput("");
-                                setUrlInput("");
+                                setShowAddTrack(
+                                    false
+                                );
+                                setTitleInput(
+                                    ""
+                                );
+                                setUrlInput(
+                                    ""
+                                );
                             }}
                             className="flex-1 rounded-lg border border-slate-700 px-3 py-2 text-sm font-semibold text-slate-400 hover:bg-slate-800"
                         >
@@ -822,29 +1662,35 @@ export default function MusicPlayer() {
 
                         <button
                             type="button"
-                            onClick={addTrack}
+                            onClick={
+                                addTrack
+                            }
                             disabled={
                                 !getYouTubeVideoId(
                                     urlInput
-                                )
+                                ) ||
+                                isSaving
                             }
                             className="flex-1 rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                            Add Track
+                            {isSaving
+                                ? "Saving..."
+                                : "Add Track"}
                         </button>
 
                     </div>
 
                     <p className="mt-3 text-[10px] leading-4 text-slate-600">
-                        Paste a YouTube video URL. The
-                        video must allow embedding.
+                        Paste a YouTube video URL.
+                        The video must allow
+                        embedding.
                     </p>
 
                 </div>
             )}
 
             {/* -------------------------------------------------
-                PLAYLIST
+                TRACK LIST
             ------------------------------------------------- */}
 
             <div className="border-t border-slate-800">
@@ -852,7 +1698,9 @@ export default function MusicPlayer() {
                 <div className="flex items-center justify-between px-5 py-3">
 
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                        Playlist
+                        {currentPlaylist
+                            ?.name ??
+                            "Playlist"}
                     </p>
 
                     <span className="text-xs text-slate-600">
@@ -866,58 +1714,79 @@ export default function MusicPlayer() {
 
                 <div className="max-h-48 overflow-y-auto">
 
-                    {tracks.map((track, index) => (
-                        <div
-                            key={track.id}
-                            className={`group flex items-center gap-3 px-5 py-3 transition ${
-                                index === currentIndex
-                                    ? "bg-amber-950/30"
-                                    : "hover:bg-slate-800/50"
-                            }`}
-                        >
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    selectTrack(index)
+                    {tracks.map(
+                        (
+                            track,
+                            index
+                        ) => (
+                            <div
+                                key={
+                                    track.id
                                 }
-                                className="min-w-0 flex-1 text-left"
-                            >
-                                <p
-                                    className={`truncate text-sm ${
-                                        index ===
-                                        currentIndex
-                                            ? "font-semibold text-amber-300"
-                                            : "text-slate-300"
-                                    }`}
-                                >
-                                    {index ===
+                                className={`group flex items-center gap-3 px-5 py-3 transition ${
+                                    index ===
                                     currentIndex
-                                        ? "♫ "
-                                        : ""}
-                                    {track.title}
-                                </p>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() =>
-                                    removeTrack(index)
-                                }
-                                className="text-xs text-slate-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100"
-                                aria-label={`Remove ${track.title}`}
+                                        ? "bg-amber-950/30"
+                                        : "hover:bg-slate-800/50"
+                                }`}
                             >
-                                ✕
-                            </button>
 
-                        </div>
-                    ))}
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        selectTrack(
+                                            index
+                                        )
+                                    }
+                                    className="min-w-0 flex-1 text-left"
+                                >
+                                    <p
+                                        className={`truncate text-sm ${
+                                            index ===
+                                            currentIndex
+                                                ? "font-semibold text-amber-300"
+                                                : "text-slate-300"
+                                        }`}
+                                    >
+                                        {index ===
+                                        currentIndex
+                                            ? "♫ "
+                                            : ""}
+                                        {
+                                            track.title
+                                        }
+                                    </p>
+                                </button>
 
-                    {tracks.length === 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        removeTrack(
+                                            track.id,
+                                            index
+                                        )
+                                    }
+                                    disabled={
+                                        isSaving
+                                    }
+                                    className="text-xs text-slate-600 opacity-0 transition hover:text-red-400 group-hover:opacity-100 disabled:opacity-30"
+                                    aria-label={`Remove ${track.title}`}
+                                >
+                                    ✕
+                                </button>
+
+                            </div>
+                        )
+                    )}
+
+                    {tracks.length ===
+                        0 && (
                         <p className="px-5 pb-5 text-center text-sm text-slate-500">
-                            The bard hasn't arrived yet.
+                            The bard hasn't
+                            arrived yet.
                             <br />
-                            Add a song to start the music.
+                            Add a song to
+                            start the music.
                         </p>
                     )}
 
@@ -932,8 +1801,8 @@ export default function MusicPlayer() {
             <div className="border-t border-amber-900/30 bg-amber-950/10 px-5 py-3">
 
                 <p className="text-center text-[10px] text-slate-600">
-                    🎻 The tavern bard plays through
-                    YouTube
+                    🎻 The tavern bard plays
+                    through YouTube
                 </p>
 
             </div>

@@ -10,6 +10,17 @@ async function getCanvasData(url) {
     return response.json();
 }
 
+async function clearExtensionAuth() {
+    console.log("🔓 Clearing stale extension authentication...");
+
+    await chrome.storage.local.remove([
+        "extensionToken",
+        "extensionAuthState",
+    ]);
+
+    console.log("✅ Extension authentication cleared.");
+}
+
 console.log("🎓 Background service worker loaded!");
 
 async function startExtensionAuth() {
@@ -417,8 +428,10 @@ chrome.runtime.onMessage.addListener(
                         );
 
                     if (!authResult.extensionToken) {
+                        await clearExtensionAuth();
+
                         throw new Error(
-                            "Extension is not authenticated."
+                            "Extension is not authenticated. Please sign in again."
                         );
                     }
 
@@ -457,6 +470,14 @@ chrome.runtime.onMessage.addListener(
                             await backendResponse
                                 .json()
                                 .catch(() => null);
+
+                        if (backendResponse.status === 401) {
+                            await clearExtensionAuth();
+
+                            throw new Error(
+                                "Your session expired. Please sign in again."
+                            );
+                        }
 
                         throw new Error(
                             errorData?.error ||
