@@ -54,11 +54,10 @@ export default function AIReviewPanel() {
         setCurrentIndex((index) => index + 1);
     }
 
-    function handleAccept() {
-        console.log(
-            "✅ Accepted:",
-            tasks[currentIndex]
-        );
+    function handleAccept(updatedTask?: ProposedTask) {
+        const acceptedTask = updatedTask ?? tasks[currentIndex];
+
+        console.log("✅ Accepted:", acceptedTask);
 
         nextTask();
     }
@@ -82,6 +81,7 @@ export default function AIReviewPanel() {
     }
 
     const currentTask = tasks[currentIndex];
+
     const finished =
         started &&
         !loading &&

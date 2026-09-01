@@ -12,7 +12,6 @@ type AIExtractedTask = {
     confidence: "high" | "medium" | "low";
 };
 
-
 export async function analyzeAnnouncement(
     announcement: Announcement
 ): Promise<ProposedTask[]> {
@@ -22,7 +21,7 @@ You analyze a teacher announcement and identify student work.
 Your ONLY job is to determine what the student actually needs to do.
 
 Do NOT compare against Canvas assignments.
-Do NOT try to determine whether something is a duplicate.
+Do NOT determine whether something is a duplicate.
 Do NOT calculate dates.
 
 Return ONLY valid JSON.
@@ -41,26 +40,16 @@ Use exactly this format:
   ]
 }
 
-confidence means how strongly the announcement indicates that the
-student should actually do the work.
+CONFIDENCE:
 
 HIGH:
 The teacher explicitly assigns the work.
 
-Example:
-"Complete problems 1-10."
-
 MEDIUM:
 The work is strongly implied or preparation is clearly expected.
 
-Example:
-"Come prepared to discuss chapters 3-5."
-
 LOW:
 The work is optional or only weakly suggested.
-
-Example:
-"You might want to review chapters 1-3."
 
 IMPORTANT RULES:
 
@@ -123,13 +112,7 @@ Example:
 
 "Read chapters 2-3 and complete the response questions."
 
-→
-
-Task 1:
-"Read chapters 2-3"
-
-Task 2:
-"Complete response questions"
+→ two tasks.
 
 5. Preserve date wording exactly as it appears.
 
@@ -147,7 +130,7 @@ Examples:
 
 Do NOT convert dates to YYYY-MM-DD.
 
-Do NOT attempt to calculate dates.
+Do NOT calculate dates.
 
 If there is no identifiable due date:
 
@@ -155,9 +138,7 @@ If there is no identifiable due date:
 
 6. Tables may appear in the announcement.
 
-Tables are important.
-
-They may contain:
+Tables may contain:
 
 - assignments
 - readings
@@ -166,17 +147,16 @@ They may contain:
 - preparation requirements
 - submission instructions
 
-Use information from table rows and column headers together.
+Use table information together.
 
 Do NOT turn every table cell into a task.
 
 Only create a task when the table indicates that the student
 actually needs to perform an action.
 
-7. The evidence field should make it easy for a student to understand
-why the AI created the task.
+7. Keep evidence short.
 
-Keep it short.
+8. Never output anything outside the JSON object.
 
 ANNOUNCEMENT COURSE:
 ${announcement.course}
@@ -202,7 +182,7 @@ ${announcement.message}
                 },
             ],
             stream: false,
-        }),
+                    }),
     });
 
     if (!response.ok) {
@@ -231,24 +211,41 @@ ${announcement.message}
     }
 
     if (!Array.isArray(parsed.tasks)) {
-        throw new Error("Ollama response did not contain a tasks array.");
+        throw new Error(
+            "Ollama response did not contain a tasks array."
+        );
     }
 
     return parsed.tasks.map((task) => ({
         name: task.name,
         course: announcement.course,
+
+        // Date resolution happens later.
         due: null,
-        dueText: task.dueText,
+
+        dueText: task.dueText ?? null,
         description: task.description,
         evidence: task.evidence,
+
         sourceAnnouncementId: announcement.id,
+
         confidence: task.confidence,
 
-        // Duplicate checking happens separately.
         canvasMatch: {
             status: "none",
             assignmentId: null,
             reason: "",
+            assignment: null,
         },
+
+        sourceAnnouncement: {
+            id: announcement.id,
+            title: announcement.title,
+            message: announcement.message,
+            course: announcement.course,
+            postedAt: announcement.postedAt,
+        },
+
+        matchedAssignment: undefined,
     }));
 }

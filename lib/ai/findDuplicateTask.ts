@@ -1,128 +1,177 @@
 const OLLAMA_URL = "http://localhost:11434/api/chat";
-const MODEL = "qwen3:4b";
+const MODEL = "qwen2.5:3b-instruct";
 
-export type DuplicateCheckResult = {
-    isDuplicate: boolean;
-    matchingAssignmentId: string | null;
-    confidence: "high" | "medium" | "low";
-    reason: string;
-};
+const OLLAMA_TIMEOUT_MS = 15_000;
 
-type ExistingAssignment = {
+type CanvasAssignment = {
     id: string;
     name: string;
     description: string | null;
     dueDate: string | null;
 };
 
+type DuplicateCheckResult = {
+    isDuplicate: boolean;
+    matchingAssignmentId: string | null;
+    confidence: "high" | "medium" | "low";
+    reason: string;
+};
+
+/**
+ * Remove HTML from Canvas assignment descriptions.
+ *
+ * Canvas descriptions can contain enormous amounts of HTML:
+ * links, styling, metadata, embedded files, etc.
+ *
+ * The duplicate checker does not need any of that.
+ */
+function stripHtml(html: string): string {
+    return html
+        .replace(/<[^>]*>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/**
+ * Keep assignment descriptions short.
+ *
+ * The duplicate checker mainly needs enough context to understand
+ * what the assignment actually asks the student to do.
+ */
+function simplifyDescription(
+    description: string | null
+): string {
+    if (!description) {
+        return "";
+    }
+
+    const cleaned = stripHtml(description);
+
+    const MAX_DESCRIPTION_LENGTH = 500;
+
+    if (cleaned.length <= MAX_DESCRIPTION_LENGTH) {
+        return cleaned;
+    }
+
+    return (
+        cleaned.slice(0, MAX_DESCRIPTION_LENGTH).trim() +
+        "..."
+    );
+}
+
+/**
+ * Build the small amount of assignment information that
+ * gets sent to Ollama.
+ */
+function buildAssignmentContext(
+    assignments: CanvasAssignment[]
+): string {
+    return assignments
+        .map((assignment, index) => {
+            const description =
+                simplifyDescription(
+                    assignment.description
+                );
+
+            return [
+                `ASSIGNMENT ${index + 1}`,
+                `ID: ${assignment.id}`,
+                `TITLE: ${assignment.name}`,
+                `DUE: ${assignment.dueDate ?? "No due date"}`,
+                `DESCRIPTION: ${
+                    description ||
+                    "No description available."
+                }`,
+            ].join("\n");
+        })
+        .join("\n\n");
+}
+
+/**
+ * Run a duplicate check against Canvas assignments.
+ */
 export async function findDuplicateTask(
     proposedTaskName: string,
-    assignments: ExistingAssignment[]
+    assignments: CanvasAssignment[]
 ): Promise<DuplicateCheckResult> {
     if (assignments.length === 0) {
         return {
             isDuplicate: false,
             matchingAssignmentId: null,
-            confidence: "high",
-            reason: "No existing Canvas assignments were available to compare.",
+            confidence: "low",
+            reason:
+                "No nearby Canvas assignments were available to compare against.",
         };
     }
 
-    // Keep prompts small so local models don't waste time processing
-    // enormous Canvas descriptions.
-    const assignmentContext = assignments
-        .map(
-            (assignment, index) => `
-ASSIGNMENT ${index + 1}
-ID: ${assignment.id}
-NAME: ${assignment.name}
-DUE: ${assignment.dueDate ?? "none"}
-DESCRIPTION:
-${(assignment.description ?? "No description available").slice(0, 1500)}
-`
-        )
-        .join("\n");
+    const assignmentContext =
+        buildAssignmentContext(assignments);
 
     const prompt = `
-You are checking whether a proposed student task is already covered by an existing Canvas assignment.
+Determine whether the proposed student task is already covered by one of the existing Canvas assignments.
 
-Your job is ONLY to identify the best matching Canvas assignment, if one exists.
+Be SENSITIVE: this is a student-facing suggestion, so prefer a false positive over a false negative when there is reasonable evidence of overlap.
 
-A task is a DUPLICATE when completing the Canvas assignment would reasonably mean the student has already completed the proposed task.
+A DUPLICATE means the proposed task is included in, required by, or reasonably completed by finishing the Canvas assignment.
 
-Because this result will be shown to the student as a SUGGESTION, prefer detecting a possible duplicate rather than missing one.
-
-However, do NOT call tasks duplicates merely because they:
-- are about the same topic
-- involve the same book, chapter, unit, or class
-- happen around the same time
-- have similar wording
-- are related activities
-- are both reading, writing, discussion, studying, or watching
-
-The actual student work must overlap.
+The proposed task does NOT need to have the same wording as the assignment.
 
 IMPORTANT:
-A Canvas assignment can contain multiple pieces of work.
-If the proposed task is clearly one of those pieces, it IS a duplicate.
+A Canvas assignment can contain MORE work than the proposed task.
+If the proposed task is one part of that assignment, it is a DUPLICATE.
 
 Examples:
 
-Proposed: "Read Beowulf lines 1-709"
-Canvas: "Read Beowulf lines 1-709 and answer questions"
-=> DUPLICATE
-
-Proposed: "Write Beowulf response"
-Canvas: "Read Beowulf lines 1-709"
-=> NOT DUPLICATE
-
-Proposed: "Complete Significant Figures Practice"
-Canvas: "COMPLETE: Significant Figures Practice"
-=> DUPLICATE
-
-Proposed: "Read Chapter 1"
-Canvas: "Write a response about Chapter 1"
-=> NOT DUPLICATE
-
 Proposed: "Read Chapter 1"
 Canvas: "Read Chapter 1 and complete notes"
+=> DUPLICATE
+
+Proposed: "Complete problems from section 2.1"
+Canvas: "HW 2 - Complete problems from sections 1.3, 1.4, 2.1, and 2.2"
 => DUPLICATE
 
 Proposed: "Post discussion response"
 Canvas: "DISCUSS: Chapter 1 Initial Post"
 => DUPLICATE
 
-Proposed: "Post discussion response"
+Proposed: "Write a response about Chapter 1"
 Canvas: "Read Chapter 1"
 => NOT DUPLICATE
 
-DECISION RULE:
+Proposed: "Read Chapter 1"
+Canvas: "Write a response about Chapter 1"
+=> NOT DUPLICATE
 
-Ask:
-"If the student completes this Canvas assignment, would I reasonably consider the proposed task completed too?"
+Do NOT mark something duplicate just because it:
+- is about the same topic or chapter
+- uses the same book or material
+- has similar wording
+- occurs at the same time
+- is generally related
 
-YES -> isDuplicate true
-NO -> isDuplicate false
+The actual student work must overlap.
 
-When there is a plausible but imperfect match, it is acceptable to return true with MEDIUM confidence because this is only a suggestion.
+DECISION:
+If completing the Canvas assignment would reasonably mean the proposed task is also completed -> DUPLICATE.
 
-Do not invent requirements that are not present in the Canvas assignment.
+If the relationship is uncertain but there is reasonable evidence the proposed task is part of the assignment -> DUPLICATE with MEDIUM confidence.
+
+If they only share a topic/material but require different work -> NOT DUPLICATE.
 
 Choose the SINGLE best matching assignment.
 
 CONFIDENCE:
-HIGH = clearly the same work or the proposed task is explicitly included.
-MEDIUM = likely the same work but wording/details are somewhat ambiguous.
-LOW = weak or uncertain relationship.
+HIGH = clearly the same work or explicitly included.
+MEDIUM = probably the same work or probably included, but somewhat ambiguous.
+LOW = weak/no meaningful overlap.
 
-If no assignment is a reasonable match:
-- isDuplicate must be false
-- matchingAssignmentId must be null
-
-If isDuplicate is true:
-- matchingAssignmentId must be the ID of the best matching Canvas assignment.
-
-Return ONLY this JSON object:
+Return ONLY this JSON:
 
 {
   "isDuplicate": true,
@@ -130,10 +179,18 @@ Return ONLY this JSON object:
   "confidence": "high"
 }
 
-Do not include a reason.
-Do not include markdown.
-Do not explain your answer.
-Do not summarize the assignments.
+If there is no reasonable match:
+
+{
+  "isDuplicate": false,
+  "matchingAssignmentId": null,
+  "confidence": "low"
+}
+
+No markdown.
+No explanation.
+No extra text.
+No additional keys.
 
 PROPOSED TASK:
 ${proposedTaskName}
@@ -142,45 +199,77 @@ EXISTING CANVAS ASSIGNMENTS:
 ${assignmentContext}
 `;
 
-    const response = await fetch(OLLAMA_URL, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            model: MODEL,
-            messages: [
-                {
-                    role: "user",
-                    content: prompt,
-                },
-            ],
-            stream: false,
-            format: "json",
-            think: false,
-            options: {
-                temperature: 0.1,
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+        controller.abort();
+    }, OLLAMA_TIMEOUT_MS);
+
+    let response: Response;
+
+    try {
+        response = await fetch(OLLAMA_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
             },
-        }),
-    });
+            body: JSON.stringify({
+                model: MODEL,
+                messages: [
+                    {
+                        role: "system",
+                        content:
+                            "You are a strict JSON classification system. Return only the requested JSON object.",
+                    },
+                    {
+                        role: "user",
+                        content: prompt,
+                    },
+                ],
+                stream: false,
+                options: {
+                    temperature: 0,
+                },
+            }),
+            signal: controller.signal,
+        });
+    } catch (error) {
+        if (
+            error instanceof Error &&
+            error.name === "AbortError"
+        ) {
+            throw new Error(
+                `Ollama duplicate check timed out after ${
+                    OLLAMA_TIMEOUT_MS / 1000
+                } seconds.`
+            );
+        }
+
+        throw error;
+    } finally {
+        clearTimeout(timeout);
+    }
 
     if (!response.ok) {
         throw new Error(
-            `Ollama request failed: ${response.status} ${response.statusText}`
+            `Ollama duplicate check failed: ${response.status} ${response.statusText}`
         );
     }
 
     const data = await response.json();
 
-    const content = data?.message?.content;
+    const content =
+        typeof data.message?.content === "string"
+            ? data.message.content.trim()
+            : "";
 
-    if (!content || typeof content !== "string") {
+    if (!content) {
         throw new Error(
             "Ollama returned no duplicate-check content."
         );
     }
 
-    let parsed: any;
+    let parsed: unknown;
 
     try {
         parsed = JSON.parse(content);
@@ -196,8 +285,8 @@ ${assignmentContext}
     }
 
     if (
-        typeof parsed.isDuplicate !== "boolean" ||
-        !["high", "medium", "low"].includes(parsed.confidence)
+        typeof parsed !== "object" ||
+        parsed === null
     ) {
         console.error(
             "❌ Invalid duplicate-check structure:",
@@ -209,36 +298,109 @@ ${assignmentContext}
         );
     }
 
-    if (parsed.isDuplicate) {
-        const matchingAssignment = assignments.find(
-            (assignment) =>
-                assignment.id === parsed.matchingAssignmentId
+    const result =
+        parsed as Record<string, unknown>;
+
+    const isDuplicate =
+        typeof result.isDuplicate === "boolean";
+
+    const matchingAssignmentId =
+        result.matchingAssignmentId === null ||
+        typeof result.matchingAssignmentId === "string";
+
+    const confidence =
+        result.confidence === "high" ||
+        result.confidence === "medium" ||
+        result.confidence === "low";
+
+    if (
+        !isDuplicate ||
+        !matchingAssignmentId ||
+        !confidence
+    ) {
+        console.error(
+            "❌ Invalid duplicate-check structure:",
+            parsed
         );
 
-        if (!matchingAssignment) {
-            console.error(
-                "❌ Model selected invalid assignment ID:",
-                parsed
-            );
+        throw new Error(
+            "Ollama returned an invalid duplicate-check structure."
+        );
+    }
 
-            return {
-                isDuplicate: false,
-                matchingAssignmentId: null,
-                confidence: "low",
-                reason:
-                    "The model identified a duplicate but did not return a valid Canvas assignment.",
-            };
-        }
+    if (
+        result.isDuplicate === false &&
+        result.matchingAssignmentId !== null
+    ) {
+        console.error(
+            "❌ Duplicate checker returned an assignment ID while saying there is no duplicate:",
+            parsed
+        );
+
+        throw new Error(
+            "Ollama returned an inconsistent duplicate-check result."
+        );
+    }
+
+    if (
+        result.isDuplicate === true &&
+        result.matchingAssignmentId === null
+    ) {
+        console.error(
+            "❌ Duplicate checker returned true without an assignment ID:",
+            parsed
+        );
+
+        throw new Error(
+            "Ollama returned an inconsistent duplicate-check result."
+        );
+    }
+
+    const matchingAssignment =
+        result.matchingAssignmentId
+            ? assignments.find(
+                  (assignment) =>
+                      assignment.id ===
+                      result.matchingAssignmentId
+              )
+            : undefined;
+
+    if (
+        result.isDuplicate &&
+        !matchingAssignment
+    ) {
+        console.error(
+            "❌ Ollama returned an assignment ID that does not exist in the provided assignments:",
+            parsed
+        );
+
+        throw new Error(
+            "Ollama returned an unknown assignment ID."
+        );
+    }
+
+    let reason: string;
+
+    if (result.isDuplicate) {
+        reason =
+            "This task may already be covered by an existing Canvas assignment.";
+    } else {
+        reason =
+            "No existing Canvas assignment appears to cover this task.";
     }
 
     return {
-        isDuplicate: parsed.isDuplicate,
-        matchingAssignmentId: parsed.isDuplicate
-            ? parsed.matchingAssignmentId
-            : null,
-        confidence: parsed.confidence,
-        reason: parsed.isDuplicate
-            ? "This task may already be covered by an existing Canvas assignment."
-            : "No existing Canvas assignment appears to cover this task.",
+        isDuplicate:
+            result.isDuplicate as boolean,
+        matchingAssignmentId:
+            result.matchingAssignmentId as
+                | string
+                | null,
+        confidence:
+            result.confidence as
+                | "high"
+                | "medium"
+                | "low",
+        reason,
     };
 }
