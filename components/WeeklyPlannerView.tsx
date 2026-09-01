@@ -13,6 +13,7 @@ import {GamificationState, XpAward} from "@/types/gamification";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimates} from "@/types/taskPlanning";
 import PomodoroTimer from "./PomodoroTimer";
+import MusicPlayer from "./MusicPlayer";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -492,8 +493,9 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 onAddTask = {handleAddTask}
             />
 
-            <div className="mb-8">
+            <div className="grid gap-6 lg:grid-cols-2">
                 <PomodoroTimer />
+                <MusicPlayer />
             </div>
 
             <EditTaskModal
