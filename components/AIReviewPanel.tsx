@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
 import AIReviewCard from "@/components/AIReviewCard";
+import { Assignment } from "@/types/assignment";
 
 export default function AIReviewPanel() {
     const [tasks, setTasks] = useState<ProposedTask[]>([]);
@@ -55,9 +56,44 @@ export default function AIReviewPanel() {
     }
 
     function handleAccept(updatedTask?: ProposedTask) {
-        const acceptedTask = updatedTask ?? tasks[currentIndex];
+        const acceptedTask =
+            updatedTask ?? tasks[currentIndex];
 
-        console.log("✅ Accepted:", acceptedTask);
+        if (!acceptedTask) {
+            return;
+        }
+
+        /*
+         * Convert the AI task into the same Assignment shape
+         * used by the planner.
+         */
+        const plannerTask: Assignment = {
+            id: `custom-ai-${Date.now()}-${currentIndex}`,
+            name: acceptedTask.name,
+            course: acceptedTask.course,
+            due: acceptedTask.due ?? "",
+            completed: false,
+        };
+
+        console.log(
+            "✅ Accepted AI task:",
+            plannerTask
+        );
+
+        /*
+         * Tell WeeklyPlannerView to add this task.
+         *
+         * The planner is responsible for actually adding the
+         * task to its state and saving it to localStorage.
+         */
+        window.dispatchEvent(
+            new CustomEvent<Assignment>(
+                "planner:add-task",
+                {
+                    detail: plannerTask,
+                }
+            )
+        );
 
         nextTask();
     }

@@ -250,6 +250,68 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         return () => controller.abort();
     }, [tasks, taskPlanning]);
 
+    useEffect(() => {
+        const handleAIPlannerTask = (
+            event: Event
+        ) => {
+            const customEvent =
+                event as CustomEvent<Assignment>;
+
+            const newTask =
+                customEvent.detail;
+
+            if (!newTask) return;
+
+            setTasks((currentTasks) => {
+                /*
+                * Prevent accidental duplicate insertion if the
+                * event somehow fires more than once.
+                */
+                if (
+                    currentTasks.some(
+                        (task) =>
+                            task.id === newTask.id
+                    )
+                ) {
+                    return currentTasks;
+                }
+
+                const updatedTasks = [
+                    ...currentTasks,
+                    newTask,
+                ];
+
+                /*
+                * Keep AI-created tasks in the exact same
+                * localStorage collection as manually-created tasks.
+                */
+                const customTasks =
+                    updatedTasks.filter((task) =>
+                        task.id.startsWith("custom-")
+                    );
+
+                localStorage.setItem(
+                    "custom_tasks",
+                    JSON.stringify(customTasks)
+                );
+
+                return updatedTasks;
+            });
+        };
+
+        window.addEventListener(
+            "planner:add-task",
+            handleAIPlannerTask
+        );
+
+        return () => {
+            window.removeEventListener(
+                "planner:add-task",
+                handleAIPlannerTask
+            );
+        };
+    }, []);
+
     const awardXpForTask = async (task: Assignment, completedAt: string | null, estimatedMinutes?: number) => {
         if (gamification.awardedTaskIds.includes(task.id)) return;
 
