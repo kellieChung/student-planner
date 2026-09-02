@@ -2,71 +2,56 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+async function getAuthenticatedUser() {
     const session = await auth();
 
     if (!session?.user?.email) {
+        return null;
+    }
+
+    return prisma.user.findUnique({
+        where: {
+            email: session.user.email,
+        },
+    });
+}
+
+export async function GET() {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
         return NextResponse.json(
             { error: "Unauthorized" },
             { status: 401 }
         );
     }
 
-    const user = await prisma.user.findUnique({
+    const playlists = await prisma.musicPlaylist.findMany({
         where: {
-            email: session.user.email,
+            userId: user.id,
         },
-    });
-
-    if (!user) {
-        return NextResponse.json(
-            { error: "User not found" },
-            { status: 404 }
-        );
-    }
-
-    const playlists =
-        await prisma.musicPlaylist.findMany({
-            where: {
-                userId: user.id,
-            },
-            include: {
-                tracks: {
-                    orderBy: {
-                        position: "asc",
-                    },
+        include: {
+            tracks: {
+                orderBy: {
+                    position: "asc",
                 },
             },
-            orderBy: {
-                createdAt: "asc",
-            },
-        });
+        },
+        orderBy: {
+            createdAt: "asc",
+        },
+    });
 
     return NextResponse.json(playlists);
 }
 
-export async function POST(
-    request: Request
-) {
-    const session = await auth();
-
-    if (!session?.user?.email) {
-        return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
-        );
-    }
-
-    const user = await prisma.user.findUnique({
-        where: {
-            email: session.user.email,
-        },
-    });
+export async function POST(request: Request) {
+    const user = await getAuthenticatedUser();
 
     if (!user) {
         return NextResponse.json(
-            { error: "User not found" },
-            { status: 404 }
+            { error: "Unauthorized" },
+            { status: 401 }
         );
     }
 
@@ -79,25 +64,24 @@ export async function POST(
 
     if (!name) {
         return NextResponse.json(
-            { error: "Playlist name is required" },
+            { error: "Playlist name is required." },
             { status: 400 }
         );
     }
 
-    const playlist =
-        await prisma.musicPlaylist.create({
-            data: {
-                name,
-                sourceUrl:
-                    typeof body.sourceUrl === "string"
-                        ? body.sourceUrl
-                        : null,
-                userId: user.id,
-            },
-            include: {
-                tracks: true,
-            },
-        });
+    const playlist = await prisma.musicPlaylist.create({
+        data: {
+            name,
+            sourceUrl:
+                typeof body.sourceUrl === "string"
+                    ? body.sourceUrl.trim()
+                    : null,
+            userId: user.id,
+        },
+        include: {
+            tracks: true,
+        },
+    });
 
     return NextResponse.json(playlist);
 }

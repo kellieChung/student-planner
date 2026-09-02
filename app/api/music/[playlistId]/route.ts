@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
+type Params = {
+    params: Promise<{
+        playlistId: string;
+    }>;
+};
+
 async function getAuthenticatedUser() {
     const session = await auth();
 
@@ -17,12 +23,8 @@ async function getAuthenticatedUser() {
 }
 
 export async function GET(
-    request: Request,
-    context: {
-        params: Promise<{
-            playlistId: string;
-        }>;
-    }
+    _request: Request,
+    { params }: Params
 ) {
     const user = await getAuthenticatedUser();
 
@@ -33,26 +35,25 @@ export async function GET(
         );
     }
 
-    const { playlistId } = await context.params;
+    const { playlistId } = await params;
 
-    const playlist =
-        await prisma.musicPlaylist.findFirst({
-            where: {
-                id: playlistId,
-                userId: user.id,
-            },
-            include: {
-                tracks: {
-                    orderBy: {
-                        position: "asc",
-                    },
+    const playlist = await prisma.musicPlaylist.findFirst({
+        where: {
+            id: playlistId,
+            userId: user.id,
+        },
+        include: {
+            tracks: {
+                orderBy: {
+                    position: "asc",
                 },
             },
-        });
+        },
+    });
 
     if (!playlist) {
         return NextResponse.json(
-            { error: "Playlist not found" },
+            { error: "Playlist not found." },
             { status: 404 }
         );
     }
@@ -62,11 +63,7 @@ export async function GET(
 
 export async function PATCH(
     request: Request,
-    context: {
-        params: Promise<{
-            playlistId: string;
-        }>;
-    }
+    { params }: Params
 ) {
     const user = await getAuthenticatedUser();
 
@@ -77,9 +74,9 @@ export async function PATCH(
         );
     }
 
-    const { playlistId } = await context.params;
+    const { playlistId } = await params;
 
-    const playlist =
+    const existingPlaylist =
         await prisma.musicPlaylist.findFirst({
             where: {
                 id: playlistId,
@@ -87,9 +84,9 @@ export async function PATCH(
             },
         });
 
-    if (!playlist) {
+    if (!existingPlaylist) {
         return NextResponse.json(
-            { error: "Playlist not found" },
+            { error: "Playlist not found." },
             { status: 404 }
         );
     }
@@ -103,38 +100,33 @@ export async function PATCH(
 
     if (!name) {
         return NextResponse.json(
-            { error: "Playlist name is required" },
+            { error: "Playlist name is required." },
             { status: 400 }
         );
     }
 
-    const updatedPlaylist =
-        await prisma.musicPlaylist.update({
-            where: {
-                id: playlist.id,
-            },
-            data: {
-                name,
-            },
-            include: {
-                tracks: {
-                    orderBy: {
-                        position: "asc",
-                    },
+    const playlist = await prisma.musicPlaylist.update({
+        where: {
+            id: playlistId,
+        },
+        data: {
+            name,
+        },
+        include: {
+            tracks: {
+                orderBy: {
+                    position: "asc",
                 },
             },
-        });
+        },
+    });
 
-    return NextResponse.json(updatedPlaylist);
+    return NextResponse.json(playlist);
 }
 
 export async function DELETE(
-    request: Request,
-    context: {
-        params: Promise<{
-            playlistId: string;
-        }>;
-    }
+    _request: Request,
+    { params }: Params
 ) {
     const user = await getAuthenticatedUser();
 
@@ -145,26 +137,25 @@ export async function DELETE(
         );
     }
 
-    const { playlistId } = await context.params;
+    const { playlistId } = await params;
 
-    const playlist =
-        await prisma.musicPlaylist.findFirst({
-            where: {
-                id: playlistId,
-                userId: user.id,
-            },
-        });
+    const playlist = await prisma.musicPlaylist.findFirst({
+        where: {
+            id: playlistId,
+            userId: user.id,
+        },
+    });
 
     if (!playlist) {
         return NextResponse.json(
-            { error: "Playlist not found" },
+            { error: "Playlist not found." },
             { status: 404 }
         );
     }
 
     await prisma.musicPlaylist.delete({
         where: {
-            id: playlist.id,
+            id: playlistId,
         },
     });
 
