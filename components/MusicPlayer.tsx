@@ -1,79 +1,110 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+    FormEvent,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 
-type Track = {
+type MusicTrack = {
     id: string;
     title: string;
     sourceUrl: string;
     thumbnail: string | null;
+    position: number;
 };
 
-type Playlist = {
+type MusicPlaylist = {
     id: string;
     name: string;
     sourceUrl: string | null;
-    tracks: Track[];
-};
-
-type YouTubePlayer = {
-    playVideo: () => void;
-    pauseVideo: () => void;
-    nextVideo?: () => void;
-    previousVideo?: () => void;
-    seekTo: (
-        seconds: number,
-        allowSeekAhead: boolean
-    ) => void;
-    setVolume: (volume: number) => void;
-    getCurrentTime: () => number;
-    getDuration: () => number;
-    destroy: () => void;
+    createdAt: string;
+    updatedAt: string;
+    tracks: MusicTrack[];
 };
 
 declare global {
     interface Window {
         YT: {
             Player: new (
-                element: HTMLElement | string,
+                element: string | HTMLElement,
                 options: {
-                    videoId: string;
-                    playerVars?: Record<string, number>;
+                    videoId?: string;
+                    playerVars?: {
+                        autoplay?: number;
+                        controls?: number;
+                        rel?: number;
+                    };
                     events?: {
-                        onReady?: () => void;
-                        onStateChange?: (
-                            event: {
-                                data: number;
-                            }
-                        ) => void;
+                        onReady?: (event: {
+                            target: YTPlayer;
+                        }) => void;
+                        onStateChange?: (event: {
+                            data: number;
+                            target: YTPlayer;
+                        }) => void;
                     };
                 }
-            ) => YouTubePlayer;
+            ) => YTPlayer;
+
             PlayerState: {
                 PLAYING: number;
                 PAUSED: number;
                 ENDED: number;
             };
         };
-
-        onYouTubeIframeAPIReady?: () => void;
     }
 }
 
-function getYouTubeVideoId(
-    input: string
-): string | null {
-    try {
-        const url = new URL(input.trim());
+type YTPlayer = {
+    playVideo: () => void;
+    pauseVideo: () => void;
+    stopVideo: () => void;
+    destroy: () => void;
+    getCurrentTime: () => number;
+    getDuration: () => number;
+    setVolume: (volume: number) => void;
+};
 
-        if (url.hostname === "youtu.be") {
-            return url.pathname.slice(1) || null;
+function getYouTubeVideoId(url: string): string | null {
+    try {
+        const parsed = new URL(url);
+
+        if (
+            parsed.hostname === "youtu.be" ||
+            parsed.hostname === "www.youtu.be"
+        ) {
+            return parsed.pathname.slice(1) || null;
         }
 
         if (
-            url.hostname.includes("youtube.com")
+            parsed.hostname.includes("youtube.com")
         ) {
-            return url.searchParams.get("v");
+            const videoId =
+                parsed.searchParams.get("v");
+
+            if (videoId) {
+                return videoId;
+            }
+
+            const shortsMatch =
+                parsed.pathname.match(
+                    /^\/shorts\/([^/]+)/
+                );
+
+            if (shortsMatch) {
+                return shortsMatch[1];
+            }
+
+            const embedMatch =
+                parsed.pathname.match(
+                    /^\/embed\/([^/]+)/
+                );
+
+            if (embedMatch) {
+                return embedMatch[1];
+            }
         }
 
         return null;
@@ -84,7 +115,7 @@ function getYouTubeVideoId(
 
 export default function MusicPlayer() {
     const [playlists, setPlaylists] =
-        useState<Playlist[]>([]);
+        useState<MusicPlaylist[]>([]);
 
     const [selectedPlaylistId, setSelectedPlaylistId] =
         useState<string | null>(null);
@@ -92,13 +123,10 @@ export default function MusicPlayer() {
     const [currentIndex, setCurrentIndex] =
         useState(0);
 
-    const [volume, setVolume] =
-        useState(70);
-
     const [isPlaying, setIsPlaying] =
         useState(false);
 
-    const [isReady, setIsReady] =
+    const [playerReady, setPlayerReady] =
         useState(false);
 
     const [currentTime, setCurrentTime] =
@@ -107,11 +135,17 @@ export default function MusicPlayer() {
     const [duration, setDuration] =
         useState(0);
 
-    const [isLoading, setIsLoading] =
+    const [volume, setVolume] =
+        useState(70);
+
+    const [loading, setLoading] =
         useState(true);
 
     const [error, setError] =
-        useState<string | null>(null);
+        useState("");
+
+    const [showCreatePlaylist, setShowCreatePlaylist] =
+        useState(false);
 
     const [showAddTrack, setShowAddTrack] =
         useState(false);
@@ -119,34 +153,44 @@ export default function MusicPlayer() {
     const [showImport, setShowImport] =
         useState(false);
 
-    const [showCreatePlaylist, setShowCreatePlaylist] =
-        useState(false);
-
     const [newPlaylistName, setNewPlaylistName] =
         useState("");
 
-    const [newTrackTitle, setNewTrackTitle] =
+    const [trackTitle, setTrackTitle] =
         useState("");
 
-    const [newTrackUrl, setNewTrackUrl] =
+    const [trackUrl, setTrackUrl] =
         useState("");
 
     const [youtubePlaylistUrl, setYoutubePlaylistUrl] =
         useState("");
 
+    const [importTargetId, setImportTargetId] =
+        useState<string | null>(null);
+
+    const [newImportPlaylistName, setNewImportPlaylistName] =
+        useState("");
+
     const [isSubmitting, setIsSubmitting] =
         useState(false);
 
+    const [editingPlaylistId, setEditingPlaylistId] =
+        useState<string | null>(null);
+
+    const [editingPlaylistName, setEditingPlaylistName] =
+        useState("");
+
+    const [editingTrackId, setEditingTrackId] =
+        useState<string | null>(null);
+
+    const [editingTrackTitle, setEditingTrackTitle] =
+        useState("");
+
     const playerRef =
-        useRef<YouTubePlayer | null>(null);
+        useRef<YTPlayer | null>(null);
 
-    const playerContainerRef =
-        useRef<HTMLDivElement | null>(null);
-
-    const progressIntervalRef =
-        useRef<ReturnType<typeof setInterval> | null>(
-            null
-        );
+    const shouldAutoplayRef =
+        useRef(false);
 
     const selectedPlaylist =
         playlists.find(
@@ -154,53 +198,74 @@ export default function MusicPlayer() {
                 playlist.id === selectedPlaylistId
         ) ?? null;
 
-    const tracks =
-        selectedPlaylist?.tracks ?? [];
-
     const currentTrack =
-        tracks[currentIndex] ?? null;
+        selectedPlaylist?.tracks[currentIndex] ??
+        null;
 
     /*
-     * Load playlists from the database.
+     * Load saved volume.
      */
-    async function loadPlaylists() {
-        try {
-            setIsLoading(true);
-            setError(null);
-
-            const response = await fetch(
-                "/api/music/playlists"
-            );
-
-            if (!response.ok) {
-                throw new Error(
-                    "Failed to load playlists."
-                );
-            }
-
-            const data =
-                (await response.json()) as Playlist[];
-
-            setPlaylists(data);
-
-            setSelectedPlaylistId(
-                (current) =>
-                    current ??
-                    data[0]?.id ??
-                    null
-            );
-        } catch (error) {
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to load playlists."
-            );
-        } finally {
-            setIsLoading(false);
-        }
-    }
-
     useEffect(() => {
+        const savedVolume =
+            localStorage.getItem(
+                "music-player-volume"
+            );
+
+        if (savedVolume !== null) {
+            const parsed =
+                Number(savedVolume);
+
+            if (
+                Number.isFinite(parsed) &&
+                parsed >= 0 &&
+                parsed <= 100
+            ) {
+                setVolume(parsed);
+            }
+        }
+    }, []);
+
+    /*
+     * Load playlists.
+     */
+    useEffect(() => {
+        async function loadPlaylists() {
+            try {
+                setLoading(true);
+                setError("");
+
+                const response =
+                    await fetch(
+                        "/api/music/playlists"
+                    );
+
+                if (!response.ok) {
+                    throw new Error(
+                        "Failed to load playlists."
+                    );
+                }
+
+                const data =
+                    await response.json();
+
+                setPlaylists(data);
+
+                if (data.length > 0) {
+                    setSelectedPlaylistId(
+                        data[0].id
+                    );
+                }
+            } catch (err) {
+                setError(
+                    err instanceof Error
+                        ? err.message
+                        : "Failed to load playlists."
+                );
+            } finally {
+                setLoading(false);
+            }
+        }
+
         loadPlaylists();
     }, []);
 
@@ -208,266 +273,280 @@ export default function MusicPlayer() {
      * Load the YouTube IFrame API.
      */
     useEffect(() => {
-        if (window.YT) {
-            setIsReady(true);
-            return;
-        }
-
-        const existingScript =
-            document.querySelector(
-                'script[src="https://www.youtube.com/iframe_api"]'
-            );
-
-        if (existingScript) {
-            window.onYouTubeIframeAPIReady =
-                () => setIsReady(true);
-
+        if (
+            document.getElementById(
+                "youtube-iframe-api"
+            )
+        ) {
             return;
         }
 
         const script =
             document.createElement("script");
 
+        script.id =
+            "youtube-iframe-api";
+
         script.src =
             "https://www.youtube.com/iframe_api";
 
         script.async = true;
 
-        window.onYouTubeIframeAPIReady =
-            () => setIsReady(true);
-
         document.body.appendChild(script);
-
-        return () => {
-            window.onYouTubeIframeAPIReady =
-                undefined;
-        };
     }, []);
 
     /*
-     * Create/recreate the YouTube player
+     * Create / destroy YouTube player
      * whenever the current track changes.
      */
     useEffect(() => {
-        if (
-            !isReady ||
-            !currentTrack ||
-            !playerContainerRef.current
-        ) {
+        if (!currentTrack) {
+            playerRef.current = null;
+            setPlayerReady(false);
+            setIsPlaying(false);
+            setCurrentTime(0);
+            setDuration(0);
+
             return;
         }
 
-        const videoId =
-            getYouTubeVideoId(
-                currentTrack.sourceUrl
-            );
+        let cancelled = false;
 
-        if (!videoId) {
-            return;
-        }
+        const createPlayer = () => {
+            if (cancelled) {
+                return;
+            }
 
-        playerRef.current?.destroy();
+            const container =
+                document.getElementById(
+                    "youtube-player"
+                );
 
-        playerRef.current =
-            new window.YT.Player(
-                playerContainerRef.current,
-                {
-                    videoId,
+            if (!container) {
+                return;
+            }
 
-                    playerVars: {
-                        autoplay: 0,
-                        controls: 0,
-                        modestbranding: 1,
-                        rel: 0,
-                    },
+            const videoId =
+                getYouTubeVideoId(
+                    currentTrack.sourceUrl
+                );
 
-                    events: {
-                        onReady: () => {
-                            playerRef.current?.setVolume(
-                                volume
-                            );
+            if (!videoId) {
+                setError(
+                    "Invalid YouTube video URL."
+                );
 
-                            setDuration(
-                                playerRef.current?.getDuration() ??
-                                    0
-                            );
-                        },
+                return;
+            }
 
-                        onStateChange: (event) => {
-                            if (
-                                event.data ===
-                                window.YT.PlayerState.PLAYING
-                            ) {
-                                setIsPlaying(true);
-                            }
+            setPlayerReady(false);
+            setIsPlaying(false);
+            setCurrentTime(0);
+            setDuration(0);
 
-                            if (
-                                event.data ===
-                                window.YT.PlayerState.PAUSED
-                            ) {
-                                setIsPlaying(false);
-                            }
-
-                            if (
-                                event.data ===
-                                window.YT.PlayerState.ENDED
-                            ) {
-                                playNext();
-                            }
-                        },
-                    },
+            if (playerRef.current) {
+                try {
+                    playerRef.current.destroy();
+                } catch {
+                    // Player may already be destroyed.
                 }
-            );
+
+                playerRef.current = null;
+            }
+
+            /*
+             * Clear the container so the old
+             * iframe does not remain around.
+             */
+            container.innerHTML = "";
+
+            playerRef.current =
+                new window.YT.Player(
+                    container,
+                    {
+                        videoId,
+
+                        playerVars: {
+                            autoplay: 0,
+                            controls: 0,
+                            rel: 0,
+                        },
+
+                        events: {
+                            onReady: (event) => {
+                                if (cancelled) {
+                                    return;
+                                }
+
+                                playerRef.current =
+                                    event.target;
+
+                                setPlayerReady(true);
+
+                                event.target.setVolume(
+                                    volume
+                                );
+
+                                if (
+                                    shouldAutoplayRef.current
+                                ) {
+                                    event.target.playVideo();
+
+                                    shouldAutoplayRef.current =
+                                        false;
+                                }
+                            },
+
+                            onStateChange: (event) => {
+                                if (cancelled) {
+                                    return;
+                                }
+
+                                if (
+                                    event.data ===
+                                    window.YT.PlayerState
+                                        .PLAYING
+                                ) {
+                                    setIsPlaying(true);
+                                }
+
+                                if (
+                                    event.data ===
+                                    window.YT.PlayerState
+                                        .PAUSED
+                                ) {
+                                    setIsPlaying(false);
+                                }
+
+                                if (
+                                    event.data ===
+                                    window.YT.PlayerState
+                                        .ENDED
+                                ) {
+                                    playNext();
+                                }
+                            },
+                        },
+                    }
+                );
+        };
+
+        if (
+            window.YT &&
+            typeof window.YT.Player ===
+                "function"
+        ) {
+            createPlayer();
+        } else {
+            const checkYouTube =
+                window.setInterval(() => {
+                    if (
+                        window.YT &&
+                        typeof window.YT.Player ===
+                            "function"
+                    ) {
+                        window.clearInterval(
+                            checkYouTube
+                        );
+
+                        createPlayer();
+                    }
+                }, 100);
+
+            return () => {
+                cancelled = true;
+
+                window.clearInterval(
+                    checkYouTube
+                );
+            };
+        }
 
         return () => {
-            playerRef.current?.destroy();
-            playerRef.current = null;
+            cancelled = true;
+
+            if (playerRef.current) {
+                try {
+                    playerRef.current.destroy();
+                } catch {
+                    // Ignore cleanup errors.
+                }
+
+                playerRef.current = null;
+            }
+
+            setPlayerReady(false);
         };
-    }, [
-        isReady,
-        currentTrack?.id,
-    ]);
+    }, [currentTrack?.id]);
 
     /*
-     * Progress timer.
+     * Update playback time.
      */
     useEffect(() => {
-        if (progressIntervalRef.current) {
-            clearInterval(
-                progressIntervalRef.current
-            );
-        }
-
-        if (!isPlaying) {
+        if (!playerReady) {
             return;
         }
 
-        progressIntervalRef.current =
-            setInterval(() => {
-                if (!playerRef.current) {
+        const interval =
+            window.setInterval(() => {
+                const player =
+                    playerRef.current;
+
+                if (
+                    !player ||
+                    typeof player.getCurrentTime !==
+                        "function" ||
+                    typeof player.getDuration !==
+                        "function"
+                ) {
                     return;
                 }
 
                 setCurrentTime(
-                    playerRef.current.getCurrentTime()
+                    player.getCurrentTime()
                 );
 
                 setDuration(
-                    playerRef.current.getDuration()
+                    player.getDuration()
                 );
             }, 500);
 
         return () => {
-            if (progressIntervalRef.current) {
-                clearInterval(
-                    progressIntervalRef.current
-                );
-            }
+            window.clearInterval(
+                interval
+            );
         };
-    }, [isPlaying]);
+    }, [playerReady]);
 
     /*
-     * Change playlist.
+     * Update YouTube volume.
      */
-    function selectPlaylist(
-        playlistId: string
-    ) {
-        setSelectedPlaylistId(
-            playlistId
-        );
-        setCurrentIndex(0);
-        setIsPlaying(false);
-        setCurrentTime(0);
-    }
+    useEffect(() => {
+        const player =
+            playerRef.current;
 
-    /*
-     * Play/pause.
-     */
-    function togglePlay() {
-        if (!playerRef.current) {
+        if (
+            !player ||
+            !playerReady ||
+            typeof player.setVolume !==
+                "function"
+        ) {
             return;
         }
 
-        if (isPlaying) {
-            playerRef.current.pauseVideo();
-        } else {
-            playerRef.current.playVideo();
-        }
-    }
-
-    /*
-     * Previous track.
-     */
-    function playPrevious() {
-        if (tracks.length === 0) {
-            return;
-        }
-
-        setCurrentIndex((current) =>
-            current <= 0
-                ? tracks.length - 1
-                : current - 1
-        );
-    }
-
-    /*
-     * Next track.
-     */
-    function playNext() {
-        if (tracks.length === 0) {
-            return;
-        }
-
-        setCurrentIndex((current) =>
-            current >= tracks.length - 1
-                ? 0
-                : current + 1
-        );
-    }
-
-    /*
-     * Seek.
-     */
-    function seek(
-        event: React.ChangeEvent<HTMLInputElement>
-    ) {
-        const value =
-            Number(event.target.value);
-
-        setCurrentTime(value);
-
-        playerRef.current?.seekTo(
-            value,
-            true
-        );
-    }
-
-    /*
-     * Volume.
-     */
-    function changeVolume(
-        event: React.ChangeEvent<HTMLInputElement>
-    ) {
-        const value =
-            Number(event.target.value);
-
-        setVolume(value);
-
-        playerRef.current?.setVolume(
-            value
-        );
+        player.setVolume(volume);
 
         localStorage.setItem(
-            "tavern_radio_volume",
-            String(value)
+            "music-player-volume",
+            String(volume)
         );
-    }
+    }, [volume, playerReady]);
 
     /*
      * Create playlist.
      */
     async function createPlaylist(
-        event: React.FormEvent
+        event: FormEvent
     ) {
         event.preventDefault();
 
@@ -477,22 +556,23 @@ export default function MusicPlayer() {
 
         try {
             setIsSubmitting(true);
-            setError(null);
+            setError("");
 
-            const response = await fetch(
-                "/api/music/playlists",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        name:
-                            newPlaylistName.trim(),
-                    }),
-                }
-            );
+            const response =
+                await fetch(
+                    "/api/music/playlists",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            name:
+                                newPlaylistName.trim(),
+                        }),
+                    }
+                );
 
             const data =
                 await response.json();
@@ -506,19 +586,24 @@ export default function MusicPlayer() {
 
             setPlaylists((current) => [
                 ...current,
-                data,
+                {
+                    ...data,
+                    tracks:
+                        data.tracks ?? [],
+                },
             ]);
 
             setSelectedPlaylistId(
                 data.id
             );
 
+            setCurrentIndex(0);
             setNewPlaylistName("");
             setShowCreatePlaylist(false);
-        } catch (error) {
+        } catch (err) {
             setError(
-                error instanceof Error
-                    ? error.message
+                err instanceof Error
+                    ? err.message
                     : "Failed to create playlist."
             );
         } finally {
@@ -527,53 +612,42 @@ export default function MusicPlayer() {
     }
 
     /*
-     * Add one track.
+     * Add individual track.
      */
     async function addTrack(
-        event: React.FormEvent
+        event: FormEvent
     ) {
         event.preventDefault();
 
         if (
             !selectedPlaylistId ||
-            !newTrackTitle.trim() ||
-            !newTrackUrl.trim()
+            !trackTitle.trim() ||
+            !trackUrl.trim()
         ) {
-            return;
-        }
-
-        const videoId =
-            getYouTubeVideoId(
-                newTrackUrl
-            );
-
-        if (!videoId) {
-            setError(
-                "Please enter a valid YouTube video URL."
-            );
             return;
         }
 
         try {
             setIsSubmitting(true);
-            setError(null);
+            setError("");
 
-            const response = await fetch(
-                `/api/music/${selectedPlaylistId}/tracks`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        title:
-                            newTrackTitle.trim(),
-                        sourceUrl:
-                            newTrackUrl.trim(),
-                    }),
-                }
-            );
+            const response =
+                await fetch(
+                    `/api/music/${selectedPlaylistId}/tracks`,
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            title:
+                                trackTitle.trim(),
+                            sourceUrl:
+                                trackUrl.trim(),
+                        }),
+                    }
+                );
 
             const data =
                 await response.json();
@@ -600,13 +674,13 @@ export default function MusicPlayer() {
                 )
             );
 
-            setNewTrackTitle("");
-            setNewTrackUrl("");
+            setTrackTitle("");
+            setTrackUrl("");
             setShowAddTrack(false);
-        } catch (error) {
+        } catch (err) {
             setError(
-                error instanceof Error
-                    ? error.message
+                err instanceof Error
+                    ? err.message
                     : "Failed to add track."
             );
         } finally {
@@ -615,42 +689,105 @@ export default function MusicPlayer() {
     }
 
     /*
-     * Import a complete YouTube playlist
-     * into the selected Student Planner playlist.
+     * Import an entire YouTube playlist.
+     *
+     * If there is no selected destination playlist,
+     * create one first.
      */
-    async function importYouTubePlaylist(
-        event: React.FormEvent
+    async function importPlaylist(
+        event: FormEvent
     ) {
         event.preventDefault();
 
-        if (
-            !selectedPlaylistId ||
-            !youtubePlaylistUrl.trim()
-        ) {
+        if (!youtubePlaylistUrl.trim()) {
             return;
         }
 
         try {
             setIsSubmitting(true);
-            setError(null);
+            setError("");
 
-            const response = await fetch(
-                "/api/music/import-youtube-playlist",
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        playlistId:
-                            selectedPlaylistId,
+            let destinationId =
+                importTargetId;
 
-                        youtubePlaylistUrl:
-                            youtubePlaylistUrl.trim(),
-                    }),
+            /*
+             * No destination selected:
+             * create a new Student Planner playlist.
+             */
+            if (!destinationId) {
+                if (
+                    !newImportPlaylistName.trim()
+                ) {
+                    throw new Error(
+                        "Select a playlist or enter a name for a new playlist."
+                    );
                 }
-            );
+
+                const createResponse =
+                    await fetch(
+                        "/api/music/playlists",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type":
+                                    "application/json",
+                            },
+                            body: JSON.stringify({
+                                name:
+                                    newImportPlaylistName.trim(),
+                            }),
+                        }
+                    );
+
+                const created =
+                    await createResponse.json();
+
+                if (!createResponse.ok) {
+                    throw new Error(
+                        created.error ||
+                            "Failed to create playlist."
+                    );
+                }
+
+                const newPlaylist: MusicPlaylist =
+                    {
+                        ...created,
+                        tracks:
+                            created.tracks ?? [],
+                    };
+
+                setPlaylists((current) => [
+                    ...current,
+                    newPlaylist,
+                ]);
+
+                destinationId =
+                    newPlaylist.id;
+
+                setSelectedPlaylistId(
+                    destinationId
+                );
+
+                setCurrentIndex(0);
+            }
+
+            const response =
+                await fetch(
+                    "/api/music/import-youtube-playlist",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            playlistId:
+                                destinationId,
+                            youtubePlaylistUrl:
+                                youtubePlaylistUrl.trim(),
+                        }),
+                    }
+                );
 
             const data =
                 await response.json();
@@ -658,26 +795,36 @@ export default function MusicPlayer() {
             if (!response.ok) {
                 throw new Error(
                     data.error ||
-                        "Failed to import playlist."
+                        "Failed to import YouTube playlist."
                 );
             }
 
-            setPlaylists((current) =>
-                current.map((playlist) =>
-                    playlist.id ===
-                    selectedPlaylistId
-                        ? data.playlist
-                        : playlist
-                )
+            if (data.playlist) {
+                setPlaylists((current) =>
+                    current.map((playlist) =>
+                        playlist.id ===
+                        destinationId
+                            ? data.playlist
+                            : playlist
+                    )
+                );
+            }
+
+            setSelectedPlaylistId(
+                destinationId
             );
 
+            setCurrentIndex(0);
+
             setYoutubePlaylistUrl("");
+            setImportTargetId(null);
+            setNewImportPlaylistName("");
             setShowImport(false);
-        } catch (error) {
+        } catch (err) {
             setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to import playlist."
+                err instanceof Error
+                    ? err.message
+                    : "Failed to import YouTube playlist."
             );
         } finally {
             setIsSubmitting(false);
@@ -685,29 +832,241 @@ export default function MusicPlayer() {
     }
 
     /*
-     * Delete a track.
+     * Rename playlist.
      */
-    async function removeTrack(
-        trackId: string
+    async function renamePlaylist(
+        playlistId: string
     ) {
-        if (!selectedPlaylistId) {
+        if (!editingPlaylistName.trim()) {
             return;
         }
 
         try {
-            const response = await fetch(
-                `/api/music/${selectedPlaylistId}/tracks`,
-                {
-                    method: "DELETE",
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-                    },
-                    body: JSON.stringify({
-                        trackId,
-                    }),
-                }
+            setError("");
+
+            const response =
+                await fetch(
+                    `/api/music/${playlistId}`,
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            name:
+                                editingPlaylistName.trim(),
+                        }),
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.error ||
+                        "Failed to rename playlist."
+                );
+            }
+
+            setPlaylists((current) =>
+                current.map((playlist) =>
+                    playlist.id === playlistId
+                        ? data
+                        : playlist
+                )
             );
+
+            setEditingPlaylistId(null);
+            setEditingPlaylistName("");
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to rename playlist."
+            );
+        }
+    }
+
+    /*
+     * Rename track.
+     */
+    async function renameTrack(
+        playlistId: string,
+        trackId: string
+    ) {
+        if (!editingTrackTitle.trim()) {
+            return;
+        }
+
+        try {
+            setError("");
+
+            const response =
+                await fetch(
+                    `/api/music/${playlistId}/tracks`,
+                    {
+                        method: "PATCH",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            trackId,
+                            title:
+                                editingTrackTitle.trim(),
+                        }),
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.error ||
+                        "Failed to rename track."
+                );
+            }
+
+            setPlaylists((current) =>
+                current.map((playlist) =>
+                    playlist.id === playlistId
+                        ? {
+                              ...playlist,
+                              tracks:
+                                  playlist.tracks.map(
+                                      (track) =>
+                                          track.id ===
+                                          trackId
+                                              ? data
+                                              : track
+                                  ),
+                          }
+                        : playlist
+                )
+            );
+
+            setEditingTrackId(null);
+            setEditingTrackTitle("");
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to rename track."
+            );
+        }
+    }
+
+    /*
+     * Delete playlist.
+     */
+    async function deletePlaylist(
+        playlistId: string
+    ) {
+        const confirmed =
+            window.confirm(
+                "Delete this playlist?"
+            );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            setError("");
+
+            const response =
+                await fetch(
+                    `/api/music/${playlistId}`,
+                    {
+                        method: "DELETE",
+                    }
+                );
+
+            const data =
+                await response.json();
+
+            if (!response.ok) {
+                throw new Error(
+                    data.error ||
+                        "Failed to delete playlist."
+                );
+            }
+
+            setPlaylists((current) => {
+                const remaining =
+                    current.filter(
+                        (playlist) =>
+                            playlist.id !==
+                            playlistId
+                    );
+
+                if (
+                    selectedPlaylistId ===
+                    playlistId
+                ) {
+                    setSelectedPlaylistId(
+                        remaining[0]?.id ??
+                            null
+                    );
+
+                    setCurrentIndex(0);
+                }
+
+                return remaining;
+            });
+        } catch (err) {
+            setError(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to delete playlist."
+            );
+        }
+    }
+
+    /*
+     * Delete track.
+     */
+    async function deleteTrack(
+        playlistId: string,
+        trackId: string
+    ) {
+        try {
+            setError("");
+
+            const playlist =
+                playlists.find(
+                    (item) =>
+                        item.id ===
+                        playlistId
+                );
+
+            if (!playlist) {
+                return;
+            }
+
+            const deletedIndex =
+                playlist.tracks.findIndex(
+                    (track) =>
+                        track.id === trackId
+                );
+
+            const response =
+                await fetch(
+                    `/api/music/${playlistId}/tracks`,
+                    {
+                        method: "DELETE",
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+                        },
+                        body: JSON.stringify({
+                            trackId,
+                        }),
+                    }
+                );
 
             const data =
                 await response.json();
@@ -720,19 +1079,18 @@ export default function MusicPlayer() {
             }
 
             setPlaylists((current) =>
-                current.map((playlist) => {
+                current.map((item) => {
                     if (
-                        playlist.id !==
-                        selectedPlaylistId
+                        item.id !==
+                        playlistId
                     ) {
-                        return playlist;
+                        return item;
                     }
 
                     return {
-                        ...playlist,
-
+                        ...item,
                         tracks:
-                            playlist.tracks.filter(
+                            item.tracks.filter(
                                 (track) =>
                                     track.id !==
                                     trackId
@@ -741,98 +1099,209 @@ export default function MusicPlayer() {
                 })
             );
 
-            setCurrentIndex(0);
-        } catch (error) {
+            if (
+                deletedIndex >= 0 &&
+                deletedIndex < currentIndex
+            ) {
+                setCurrentIndex(
+                    (index) =>
+                        Math.max(
+                            0,
+                            index - 1
+                        )
+                );
+            } else if (
+                deletedIndex ===
+                currentIndex
+            ) {
+                setCurrentIndex(
+                    (index) =>
+                        Math.max(
+                            0,
+                            Math.min(
+                                index,
+                                playlist.tracks
+                                    .length - 2
+                            )
+                        )
+                );
+
+                setIsPlaying(false);
+            }
+        } catch (err) {
             setError(
-                error instanceof Error
-                    ? error.message
+                err instanceof Error
+                    ? err.message
                     : "Failed to delete track."
             );
         }
     }
 
     /*
-     * Delete playlist.
+     * Select a track.
      */
-    async function deletePlaylist(
-        playlistId: string
+    function selectTrack(
+        index: number
     ) {
-        try {
-            const response = await fetch(
-                `/api/music/${playlistId}`,
-                {
-                    method: "DELETE",
-                }
-            );
+        shouldAutoplayRef.current =
+            true;
 
-            const data =
-                await response.json();
+        setCurrentIndex(index);
+    }
 
-            if (!response.ok) {
-                throw new Error(
-                    data.error ||
-                        "Failed to delete playlist."
-                );
-            }
+    /*
+     * Play / pause.
+     */
+    function togglePlay() {
+        const player =
+            playerRef.current;
 
-            setPlaylists((current) =>
-                current.filter(
-                    (playlist) =>
-                        playlist.id !==
-                        playlistId
-                )
-            );
+        if (
+            !playerReady ||
+            !player
+        ) {
+            return;
+        }
 
-            if (
-                selectedPlaylistId ===
-                playlistId
-            ) {
-                setSelectedPlaylistId(
-                    playlists.find(
-                        (playlist) =>
-                            playlist.id !==
-                            playlistId
-                    )?.id ?? null
-                );
+        if (
+            typeof player.playVideo !==
+                "function" ||
+            typeof player.pauseVideo !==
+                "function"
+        ) {
+            return;
+        }
 
-                setCurrentIndex(0);
-            }
-        } catch (error) {
-            setError(
-                error instanceof Error
-                    ? error.message
-                    : "Failed to delete playlist."
-            );
+        if (isPlaying) {
+            player.pauseVideo();
+        } else {
+            player.playVideo();
         }
     }
 
     /*
-     * Load saved volume.
+     * Next track.
      */
-    useEffect(() => {
-        const savedVolume =
-            localStorage.getItem(
-                "tavern_radio_volume"
+    function playNext() {
+        if (!selectedPlaylist) {
+            return;
+        }
+
+        const nextIndex =
+            currentIndex + 1;
+
+        if (
+            nextIndex >=
+            selectedPlaylist.tracks.length
+        ) {
+            setIsPlaying(false);
+            return;
+        }
+
+        shouldAutoplayRef.current =
+            true;
+
+        setCurrentIndex(nextIndex);
+    }
+
+    /*
+     * Previous track.
+     */
+    function playPrevious() {
+        if (!selectedPlaylist) {
+            return;
+        }
+
+        const previousIndex =
+            currentIndex - 1;
+
+        if (previousIndex < 0) {
+            return;
+        }
+
+        shouldAutoplayRef.current =
+            true;
+
+        setCurrentIndex(
+            previousIndex
+        );
+    }
+
+    /*
+     * Seek.
+     */
+    function seek(
+        event: React.ChangeEvent<HTMLInputElement>
+    ) {
+        const value =
+            Number(event.target.value);
+
+        const player =
+            playerRef.current;
+
+        if (
+            !player ||
+            !playerReady
+        ) {
+            return;
+        }
+
+        if (
+            typeof player.getDuration !==
+                "function"
+        ) {
+            return;
+        }
+
+        const targetTime =
+            (value / 100) *
+            player.getDuration();
+
+        /*
+         * YT.Player normally has seekTo.
+         * We intentionally check for it because
+         * the player can still be initializing.
+         */
+        const seekPlayer =
+            player as YTPlayer & {
+                seekTo?: (
+                    seconds: number,
+                    allowSeekAhead: boolean
+                ) => void;
+            };
+
+        if (
+            typeof seekPlayer.seekTo ===
+            "function"
+        ) {
+            seekPlayer.seekTo(
+                targetTime,
+                true
             );
 
-        if (savedVolume) {
-            const value =
-                Number(savedVolume);
-
-            if (
-                Number.isFinite(value) &&
-                value >= 0 &&
-                value <= 100
-            ) {
-                setVolume(value);
-            }
+            setCurrentTime(
+                targetTime
+            );
         }
-    }, []);
+    }
+
+    const progress =
+        duration > 0
+            ? Math.min(
+                  100,
+                  (currentTime /
+                      duration) *
+                      100
+              )
+            : 0;
 
     function formatTime(
         seconds: number
     ) {
-        if (!Number.isFinite(seconds)) {
+        if (
+            !Number.isFinite(seconds) ||
+            seconds < 0
+        ) {
             return "0:00";
         }
 
@@ -842,40 +1311,49 @@ export default function MusicPlayer() {
         const remainingSeconds =
             Math.floor(seconds % 60);
 
-        return `${minutes}:${String(
-            remainingSeconds
-        ).padStart(2, "0")}`;
+        return `${minutes}:${remainingSeconds
+            .toString()
+            .padStart(2, "0")}`;
     }
 
-    if (isLoading) {
+    if (loading) {
         return (
-            <div className="rounded-xl border p-6">
+            <div className="p-6">
                 Loading Tavern Radio...
             </div>
         );
     }
 
     return (
-        <div className="space-y-6 rounded-xl border p-6">
-            {/* Hidden YouTube player */}
-            <div
-                ref={playerContainerRef}
-                className="pointer-events-none absolute -left-[9999px] h-[200px] w-[200px]"
-            />
+        <div className="flex flex-col gap-6 p-6">
+            {error && (
+                <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                    {error}
+                </div>
+            )}
 
-            {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-xl font-semibold">
+                    <h1 className="text-2xl font-bold">
                         Tavern Radio
-                    </h2>
+                    </h1>
 
-                    <p className="text-sm opacity-60">
-                        Your study soundtrack
+                    <p className="text-sm text-gray-500">
+                        Your personal study soundtrack.
                     </p>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        onClick={() =>
+                            setShowImport(true)
+                        }
+                        className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+                    >
+                        Import Playlist
+                    </button>
+
                     <button
                         type="button"
                         onClick={() =>
@@ -883,429 +1361,785 @@ export default function MusicPlayer() {
                                 true
                             )
                         }
-                        className="rounded-lg border px-3 py-2 text-sm"
+                        className="rounded-lg border px-4 py-2 text-sm font-medium"
                     >
-                        + Playlist
+                        New Playlist
                     </button>
 
-                    <button
-                        type="button"
-                        onClick={() =>
-                            setShowAddTrack(
-                                !showAddTrack
-                            )
-                        }
-                        disabled={
-                            !selectedPlaylistId
-                        }
-                        className="rounded-lg border px-3 py-2 text-sm"
-                    >
-                        + Track
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() =>
-                            setShowImport(
-                                !showImport
-                            )
-                        }
-                        disabled={
-                            !selectedPlaylistId
-                        }
-                        className="rounded-lg border px-3 py-2 text-sm"
-                    >
-                        Import Playlist
-                    </button>
-                </div>
-            </div>
-
-            {error && (
-                <div className="rounded-lg border border-red-400/40 bg-red-500/10 p-3 text-sm">
-                    {error}
-                </div>
-            )}
-
-            {/* Playlist selector */}
-            <div className="flex gap-2 overflow-x-auto">
-                {playlists.map((playlist) => (
-                    <button
-                        key={playlist.id}
-                        type="button"
-                        onClick={() =>
-                            selectPlaylist(
-                                playlist.id
-                            )
-                        }
-                        className={`shrink-0 rounded-lg px-4 py-2 text-sm ${
-                            selectedPlaylistId ===
-                            playlist.id
-                                ? "bg-foreground text-background"
-                                : "border"
-                        }`}
-                    >
-                        {playlist.name}
-                    </button>
-                ))}
-            </div>
-
-            {/* Create playlist */}
-            {showCreatePlaylist && (
-                <form
-                    onSubmit={createPlaylist}
-                    className="space-y-3 rounded-lg border p-4"
-                >
-                    <input
-                        value={newPlaylistName}
-                        onChange={(event) =>
-                            setNewPlaylistName(
-                                event.target.value
-                            )
-                        }
-                        placeholder="Playlist name"
-                        className="w-full rounded-lg border bg-transparent px-3 py-2"
-                        autoFocus
-                    />
-
-                    <div className="flex gap-2">
-                        <button
-                            type="submit"
-                            disabled={
-                                isSubmitting
-                            }
-                            className="rounded-lg border px-4 py-2"
-                        >
-                            Create
-                        </button>
-
+                    {selectedPlaylist && (
                         <button
                             type="button"
                             onClick={() =>
-                                setShowCreatePlaylist(
-                                    false
+                                setShowAddTrack(
+                                    true
                                 )
                             }
-                            className="rounded-lg border px-4 py-2"
+                            className="rounded-lg border px-4 py-2 text-sm font-medium"
                         >
-                            Cancel
+                            Add Track
                         </button>
-                    </div>
-                </form>
+                    )}
+                </div>
+            </div>
+
+            {playlists.length === 0 ? (
+                <div className="rounded-xl border p-8 text-center">
+                    <h2 className="text-lg font-semibold">
+                        No playlists yet
+                    </h2>
+
+                    <p className="mt-2 text-sm text-gray-500">
+                        Import a YouTube playlist or
+                        create your first playlist.
+                    </p>
+                </div>
+            ) : (
+                <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+                    <aside className="rounded-xl border p-3">
+                        <div className="mb-3 flex items-center justify-between">
+                            <h2 className="font-semibold">
+                                Playlists
+                            </h2>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            {playlists.map(
+                                (playlist) => (
+                                    <div
+                                        key={
+                                            playlist.id
+                                        }
+                                        className={`rounded-lg ${
+                                            selectedPlaylistId ===
+                                            playlist.id
+                                                ? "bg-gray-100"
+                                                : ""
+                                        }`}
+                                    >
+                                        {editingPlaylistId ===
+                                        playlist.id ? (
+                                            <div className="flex gap-1 p-2">
+                                                <input
+                                                    autoFocus
+                                                    value={
+                                                        editingPlaylistName
+                                                    }
+                                                    onChange={(
+                                                        event
+                                                    ) =>
+                                                        setEditingPlaylistName(
+                                                            event
+                                                                .target
+                                                                .value
+                                                        )
+                                                    }
+                                                    onKeyDown={(
+                                                        event
+                                                    ) => {
+                                                        if (
+                                                            event.key ===
+                                                            "Enter"
+                                                        ) {
+                                                            renamePlaylist(
+                                                                playlist.id
+                                                            );
+                                                        }
+
+                                                        if (
+                                                            event.key ===
+                                                            "Escape"
+                                                        ) {
+                                                            setEditingPlaylistId(
+                                                                null
+                                                            );
+                                                        }
+                                                    }}
+                                                    className="min-w-0 flex-1 rounded border px-2 py-1 text-sm"
+                                                />
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        renamePlaylist(
+                                                            playlist.id
+                                                        )
+                                                    }
+                                                    className="text-sm"
+                                                >
+                                                    Save
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedPlaylistId(
+                                                            playlist.id
+                                                        );
+                                                        setCurrentIndex(
+                                                            0
+                                                        );
+                                                        setIsPlaying(
+                                                            false
+                                                        );
+                                                    }}
+                                                    className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
+                                                >
+                                                    <span className="block truncate font-medium">
+                                                        {
+                                                            playlist.name
+                                                        }
+                                                    </span>
+
+                                                    <span className="text-xs text-gray-500">
+                                                        {
+                                                            playlist
+                                                                .tracks
+                                                                .length
+                                                        }{" "}
+                                                        tracks
+                                                    </span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setEditingPlaylistId(
+                                                            playlist.id
+                                                        );
+                                                        setEditingPlaylistName(
+                                                            playlist.name
+                                                        );
+                                                    }}
+                                                    className="px-2 text-xs text-gray-500"
+                                                >
+                                                    Edit
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        deletePlaylist(
+                                                            playlist.id
+                                                        )
+                                                    }
+                                                    className="px-2 text-xs text-red-500"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            )}
+                        </div>
+                    </aside>
+
+                    <main className="min-w-0">
+                        {selectedPlaylist && (
+                            <>
+                                <div className="mb-4">
+                                    <h2 className="text-xl font-semibold">
+                                        {
+                                            selectedPlaylist.name
+                                        }
+                                    </h2>
+
+                                    <p className="text-sm text-gray-500">
+                                        {
+                                            selectedPlaylist
+                                                .tracks
+                                                .length
+                                        }{" "}
+                                        tracks
+                                    </p>
+                                </div>
+
+                                <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+                                    <section className="rounded-xl border p-4">
+                                        <div
+                                            id="youtube-player"
+                                            className="aspect-video w-full overflow-hidden rounded-lg bg-black"
+                                        />
+
+                                        <div className="mt-4">
+                                            <h3 className="truncate font-semibold">
+                                                {currentTrack?.title ??
+                                                    "Nothing playing"}
+                                            </h3>
+
+                                            {currentTrack && (
+                                                <p className="text-sm text-gray-500">
+                                                    Track{" "}
+                                                    {currentIndex +
+                                                        1}{" "}
+                                                    of{" "}
+                                                    {
+                                                        selectedPlaylist
+                                                            .tracks
+                                                            .length
+                                                    }
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="mt-4">
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="100"
+                                                value={
+                                                    progress
+                                                }
+                                                onChange={
+                                                    seek
+                                                }
+                                                className="w-full"
+                                                disabled={
+                                                    !playerReady
+                                                }
+                                            />
+
+                                            <div className="flex justify-between text-xs text-gray-500">
+                                                <span>
+                                                    {formatTime(
+                                                        currentTime
+                                                    )}
+                                                </span>
+
+                                                <span>
+                                                    {formatTime(
+                                                        duration
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-4 flex items-center justify-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={
+                                                    playPrevious
+                                                }
+                                                disabled={
+                                                    !currentTrack ||
+                                                    currentIndex ===
+                                                        0
+                                                }
+                                                className="rounded-full border px-4 py-2 disabled:opacity-40"
+                                            >
+                                                Previous
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={
+                                                    togglePlay
+                                                }
+                                                disabled={
+                                                    !currentTrack ||
+                                                    !playerReady
+                                                }
+                                                className="rounded-full bg-black px-6 py-2 text-white disabled:opacity-40"
+                                            >
+                                                {isPlaying
+                                                    ? "Pause"
+                                                    : "Play"}
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={
+                                                    playNext
+                                                }
+                                                disabled={
+                                                    !currentTrack ||
+                                                    currentIndex >=
+                                                        selectedPlaylist
+                                                            .tracks
+                                                            .length -
+                                                            1
+                                                }
+                                                className="rounded-full border px-4 py-2 disabled:opacity-40"
+                                            >
+                                                Next
+                                            </button>
+                                        </div>
+
+                                        <div className="mt-5 flex items-center gap-3">
+                                            <span className="text-sm">
+                                                Volume
+                                            </span>
+
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="100"
+                                                value={
+                                                    volume
+                                                }
+                                                onChange={(
+                                                    event
+                                                ) =>
+                                                    setVolume(
+                                                        Number(
+                                                            event
+                                                                .target
+                                                                .value
+                                                        )
+                                                    )
+                                                }
+                                                className="flex-1"
+                                            />
+
+                                            <span className="w-10 text-right text-sm text-gray-500">
+                                                {volume}
+                                            </span>
+                                        </div>
+                                    </section>
+
+                                    <section className="rounded-xl border">
+                                        <div className="border-b p-4">
+                                            <h3 className="font-semibold">
+                                                Tracks
+                                            </h3>
+                                        </div>
+
+                                        {selectedPlaylist
+                                            .tracks
+                                            .length ===
+                                        0 ? (
+                                            <div className="p-6 text-center text-sm text-gray-500">
+                                                No tracks yet.
+                                            </div>
+                                        ) : (
+                                            <div className="max-h-[500px] overflow-y-auto">
+                                                {selectedPlaylist.tracks.map(
+                                                    (
+                                                        track,
+                                                        index
+                                                    ) => (
+                                                        <div
+                                                            key={
+                                                                track.id
+                                                            }
+                                                            className={`border-b p-3 ${
+                                                                index ===
+                                                                currentIndex
+                                                                    ? "bg-gray-50"
+                                                                    : ""
+                                                            }`}
+                                                        >
+                                                            {editingTrackId ===
+                                                            track.id ? (
+                                                                <div className="flex gap-2">
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={
+                                                                            editingTrackTitle
+                                                                        }
+                                                                        onChange={(
+                                                                            event
+                                                                        ) =>
+                                                                            setEditingTrackTitle(
+                                                                                event
+                                                                                    .target
+                                                                                    .value
+                                                                            )
+                                                                        }
+                                                                        onKeyDown={(
+                                                                            event
+                                                                        ) => {
+                                                                            if (
+                                                                                event.key ===
+                                                                                "Enter"
+                                                                            ) {
+                                                                                renameTrack(
+                                                                                    selectedPlaylist.id,
+                                                                                    track.id
+                                                                                );
+                                                                            }
+
+                                                                            if (
+                                                                                event.key ===
+                                                                                "Escape"
+                                                                            ) {
+                                                                                setEditingTrackId(
+                                                                                    null
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                        className="min-w-0 flex-1 rounded border px-2 py-1 text-sm"
+                                                                    />
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            renameTrack(
+                                                                                selectedPlaylist.id,
+                                                                                track.id
+                                                                            )
+                                                                        }
+                                                                        className="text-sm"
+                                                                    >
+                                                                        Save
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center gap-3">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            selectTrack(
+                                                                                index
+                                                                            )
+                                                                        }
+                                                                        className="min-w-0 flex-1 text-left"
+                                                                    >
+                                                                        <div className="truncate text-sm font-medium">
+                                                                            {index +
+                                                                                1}.{" "}
+                                                                            {
+                                                                                track.title
+                                                                            }
+                                                                        </div>
+                                                                    </button>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setEditingTrackId(
+                                                                                track.id
+                                                                            );
+                                                                            setEditingTrackTitle(
+                                                                                track.title
+                                                                            );
+                                                                        }}
+                                                                        className="text-xs text-gray-500"
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            deleteTrack(
+                                                                                selectedPlaylist.id,
+                                                                                track.id
+                                                                            )
+                                                                        }
+                                                                        className="text-xs text-red-500"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )
+                                                )}
+                                            </div>
+                                        )}
+                                    </section>
+                                </div>
+                            </>
+                        )}
+                    </main>
+                </div>
             )}
 
-            {/* Import YouTube playlist */}
-            {showImport && (
-                <form
-                    onSubmit={
-                        importYouTubePlaylist
-                    }
-                    className="space-y-3 rounded-lg border p-4"
-                >
-                    <div>
-                        <h3 className="font-medium">
-                            Import YouTube Playlist
-                        </h3>
-
-                        <p className="text-sm opacity-60">
-                            Every video will be added
-                            to{" "}
-                            <strong>
-                                {
-                                    selectedPlaylist?.name
-                                }
-                            </strong>
-                            .
-                        </p>
-                    </div>
-
-                    <input
-                        type="url"
-                        value={
-                            youtubePlaylistUrl
+            {/*
+             * Create Playlist Modal
+             */}
+            {showCreatePlaylist && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <form
+                        onSubmit={
+                            createPlaylist
                         }
-                        onChange={(event) =>
-                            setYoutubePlaylistUrl(
-                                event.target.value
-                            )
-                        }
-                        placeholder="https://www.youtube.com/playlist?list=..."
-                        className="w-full rounded-lg border bg-transparent px-3 py-2"
-                        autoFocus
-                    />
-
-                    <div className="flex gap-2">
-                        <button
-                            type="submit"
-                            disabled={
-                                isSubmitting
-                            }
-                            className="rounded-lg border px-4 py-2"
-                        >
-                            {isSubmitting
-                                ? "Importing..."
-                                : "Import Playlist"}
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setShowImport(
-                                    false
-                                );
-                                setYoutubePlaylistUrl(
-                                    ""
-                                );
-                            }}
-                            className="rounded-lg border px-4 py-2"
-                        >
-                            Cancel
-                        </button>
-                    </div>
-                </form>
-            )}
-
-            {/* Add individual track */}
-            {showAddTrack && (
-                <form
-                    onSubmit={addTrack}
-                    className="space-y-3 rounded-lg border p-4"
-                >
-                    <input
-                        value={newTrackTitle}
-                        onChange={(event) =>
-                            setNewTrackTitle(
-                                event.target.value
-                            )
-                        }
-                        placeholder="Track title"
-                        className="w-full rounded-lg border bg-transparent px-3 py-2"
-                    />
-
-                    <input
-                        type="url"
-                        value={newTrackUrl}
-                        onChange={(event) =>
-                            setNewTrackUrl(
-                                event.target.value
-                            )
-                        }
-                        placeholder="YouTube video URL"
-                        className="w-full rounded-lg border bg-transparent px-3 py-2"
-                    />
-
-                    <button
-                        type="submit"
-                        disabled={
-                            isSubmitting
-                        }
-                        className="rounded-lg border px-4 py-2"
+                        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
                     >
-                        Add Track
-                    </button>
-                </form>
-            )}
+                        <h2 className="text-lg font-semibold">
+                            Create Playlist
+                        </h2>
 
-            {/* Now Playing */}
-            <div className="rounded-xl border p-5">
-                {currentTrack ? (
-                    <>
-                        <p className="text-xs uppercase tracking-wide opacity-50">
-                            Now Playing
-                        </p>
+                        <input
+                            autoFocus
+                            value={
+                                newPlaylistName
+                            }
+                            onChange={(
+                                event
+                            ) =>
+                                setNewPlaylistName(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                            placeholder="Playlist name"
+                            className="mt-4 w-full rounded-lg border px-3 py-2"
+                        />
 
-                        <h3 className="mt-1 text-lg font-medium">
-                            {currentTrack.title}
-                        </h3>
-
-                        <p className="text-sm opacity-50">
-                            {selectedPlaylist?.name}
-                        </p>
-
-                        <div className="mt-5 flex items-center gap-3">
-                            <span className="text-xs opacity-50">
-                                {formatTime(
-                                    currentTime
-                                )}
-                            </span>
-
-                            <input
-                                type="range"
-                                min="0"
-                                max={
-                                    duration || 0
-                                }
-                                step="0.1"
-                                value={
-                                    Math.min(
-                                        currentTime,
-                                        duration ||
-                                            0
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setShowCreatePlaylist(
+                                        false
                                     )
                                 }
-                                onChange={
-                                    seek
-                                }
-                                className="flex-1"
-                            />
-
-                            <span className="text-xs opacity-50">
-                                {formatTime(
-                                    duration
-                                )}
-                            </span>
-                        </div>
-
-                        <div className="mt-5 flex items-center justify-center gap-5">
-                            <button
-                                type="button"
-                                onClick={
-                                    playPrevious
-                                }
-                                className="text-lg"
+                                className="rounded-lg border px-4 py-2"
                             >
-                                ⏮
+                                Cancel
                             </button>
 
                             <button
-                                type="button"
-                                onClick={
-                                    togglePlay
+                                type="submit"
+                                disabled={
+                                    isSubmitting ||
+                                    !newPlaylistName.trim()
                                 }
-                                className="rounded-full border px-5 py-3"
+                                className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-40"
                             >
-                                {isPlaying
-                                    ? "⏸"
-                                    : "▶"}
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={
-                                    playNext
-                                }
-                                className="text-lg"
-                            >
-                                ⏭
+                                Create
                             </button>
                         </div>
-
-                        <div className="mt-5 flex items-center gap-3">
-                            <span className="text-sm">
-                                🔊
-                            </span>
-
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={
-                                    volume
-                                }
-                                onChange={
-                                    changeVolume
-                                }
-                                className="w-32"
-                            />
-                        </div>
-                    </>
-                ) : (
-                    <div className="py-8 text-center">
-                        <p className="text-lg">
-                            The bard hasn't arrived yet.
-                        </p>
-
-                        <p className="mt-1 text-sm opacity-50">
-                            Add a track or import a
-                            YouTube playlist.
-                        </p>
-                    </div>
-                )}
-            </div>
-
-            {/* Track list */}
-            {selectedPlaylist && (
-                <div>
-                    <div className="mb-3 flex items-center justify-between">
-                        <h3 className="font-medium">
-                            {selectedPlaylist.name}
-                        </h3>
-
-                        <button
-                            type="button"
-                            onClick={() =>
-                                deletePlaylist(
-                                    selectedPlaylist.id
-                                )
-                            }
-                            className="text-sm opacity-50 hover:opacity-100"
-                        >
-                            Delete playlist
-                        </button>
-                    </div>
-
-                    <div className="space-y-2">
-                        {tracks.map(
-                            (
-                                track,
-                                index
-                            ) => (
-                                <div
-                                    key={
-                                        track.id
-                                    }
-                                    className={`flex items-center gap-3 rounded-lg border p-3 ${
-                                        index ===
-                                        currentIndex
-                                            ? "bg-muted/40"
-                                            : ""
-                                    }`}
-                                >
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setCurrentIndex(
-                                                index
-                                            );
-                                            setIsPlaying(
-                                                false
-                                            );
-                                        }}
-                                        className="min-w-0 flex-1 text-left"
-                                    >
-                                        <p className="truncate text-sm">
-                                            {
-                                                track.title
-                                            }
-                                        </p>
-
-                                        <p className="text-xs opacity-40">
-                                            Track{" "}
-                                            {index +
-                                                1}
-                                        </p>
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            removeTrack(
-                                                track.id
-                                            )
-                                        }
-                                        className="text-xs opacity-40 hover:opacity-100"
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            )
-                        )}
-                    </div>
+                    </form>
                 </div>
             )}
 
-            <div className="text-center text-xs opacity-40">
-                The tavern bard plays through YouTube
-            </div>
+            {/*
+             * Add Track Modal
+             */}
+            {showAddTrack && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <form
+                        onSubmit={addTrack}
+                        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+                    >
+                        <h2 className="text-lg font-semibold">
+                            Add Track
+                        </h2>
+
+                        <input
+                            autoFocus
+                            value={trackTitle}
+                            onChange={(
+                                event
+                            ) =>
+                                setTrackTitle(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                            placeholder="Track title"
+                            className="mt-4 w-full rounded-lg border px-3 py-2"
+                        />
+
+                        <input
+                            value={trackUrl}
+                            onChange={(
+                                event
+                            ) =>
+                                setTrackUrl(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                            placeholder="YouTube video URL"
+                            className="mt-3 w-full rounded-lg border px-3 py-2"
+                        />
+
+                        <div className="mt-4 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setShowAddTrack(
+                                        false
+                                    )
+                                }
+                                className="rounded-lg border px-4 py-2"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="submit"
+                                disabled={
+                                    isSubmitting ||
+                                    !trackTitle.trim() ||
+                                    !trackUrl.trim()
+                                }
+                                className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-40"
+                            >
+                                Add Track
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/*
+             * Import YouTube Playlist Modal
+             */}
+            {showImport && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <form
+                        onSubmit={
+                            importPlaylist
+                        }
+                        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+                    >
+                        <h2 className="text-lg font-semibold">
+                            Import YouTube Playlist
+                        </h2>
+
+                        <p className="mt-1 text-sm text-gray-500">
+                            Add every video from a
+                            YouTube playlist to a
+                            Tavern Radio playlist.
+                        </p>
+
+                        <label className="mt-4 block text-sm font-medium">
+                            YouTube playlist URL
+                        </label>
+
+                        <input
+                            autoFocus
+                            value={
+                                youtubePlaylistUrl
+                            }
+                            onChange={(
+                                event
+                            ) =>
+                                setYoutubePlaylistUrl(
+                                    event
+                                        .target
+                                        .value
+                                )
+                            }
+                            placeholder="https://www.youtube.com/playlist?list=..."
+                            className="mt-1 w-full rounded-lg border px-3 py-2"
+                        />
+
+                        {playlists.length >
+                            0 && (
+                            <>
+                                <label className="mt-4 block text-sm font-medium">
+                                    Add to playlist
+                                </label>
+
+                                <select
+                                    value={
+                                        importTargetId ??
+                                        ""
+                                    }
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        setImportTargetId(
+                                            event
+                                                .target
+                                                .value ||
+                                                null
+                                        )
+                                    }
+                                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                                >
+                                    <option value="">
+                                        Create a new playlist
+                                    </option>
+
+                                    {playlists.map(
+                                        (
+                                            playlist
+                                        ) => (
+                                            <option
+                                                key={
+                                                    playlist.id
+                                                }
+                                                value={
+                                                    playlist.id
+                                                }
+                                            >
+                                                {
+                                                    playlist.name
+                                                }
+                                            </option>
+                                        )
+                                    )}
+                                </select>
+                            </>
+                        )}
+
+                        {!importTargetId && (
+                            <>
+                                <label className="mt-4 block text-sm font-medium">
+                                    New playlist name
+                                </label>
+
+                                <input
+                                    value={
+                                        newImportPlaylistName
+                                    }
+                                    onChange={(
+                                        event
+                                    ) =>
+                                        setNewImportPlaylistName(
+                                            event
+                                                .target
+                                                .value
+                                        )
+                                    }
+                                    placeholder="Study Mix"
+                                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                                />
+                            </>
+                        )}
+
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowImport(
+                                        false
+                                    );
+                                    setYoutubePlaylistUrl(
+                                        ""
+                                    );
+                                    setImportTargetId(
+                                        null
+                                    );
+                                    setNewImportPlaylistName(
+                                        ""
+                                    );
+                                }}
+                                className="rounded-lg border px-4 py-2"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                type="submit"
+                                disabled={
+                                    isSubmitting ||
+                                    !youtubePlaylistUrl.trim() ||
+                                    (!importTargetId &&
+                                        !newImportPlaylistName.trim())
+                                }
+                                className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-40"
+                            >
+                                {isSubmitting
+                                    ? "Importing..."
+                                    : "Import Playlist"}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
         </div>
     );
 }
