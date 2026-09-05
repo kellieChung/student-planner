@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { analyzeAnnouncement } from "@/lib/ai/analyzeAnnouncement";
-import { findDuplicateTask } from "@/lib/ai/findDuplicateTask";
+import { analyzeAnnouncements } from "@/lib/ai/analyzeAnnouncement";
+import { findDuplicateTasks } from "@/lib/ai/findDuplicateTask";
 import { Announcement } from "@/types/announcement";
+import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 
 const ANNOUNCEMENT_BUFFER_DAYS = 5;
+
+// Announcements analyzed per Ollama call. Each call resends the full
+// instructional rules regardless of batch size, so batching cuts that
+// fixed per-call cost proportionally across the batch.
+const ANNOUNCEMENT_BATCH_SIZE = 5;
+const OLLAMA_CONCURRENCY = 2;
 
 /**
  * Returns the Monday at the beginning of the current
@@ -211,6 +218,7 @@ export async function POST(
             await prisma.canvasCourse.findMany({
                 where: {
                     userId: user.id,
+                    hidden: false,
                 },
                 include: {
                     announcements: true,
@@ -327,215 +335,157 @@ export async function POST(
         // 8. Analyze announcements
         // --------------------------------------------------
 
-        const results = [];
+        function toAnnouncementSummary(announcement: Announcement) {
+            return {
+                id: announcement.id,
+                title: announcement.title,
+                course: announcement.course,
+                postedAt: announcement.postedAt,
+                message: announcement.message,
+            };
+        }
 
-        for (
-            const announcement of announcements
-        ) {
-            try {
-                console.log(
-                    `🤖 Analyzing announcement: "${announcement.title}"`
-                );
+        function nearbyAssignmentsFor(announcement: Announcement) {
+            const course = courses.find(
+                (course) => course.name === announcement.course
+            );
 
-                // ------------------------------------------
-                // Extract tasks
-                // ------------------------------------------
+            const courseAssignments = course?.assignments ?? [];
 
-                const proposedTasks =
-                    await analyzeAnnouncement(
-                        announcement
+            return courseAssignments
+                .filter((assignment) =>
+                    isWithinOneMonth(
+                        assignment.dueAt?.toISOString() ?? null,
+                        announcement.postedAt
+                    )
+                )
+                .map((assignment) => ({
+                    id: assignment.id,
+                    name: assignment.name,
+                    description: assignment.description,
+                    dueDate:
+                        assignment.dueAt
+                            ?.toISOString()
+                            .slice(0, 10) ?? null,
+                }));
+        }
+
+        const announcementBatches = chunk(
+            announcements,
+            ANNOUNCEMENT_BATCH_SIZE
+        );
+
+        const resultsByBatch = await mapWithConcurrency(
+            announcementBatches,
+            OLLAMA_CONCURRENCY,
+            async (batch) => {
+                let proposedTasksByAnnouncement;
+
+                try {
+                    console.log(
+                        `🤖 Analyzing ${batch.length} announcement(s): ${batch.map((a) => `"${a.title}"`).join(", ")}`
                     );
 
-                // ------------------------------------------
-                // Find course
-                // ------------------------------------------
-
-                const course =
-                    courses.find(
-                        (course) =>
-                            course.name ===
-                            announcement.course
+                    proposedTasksByAnnouncement =
+                        await analyzeAnnouncements(batch);
+                } catch (error) {
+                    console.error(
+                        "❌ Failed to analyze announcement batch:",
+                        error
                     );
 
-                // ------------------------------------------
-                // Assignments from this course
-                // ------------------------------------------
-
-                const courseAssignments =
-                    course?.assignments ?? [];
-
-                // ------------------------------------------
-                // Nearby assignments
-                // ------------------------------------------
-
-                const nearbyAssignments =
-                    courseAssignments
-                        .filter(
-                            (assignment) =>
-                                isWithinOneMonth(
-                                    assignment.dueAt
-                                        ?.toISOString() ??
-                                        null,
-                                    announcement.postedAt
-                                )
-                        )
-                        .map(
-                            (assignment) => ({
-                                id:
-                                    assignment.id,
-                                name:
-                                    assignment.name,
-                                description:
-                                    assignment.description,
-                                dueDate:
-                                    assignment.dueAt
-                                        ?.toISOString()
-                                        .slice(
-                                            0,
-                                            10
-                                        ) ??
-                                    null,
-                            })
-                        );
-
-                console.log(
-                    `🔎 ${nearbyAssignments.length} nearby assignments for "${announcement.title}"`
-                );
-
-                // ------------------------------------------
-                // Duplicate checking
-                // ------------------------------------------
-
-                const tasksWithDuplicates = [];
-
-                for (
-                    const task of proposedTasks
-                ) {
-                    try {
-                        const duplicateCheck =
-                            await findDuplicateTask(
-                                task.name,
-                                nearbyAssignments
-                            );
-
-                        const matchedAssignment =
-                            duplicateCheck.matchingAssignmentId
-                                ? nearbyAssignments.find(
-                                      (
-                                          assignment
-                                      ) =>
-                                          assignment.id ===
-                                          duplicateCheck.matchingAssignmentId
-                                  ) ??
-                                  null
-                                : null;
-
-                        tasksWithDuplicates.push(
-                            {
-                                ...task,
-
-                                canvasMatch: {
-                                    status:
-                                        duplicateCheck.isDuplicate
-                                            ? duplicateCheck.confidence ===
-                                              "high"
-                                                ? "definite"
-                                                : "possible"
-                                            : "none",
-
-                                    assignmentId:
-                                        duplicateCheck.matchingAssignmentId,
-
-                                    reason:
-                                        duplicateCheck.reason,
-
-                                    assignment:
-                                        matchedAssignment,
-                                },
-                            }
-                        );
-
-                        console.log(
-                            `🔍 "${task.name}" →`,
-                            duplicateCheck
-                        );
-                    } catch (error) {
-                        console.error(
-                            `❌ Duplicate check failed for task "${task.name}":`,
-                            error
-                        );
-
-                        // Do NOT let one malformed
-                        // Ollama response destroy the
-                        // entire announcement.
-
-                        tasksWithDuplicates.push(
-                            {
-                                ...task,
-
-                                canvasMatch: {
-                                    status:
-                                        "none",
-                                    assignmentId:
-                                        null,
-                                    reason:
-                                        "Duplicate checking failed.",
-                                    assignment:
-                                        null,
-                                },
-                            }
-                        );
-                    }
+                    return batch.map((announcement) => ({
+                        announcement: toAnnouncementSummary(announcement),
+                        tasks: [],
+                        error: "Failed to analyze announcement.",
+                    }));
                 }
 
-                // ------------------------------------------
-                // Save result
-                // ------------------------------------------
+                return Promise.all(
+                    batch.map(async (announcement, i) => {
+                        const proposedTasks =
+                            proposedTasksByAnnouncement[i];
 
-                results.push({
-                    announcement: {
-                        id:
-                            announcement.id,
-                        title:
-                            announcement.title,
-                        course:
-                            announcement.course,
-                        postedAt:
-                            announcement.postedAt,
-                        message:
-                            announcement.message,
-                    },
+                        const nearbyAssignments =
+                            nearbyAssignmentsFor(announcement);
 
-                    tasks:
-                        tasksWithDuplicates,
-                });
-            } catch (error) {
-                console.error(
-                    `❌ Failed to analyze announcement ${announcement.id}:`,
-                    error
+                        console.log(
+                            `🔎 ${nearbyAssignments.length} nearby assignments for "${announcement.title}"`
+                        );
+
+                        let tasksWithDuplicates;
+
+                        try {
+                            const duplicateChecks =
+                                await findDuplicateTasks(
+                                    proposedTasks.map((task) => task.name),
+                                    nearbyAssignments
+                                );
+
+                            tasksWithDuplicates = proposedTasks.map(
+                                (task, taskIndex) => {
+                                    const duplicateCheck =
+                                        duplicateChecks[taskIndex];
+
+                                    const matchedAssignment =
+                                        duplicateCheck.matchingAssignmentId
+                                            ? nearbyAssignments.find(
+                                                  (assignment) =>
+                                                      assignment.id ===
+                                                      duplicateCheck.matchingAssignmentId
+                                              ) ?? null
+                                            : null;
+
+                                    console.log(
+                                        `🔍 "${task.name}" →`,
+                                        duplicateCheck
+                                    );
+
+                                    return {
+                                        ...task,
+                                        canvasMatch: {
+                                            status: duplicateCheck.isDuplicate
+                                                ? duplicateCheck.confidence === "high"
+                                                    ? "definite"
+                                                    : "possible"
+                                                : "none",
+                                            assignmentId:
+                                                duplicateCheck.matchingAssignmentId,
+                                            reason: duplicateCheck.reason,
+                                            assignment: matchedAssignment,
+                                        },
+                                    };
+                                }
+                            );
+                        } catch (error) {
+                            console.error(
+                                `❌ Duplicate check failed for announcement "${announcement.title}":`,
+                                error
+                            );
+
+                            // Do NOT let a malformed Ollama response
+                            // destroy the entire announcement.
+                            tasksWithDuplicates = proposedTasks.map((task) => ({
+                                ...task,
+                                canvasMatch: {
+                                    status: "none",
+                                    assignmentId: null,
+                                    reason: "Duplicate checking failed.",
+                                    assignment: null,
+                                },
+                            }));
+                        }
+
+                        return {
+                            announcement: toAnnouncementSummary(announcement),
+                            tasks: tasksWithDuplicates,
+                        };
+                    })
                 );
-
-                results.push({
-                    announcement: {
-                        id:
-                            announcement.id,
-                        title:
-                            announcement.title,
-                        course:
-                            announcement.course,
-                        postedAt:
-                            announcement.postedAt,
-                        message:
-                            announcement.message,
-                    },
-
-                    tasks: [],
-
-                    error:
-                        "Failed to analyze announcement.",
-                });
             }
-        }
+        );
+
+        const results = resultsByBatch.flat();
 
         // --------------------------------------------------
         // 9. Return results

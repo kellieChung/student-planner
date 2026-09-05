@@ -7,16 +7,25 @@ import UserMenu from "@/components/UserMenu";
 import {redirect} from "next/navigation";
 import AnalyzeAnnouncementsButton from "@/components/AnalyzeAnnouncementsButton";
 import AIReviewPanel from "@/components/AIReviewPanel";
+import {prisma} from "@/lib/prisma";
 
 
 export default async function TestPage() {
     const session = await auth();
 
-    if (!session?.user) {
+    if (!session?.user?.email) {
         redirect("/login");
     }
 
-    const assignments: Assignment[] = (await getAllAssignments()).map((assignment) => ({
+    const user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+    });
+
+    if (!user) {
+        redirect("/login");
+    }
+
+    const assignments: Assignment[] = (await getAllAssignments(user.id)).map((assignment) => ({
         ...assignment,
         due: assignment.due ?? "",
     }));

@@ -1,107 +1,234 @@
 import { NextResponse } from "next/server";
-import { TaskImportance } from "@/types/taskPlanning";
+import { analyzeAssignments, estimateMinutesByType, normalizeAssignmentType } from "@/lib/analyzeAssignment";
+import { calculatePriority } from "@/lib/prioritization";
+import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 
 type PlanningTask = {
     id: string;
     name: string;
     course: string;
+    description?: string | null;
+    due?: string | null;
+    pointsPossible?: number | null;
 };
 
-type ModelEstimate = {
-    id: string;
-    estimatedMinutes: number;
-    importance: TaskImportance;
-};
+function fallbackAnalysis(task: PlanningTask) {
+    const text =
+        `${task.name} ${task.course} ${task.description ?? ""}`
+            .toLowerCase();
 
-function fallbackEstimate(task: PlanningTask): Omit<ModelEstimate, "id"> {
-    const text = `${task.name} ${task.course}`.toLowerCase();
+    let importance = 4;
+    let difficulty = 3;
+    let consequence = 3;
+    let assignmentType = "other";
 
-    if (/(exam|midterm|final|research paper|presentation|project|capstone)/.test(text)) {
-        return { estimatedMinutes: 180, importance: "high" };
+    if (
+        /(exam|midterm|final|research paper|presentation|project|capstone)/
+            .test(text)
+    ) {
+        importance = 8;
+        difficulty = 8;
+        consequence = 7;
+        assignmentType = "exam";
+    } else if (
+        /(essay|lab|problem set|homework)/
+            .test(text)
+    ) {
+        importance = 6;
+        difficulty = 6;
+        consequence = 5;
+        assignmentType = "homework";
+    } else if (
+        /(quiz|reading|discussion|worksheet)/
+            .test(text)
+    ) {
+        importance = 4;
+        difficulty = 3;
+        consequence = 3;
+        assignmentType = "reading";
     }
 
-    if (/(essay|lab|problem set|homework)/.test(text)) {
-        return { estimatedMinutes: 75, importance: "medium" };
-    }
-
-    if (/(quiz|reading|discussion|worksheet)/.test(text)) {
-        return { estimatedMinutes: 30, importance: "medium" };
-    }
-
-    return { estimatedMinutes: 20, importance: "low" };
+    return {
+        importance,
+        difficulty,
+        consequence,
+        assignmentType,
+        reason:
+            "This estimate was generated using a fallback because AI analysis was unavailable.",
+    };
 }
 
-function normalizeMinutes(value: unknown): number {
-    const minutes = typeof value === "number" ? value : Number(value);
+function normalizeAnalysis(analysis: {
+    importance: unknown;
+    difficulty: unknown;
+    consequence: unknown;
+    assignmentType: unknown;
+    reason: unknown;
+}) {
+    const normalizeScore = (value: unknown, fallback: number) => {
+        const score =
+            typeof value === "number"
+                ? value
+                : Number(value);
 
-    if (!Number.isFinite(minutes)) return 20;
-    return Math.max(5, Math.min(480, Math.round(minutes / 5) * 5));
+        if (!Number.isFinite(score)) {
+            return fallback;
+        }
+
+        return Math.min(
+            10,
+            Math.max(1, Math.round(score))
+        );
+    };
+
+    return {
+        importance: normalizeScore(
+            analysis.importance,
+            5
+        ),
+
+        difficulty: normalizeScore(
+            analysis.difficulty,
+            5
+        ),
+
+        consequence: normalizeScore(
+            analysis.consequence,
+            5
+        ),
+
+        assignmentType: normalizeAssignmentType(analysis.assignmentType),
+
+        reason:
+            typeof analysis.reason === "string"
+                ? analysis.reason.trim()
+                : "No explanation was provided.",
+    };
 }
 
-function normalizeImportance(value: unknown): TaskImportance {
-    return value === "high" || value === "medium" || value === "low" ? value : "low";
-}
+// Local LLM inference is CPU/GPU-heavy per call; running many at once just
+// makes several full inference passes fight over the same compute
+// resources instead of finishing faster, so cap how many run concurrently.
+const OLLAMA_CONCURRENCY = 2;
+
+// Assignments analyzed per Ollama call. Each call resends the full
+// rubric/instructions regardless of batch size, so batching cuts that
+// fixed per-call cost proportionally across the batch.
+const ANALYSIS_BATCH_SIZE = 5;
 
 export async function POST(request: Request) {
     let tasks: PlanningTask[];
 
     try {
-        const body = await request.json() as { tasks?: unknown };
-        tasks = Array.isArray(body.tasks) ? body.tasks.slice(0, 40) as PlanningTask[] : [];
+        const body =
+            await request.json() as {
+                tasks?: unknown;
+            };
+
+        tasks =
+            Array.isArray(body.tasks)
+                ? body.tasks
+                    .slice(0, 40)
+                    .filter(
+                        (task): task is PlanningTask =>
+                            typeof task === "object" &&
+                            task !== null &&
+                            typeof (task as PlanningTask).id === "string" &&
+                            typeof (task as PlanningTask).name === "string"
+                    )
+                : [];
     } catch {
-        return NextResponse.json({ error: "Invalid task data" }, { status: 400 });
+        return NextResponse.json(
+            { error: "Invalid task data" },
+            { status: 400 }
+        );
     }
 
-    const validTasks = tasks.filter((task) => task.id && task.name && typeof task.name === "string");
-
-    if (validTasks.length === 0) {
-        return NextResponse.json({ estimates: [] });
-    }
-
-    const fallbacks = new Map(validTasks.map((task) => [task.id, fallbackEstimate(task)]));
-
-    try {
-        const response = await fetch(`${process.env.OLLAMA_URL ?? "http://127.0.0.1:11434"}/api/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: AbortSignal.timeout(20_000),
-            body: JSON.stringify({
-                model: process.env.OLLAMA_MODEL ?? "llama3.2:latest",
-                stream: false,
-                format: "json",
-                options: { temperature: 0.2 },
-                messages: [
-                    {
-                        role: "system",
-                        content: "Estimate each student's task. Return only JSON: {\"estimates\":[{\"id\":string,\"estimatedMinutes\":number,\"importance\":\"low|medium|high\"}]}. estimatedMinutes is expected focused work time from 5 to 480 minutes. importance follows Eat That Frog: high means meaningful long-term academic impact, medium is normal coursework, low is routine or optional. Do not use due dates; urgency is calculated separately. Estimate every provided id.",
-                    },
-                    { role: "user", content: JSON.stringify(validTasks) },
-                ],
-            }),
-        });
-
-        if (!response.ok) throw new Error("Ollama request failed");
-
-        const result = await response.json() as { message?: { content?: string } };
-        const parsed = JSON.parse(result.message?.content ?? "{}") as { estimates?: unknown };
-        const modelEstimates = Array.isArray(parsed.estimates) ? parsed.estimates as ModelEstimate[] : [];
-        const byId = new Map(modelEstimates.map((estimate) => [estimate.id, estimate]));
-
+    if (tasks.length === 0) {
         return NextResponse.json({
-            estimates: validTasks.map((task) => {
-                const estimate = byId.get(task.id);
-                const fallback = fallbacks.get(task.id)!;
+            estimates: [],
+        });
+    }
+
+    const batches = chunk(tasks, ANALYSIS_BATCH_SIZE);
+
+    const estimatesByBatch = await mapWithConcurrency(
+        batches,
+        OLLAMA_CONCURRENCY,
+        async (batch) => {
+            let analyses;
+
+            try {
+                analyses = await analyzeAssignments(
+                    batch.map((task) => ({
+                        name: task.name,
+                        course: task.course,
+                        description: task.description,
+                        due: task.due,
+                        pointsPossible: task.pointsPossible,
+                    }))
+                );
+            } catch {
+                // One malformed/missing entry fails the whole batch; fall
+                // back to the deterministic heuristic for every task in it
+                // rather than trying to partially recover.
+                analyses = batch.map((task) => fallbackAnalysis(task));
+            }
+
+            return batch.map((task, i) => {
+                const normalized =
+                    normalizeAnalysis(analyses[i]);
+
+                const estimatedMinutes =
+                    estimateMinutesByType(normalized.assignmentType);
+
+                const priority =
+                    calculatePriority({
+                        name: task.name,
+                        due: task.due ?? null,
+                        importance: normalized.importance,
+                        difficulty: normalized.difficulty,
+                        consequence: normalized.consequence,
+                        estimatedMinutes,
+                    });
 
                 return {
                     id: task.id,
-                    estimatedMinutes: normalizeMinutes(estimate?.estimatedMinutes ?? fallback.estimatedMinutes),
-                    importance: normalizeImportance(estimate?.importance ?? fallback.importance),
+
+                    estimatedMinutes,
+
+                    importance:
+                        normalized.importance,
+
+                    difficulty:
+                        normalized.difficulty,
+
+                    consequence:
+                        normalized.consequence,
+
+                    assignmentType:
+                        normalized.assignmentType,
+
+                    reason:
+                        normalized.reason,
+
+                    priorityScore:
+                        priority.score,
+
+                    urgencyScore:
+                        priority.urgencyScore,
+
+                    frogScore:
+                        priority.frogScore,
+
+                    priorityReason:
+                        priority.reason,
                 };
-            }),
-        });
-    } catch {
-        return NextResponse.json({
-            estimates: validTasks.map((task) => ({ id: task.id, ...fallbacks.get(task.id)! })),
-        });
-    }
+            });
+        }
+    );
+
+    return NextResponse.json({
+        estimates: estimatesByBatch.flat(),
+    });
 }

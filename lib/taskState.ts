@@ -11,7 +11,11 @@ export function getTaskStates(): TaskStateMap {
         return {};
     }
 
-    return JSON.parse(stored);
+    try {
+        return JSON.parse(stored) as TaskStateMap;
+    } catch {
+        return {};
+    }
 }
 
 export function saveTaskState(

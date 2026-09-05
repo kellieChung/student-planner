@@ -7,6 +7,13 @@ const headers = {
     Authorization: `Bearer ${process.env.CANVAS_TOKEN}`,
 };
 
+// Canvas due dates are UTC instants; format them as the institution's local
+// calendar date (Davidson College, matching CANVAS_URL above) rather than
+// the server process's own timezone, which may not match.
+function toInstitutionDateString(date: Date): string {
+    return date.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
 export async function getCourses() {
     const response = await fetch(
         `${CANVAS_URL}/api/v1/courses?enrollment_state=active`,
@@ -67,8 +74,12 @@ export function transformAssignment(
     };
 }
 
-export async function getAllAssignments() {
+export async function getAllAssignments(userId: string) {
     const courses = await prisma.canvasCourse.findMany({
+        where: {
+            userId,
+            hidden: false,
+        },
         include: {
             assignments: true,
         },
@@ -76,23 +87,16 @@ export async function getAllAssignments() {
 
     const allAssignments = courses.flatMap((course) =>
         course.assignments.map((assignment) => {
-            let due = "";
-
-            if (assignment.dueAt) {
-                const localDueDate = new Date(assignment.dueAt);
-
-                const year = localDueDate.getFullYear();
-                const month = localDueDate.getMonth();
-                const day = localDueDate.getDate();
-
-                due = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-            }
+            const due = assignment.dueAt
+                ? toInstitutionDateString(assignment.dueAt)
+                : "";
 
             return {
                 id: assignment.id,
                 name: assignment.name,
                 due,
                 course: course.name,
+                createdAt: assignment.createdAt.toISOString(),
             };
         })
     );
@@ -123,8 +127,12 @@ export function transformAnnouncement(
     };
 }
 
-export async function getAllAnnouncements() {
+export async function getAllAnnouncements(userId: string) {
     const courses = await prisma.canvasCourse.findMany({
+        where: {
+            userId,
+            hidden: false,
+        },
         include: {
             announcements: true,
         },

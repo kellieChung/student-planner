@@ -1,22 +1,47 @@
 "use client";
 
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useMemo, useState} from "react";
+import {useRouter} from "next/navigation";
 import {calculateGridSpan, getTodayString, parseLocalDate} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
+import ManageCoursesModal from "./ManageCoursesModal";
 import {getTaskStates, saveTaskState} from "@/lib/taskState";
 import {TaskState} from "@/types/taskState";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates} from "@/lib/taskPlanning";
-import {TaskPlanningEstimates} from "@/types/taskPlanning";
+import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
+import {calculatePriority, PriorityResult} from "@/lib/prioritization";
+import {getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
 import PomodoroTimer from "./PomodoroTimer";
 import MusicPlayer from "./MusicPlayer";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+const FOCUS_TASK_STORAGE_KEY = "pomodoro_active_task_id";
+
+/*
+ * Canvas-synced tasks carry a real createdAt. Manually/AI-added tasks don't
+ * (see AddTaskModal and the "planner:add-task" handler below), but their id
+ * embeds the creation timestamp ("custom-<Date.now()>"), so it can be
+ * recovered without adding a new field to those flows.
+ */
+function deriveAddedAt(task: Assignment): string | null {
+    if (task.createdAt) return task.createdAt;
+
+    if (task.id.startsWith("custom-")) {
+        const timestamp = Number(task.id.slice("custom-".length));
+        if (Number.isFinite(timestamp)) {
+            return new Date(timestamp).toISOString();
+        }
+    }
+
+    return null;
 }
 
 type WeeklyPlannerProps = {
@@ -25,13 +50,18 @@ type WeeklyPlannerProps = {
 }
 
 export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyPlannerProps) {
+    const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isCourseManagerOpen, setIsCourseManagerOpen] = useState(false);
     const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
+    const [estimatingCount, setEstimatingCount] = useState(0);
+    const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
+    const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
     const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
     const [theme, setTheme] = useState<"dark" | "light">("dark");
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -73,8 +103,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             return aPriority.rank - bPriority.rank;
         }
 
-        return new Date(a.due ?? "").getTime()
-            - new Date(b.due ?? "").getTime();
+        return parseLocalDate(a.due ?? "9999-12-31").getTime()
+        - parseLocalDate(b.due ?? "9999-12-31").getTime();
     });
 
     const activeWeekEnd = new Date(activeWeekStart);
@@ -88,6 +118,79 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     });
 
     const tasksWithoutDueDate = sortedTasks.filter((task) => !task.due);
+
+    const openTasks = useMemo(
+        () => tasks.filter((task) => !(taskStates[task.id]?.completed ?? false)),
+        [tasks, taskStates]
+    );
+
+    /*
+     * Shared with the "focus task" lookup below, so both use the exact
+     * same AI-informed scoring as the API (lib/prioritization.ts) plus
+     * this student's per-task-type procrastination history — see
+     * prioritizationModule.md and lib/procrastinationHistory.ts. This is
+     * intentionally independent of the getTaskPriority-based sort used for
+     * the grid below, which stays deadline/importance-only.
+     */
+    const computeTaskPriority = (task: Assignment): PriorityResult => {
+        const estimate = taskPlanning[task.id];
+
+        return calculatePriority({
+            name: task.name,
+            due: task.due || null,
+            importance: estimate?.importance ?? 5,
+            difficulty: estimate?.difficulty ?? 5,
+            consequence: estimate?.consequence ?? 5,
+            estimatedMinutes: estimate?.estimatedMinutes ?? 30,
+            procrastinationIndexHours: estimate?.assignmentType
+                ? procrastinationIndexByType[estimate.assignmentType] ?? null
+                : null,
+        });
+    };
+
+    // The single highest-priority open task ("the frog").
+    const upNext = useMemo(() => {
+        let best: { task: Assignment; priority: PriorityResult } | null = null;
+
+        for (const task of openTasks) {
+            const priority = computeTaskPriority(task);
+
+            if (!best || priority.score > best.priority.score) {
+                best = { task, priority };
+            }
+        }
+
+        return best;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openTasks, taskPlanning, procrastinationIndexByType]);
+
+    const activeFocusTask = useMemo(() => {
+        if (!activeFocusTaskId) return null;
+
+        const task = tasks.find((t) => t.id === activeFocusTaskId);
+        if (!task || taskStates[task.id]?.completed) return null;
+
+        return { task, priority: computeTaskPriority(task) };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeFocusTaskId, tasks, taskStates, taskPlanning, procrastinationIndexByType]);
+
+    useEffect(() => {
+        if (activeFocusTaskId && !activeFocusTask) {
+            setActiveFocusTaskId(null);
+            localStorage.removeItem(FOCUS_TASK_STORAGE_KEY);
+        }
+    }, [activeFocusTaskId, activeFocusTask]);
+
+    const setFocusTask = (id: string | null) => {
+        setActiveFocusTaskId(id);
+
+        if (id) {
+            localStorage.setItem(FOCUS_TASK_STORAGE_KEY, id);
+        } else {
+            localStorage.removeItem(FOCUS_TASK_STORAGE_KEY);
+        }
+    };
+
     const monthGridStart = new Date(activeMonthStart);
     monthGridStart.setDate(1 - ((activeMonthStart.getDay() + 6) % 7));
     const monthDays = Array.from({ length: 42 }, (_, index) => {
@@ -143,10 +246,12 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         const savedGamification = getGamificationState();
         const savedTaskPlanning = getTaskPlanningEstimates();
         const savedTheme = localStorage.getItem("planner_theme");
+        const savedFocusTaskId = localStorage.getItem(FOCUS_TASK_STORAGE_KEY);
 
         setTaskStates(savedStates);
         setGamification(savedGamification);
         setTaskPlanning(savedTaskPlanning);
+        setActiveFocusTaskId(savedFocusTaskId);
         if (savedTheme === "light" || savedTheme === "dark") {
             setTheme(savedTheme);
         } else {
@@ -207,6 +312,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         const controller = new AbortController();
 
+        setEstimatingCount(tasksNeedingEstimates.length);
+
         const estimateTasks = async () => {
             try {
                 const response = await fetch("/api/task-planning", {
@@ -221,7 +328,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 if (!response.ok) return;
 
                 const data = await response.json() as {
-                    estimates: Array<{ id: string; estimatedMinutes: number; importance: "low" | "medium" | "high" }>;
+                    estimates: Array<Omit<TaskPlanningEstimate, "signature"> & { id: string }>;
                 };
 
                 setTaskPlanning((current) => {
@@ -244,6 +351,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 if ((error as Error).name !== "AbortError") {
                     console.error("Could not estimate task planning details", error);
                 }
+            } finally {
+                if (!controller.signal.aborted) {
+                    setEstimatingCount(0);
+                }
             }
         };
 
@@ -251,6 +362,27 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         return () => controller.abort();
     }, [tasks, taskPlanning]);
+
+    useEffect(() => {
+        const types = new Set(
+            Object.values(taskPlanning)
+                .map((estimate) => estimate.assignmentType)
+                .filter((type): type is string => Boolean(type))
+        );
+
+        setProcrastinationIndexByType((current) => {
+            const next: Record<string, number | null> = {};
+            for (const type of types) {
+                next[type] = getProcrastinationIndexHours(type);
+            }
+
+            const changed =
+                Object.keys(next).length !== Object.keys(current).length ||
+                Object.entries(next).some(([type, value]) => current[type] !== value);
+
+            return changed ? next : current;
+        });
+    }, [taskPlanning]);
 
     useEffect(() => {
         const handleAIPlannerTask = (
@@ -363,14 +495,31 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 : null
         };
 
-        setTaskStates({
-            ...taskStates,
+        setTaskStates((prev) => ({
+            ...prev,
             [id]: newState
-        });
+        }));
 
         saveTaskState(id, newState);
 
         if (newCompleted) {
+            const assignmentType = taskPlanning[id]?.assignmentType;
+            const addedAt = deriveAddedAt(task);
+
+            if (task.due && addedAt && assignmentType) {
+                recordTaskCompletion({
+                    taskType: assignmentType,
+                    addedAt,
+                    dueAt: `${task.due}T23:59:59`,
+                    completedAt: new Date().toISOString(),
+                });
+
+                setProcrastinationIndexByType((current) => ({
+                    ...current,
+                    [assignmentType]: getProcrastinationIndexHours(assignmentType),
+                }));
+            }
+
             void awardXpForTask(task, newState.completedAt, estimatedMinutes);
         }
 
@@ -438,6 +587,13 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                     >
                         + Add Task
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setIsCourseManagerOpen(true)}
+                        className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+                    >
+                        📚 Courses
+                    </button>
                     <div className="relative" data-settings-root>
                         <button
                             type="button"
@@ -487,14 +643,75 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
             </div>
 
+            {estimatingCount > 0 && (
+                <p className="mb-4 flex items-center gap-2 text-xs font-medium text-slate-400">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
+                    🧠 Estimating priority for {estimatingCount} task{estimatingCount === 1 ? "" : "s"} in the background...
+                </p>
+            )}
+
+            {upNext && (
+                <div className="mb-5 rounded-xl border border-amber-500/60 bg-amber-950/20 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                                🐸 Eat this frog next
+                            </p>
+                            <h2 className="mt-0.5 text-lg font-semibold text-white">{upNext.task.name}</h2>
+                            <p className="text-sm text-slate-400">
+                                {upNext.task.course || "General"}
+                                {upNext.task.due ? ` · Due ${upNext.task.due}` : ""}
+                            </p>
+                            <p className="mt-1 text-sm text-amber-200">{upNext.priority.reason}</p>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setFocusTask(upNext.task.id)}
+                                disabled={activeFocusTaskId === upNext.task.id}
+                                className="rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {activeFocusTaskId === upNext.task.id ? "🎯 Focused" : "🎯 Focus in Pomodoro"}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleToggleComplete(upNext.task, taskPlanning[upNext.task.id]?.estimatedMinutes)}
+                                className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400"
+                            >
+                                Mark done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <AddTaskModal
                 isOpen = {isModalOpen}
                 onClose = {() => setIsModalOpen(false)}
                 onAddTask = {handleAddTask}
             />
 
+            <ManageCoursesModal
+                isOpen={isCourseManagerOpen}
+                onClose={() => setIsCourseManagerOpen(false)}
+                onChanged={() => router.refresh()}
+            />
+
             <div className="grid gap-6 lg:grid-cols-2">
-                <PomodoroTimer />
+                <PomodoroTimer
+                    focusTask={
+                        activeFocusTask
+                            ? {
+                                  id: activeFocusTask.task.id,
+                                  name: activeFocusTask.task.name,
+                                  course: activeFocusTask.task.course,
+                                  due: activeFocusTask.task.due,
+                                  priorityReason: activeFocusTask.priority.reason,
+                              }
+                            : null
+                    }
+                    onClearFocusTask={() => setFocusTask(null)}
+                />
                 <MusicPlayer />
             </div>
 
@@ -579,7 +796,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                             ))}
                         </div>
 
-                        <div className = "grid grid-cols-7 gap-y-3 gap-x-2 relative z-10 py-2">
+                        <div className="grid grid-cols-7 grid-flow-row-dense gap-y-3 gap-x-2 relative z-10 py-2">
                             {tasksForActiveWeek.map((task) => {
                                 const taskState = taskStates[task.id];
                                 const estimate = taskPlanning[task.id];
@@ -601,8 +818,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         completedAt = {taskStates[task.id]?.completedAt ?? null}
                                         estimatedMinutes = {estimate?.estimatedMinutes}
                                         priority = {priority}
+                                        isFocused={task.id === activeFocusTaskId}
                                         onToggleComplete = {() => handleToggleComplete(task, estimate?.estimatedMinutes)}
                                         onDelete = {handleDelete}
+                                        onFocus={(id) => setFocusTask(id === activeFocusTaskId ? null : id)}
                                         onOpen={() => setSelectedTask(task)}
                                     />
                                 );

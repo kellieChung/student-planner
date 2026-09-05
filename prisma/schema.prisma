@@ -67,6 +67,9 @@ model CanvasCourse {
   canvasId        String
   canvasOrigin    String
   name            String
+  // User-controlled: hide a course Canvas still reports as active (e.g. a
+  // teacher never concluded it) without it reappearing on the next sync.
+  hidden          Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

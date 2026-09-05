@@ -2,6 +2,19 @@
 
 import { useEffect, useState } from "react";
 
+export type PomodoroFocusTask = {
+    id: string;
+    name: string;
+    course: string;
+    due: string;
+    priorityReason: string;
+};
+
+type PomodoroTimerProps = {
+    focusTask: PomodoroFocusTask | null;
+    onClearFocusTask: () => void;
+};
+
 type PomodoroMode = "focus" | "shortBreak" | "longBreak";
 
 const DURATIONS: Record<PomodoroMode, number> = {
@@ -108,7 +121,7 @@ function parseTimeInput(value: string): number | null {
     return totalSeconds;
 }
 
-export default function PomodoroTimer() {
+export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroTimerProps) {
     const [state, setState] =
         useState<PomodoroState>(DEFAULT_STATE);
 
@@ -471,6 +484,41 @@ export default function PomodoroTimer() {
                     </p>
                 </div>
             </div>
+
+            {/* Focus task */}
+            {focusTask ? (
+                <div className="mb-5 rounded-xl border border-indigo-500/50 bg-indigo-950/30 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
+                                🎯 Working on
+                            </p>
+                            <p className="truncate text-sm font-semibold text-slate-100">
+                                {focusTask.name}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                                {focusTask.course || "General"}
+                                {focusTask.due ? ` · Due ${focusTask.due}` : ""}
+                            </p>
+                            <p className="mt-1 text-xs text-indigo-200">
+                                {focusTask.priorityReason}
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClearFocusTask}
+                            className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:text-slate-200"
+                            title="Stop focusing on this task"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <p className="mb-5 text-xs text-slate-500">
+                    No task selected — pick &quot;🎯 Focus in Pomodoro&quot; on a task in your planner.
+                </p>
+            )}
 
             {/* Mode buttons */}
             <div className="mb-6 grid grid-cols-3 gap-1 rounded-xl bg-slate-950 p-1">

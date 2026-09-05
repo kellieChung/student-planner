@@ -140,6 +140,8 @@ export async function POST(request: Request) {
         let discussionCount = 0;
         let announcementCount = 0;
 
+        const syncedCourseCanvasIds = new Set<string>();
+
         for (
             const courseData of body.courses
         ) {
@@ -149,6 +151,8 @@ export async function POST(request: Request) {
             if (!canvasCourse?.id) {
                 continue;
             }
+
+            syncedCourseCanvasIds.add(String(canvasCourse.id));
 
             const savedCourse =
                 await prisma.canvasCourse.upsert({
@@ -409,8 +413,40 @@ export async function POST(request: Request) {
             }
         }
 
+        /*
+         * Canvas's active-course fetch (canvas-extension/background.js) is
+         * always a full snapshot per sync, never a partial update — if any
+         * fetch in that handler fails, it aborts before ever calling this
+         * route. So anything previously synced for this user+origin that's
+         * missing from this payload is no longer active and can be safely
+         * removed. Guard against an empty payload, which is ambiguous
+         * (could be a real course-less term, could be something else) —
+         * skip pruning rather than risk wiping everything.
+         */
+        let removedCourseCount = 0;
+
+        if (syncedCourseCanvasIds.size > 0) {
+            const removedCourses =
+                await prisma.canvasCourse.deleteMany({
+                    where: {
+                        userId,
+                        canvasOrigin,
+                        canvasId: {
+                            notIn: Array.from(syncedCourseCanvasIds),
+                        },
+                    },
+                });
+
+            removedCourseCount = removedCourses.count;
+        }
+
         console.log(
             "✅ Canvas data saved!"
+        );
+
+        console.log(
+            "Removed inactive courses:",
+            removedCourseCount
         );
 
         console.log(
@@ -442,6 +478,7 @@ export async function POST(request: Request) {
             assignmentCount,
             discussionCount,
             announcementCount,
+            removedCourseCount,
         });
 
     } catch (error) {

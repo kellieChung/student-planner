@@ -35,6 +35,7 @@ export async function GET() {
         const courses = await prisma.canvasCourse.findMany({
             where: {
                 userId: user.id,
+                hidden: false,
             },
             include: {
                 assignments: true,

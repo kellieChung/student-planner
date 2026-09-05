@@ -24,11 +24,15 @@ export function saveTaskPlanningEstimates(estimates: TaskPlanningEstimates) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(estimates));
 }
 
+function importanceLevel(importance: number): "high" | "medium" | "low" {
+    return importance >= 8 ? "high" : importance >= 5 ? "medium" : "low";
+}
+
 export function getTaskPriority(
     task: Assignment,
-    importance: "low" | "medium" | "high" = "medium"
+    importance: number = 5
 ): TaskPriority {
-    const importanceOffset = importance === "high" ? 0 : importance === "medium" ? 1 : 2;
+    const importanceOffset = importance >= 8 ? 0 : importance >= 5 ? 1 : 2;
 
     if (task.due) {
         const due = new Date(`${task.due}T00:00:00`).getTime();
@@ -41,13 +45,13 @@ export function getTaskPriority(
         if (daysUntilDue === 1) return { level: "high", label: "Due tomorrow", rank: 4 + importanceOffset };
 
         return {
-            level: daysUntilDue <= 3 ? "high" : importance,
+            level: daysUntilDue <= 3 ? "high" : importanceLevel(importance),
             label: `Due in ${daysUntilDue} days`,
             rank: 1 + daysUntilDue * 3 + importanceOffset,
         };
     }
 
-    if (importance === "high") return { level: "high", label: "Do first", rank: 1_000_000 };
-    if (importance === "medium") return { level: "medium", label: "Plan next", rank: 1_000_001 };
+    if (importance >= 8) return { level: "high", label: "Do first", rank: 1_000_000 };
+    if (importance >= 5) return { level: "medium", label: "Plan next", rank: 1_000_001 };
     return { level: "low", label: "When ready", rank: 1_000_002 };
 }

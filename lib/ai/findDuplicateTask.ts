@@ -1,7 +1,9 @@
 const OLLAMA_URL = "http://localhost:11434/api/chat";
 const MODEL = "qwen2.5:3b-instruct";
 
-const OLLAMA_TIMEOUT_MS = 15_000;
+const OLLAMA_TIMEOUT_MS = 25_000;
+const PREDICT_TOKENS_PER_TASK = 80;
+const PREDICT_TOKENS_BASE = 100;
 
 type CanvasAssignment = {
     id: string;
@@ -93,28 +95,46 @@ function buildAssignmentContext(
         .join("\n\n");
 }
 
+function fallbackResult(reason: string): DuplicateCheckResult {
+    return {
+        isDuplicate: false,
+        matchingAssignmentId: null,
+        confidence: "low",
+        reason,
+    };
+}
+
 /**
- * Run a duplicate check against Canvas assignments.
+ * Checks a batch of proposed task names (all from the SAME announcement,
+ * so they already share the same nearby-assignment context) against
+ * existing Canvas assignments in a single Ollama call, instead of one call
+ * per task. Returns results in the same order as proposedTaskNames.
  */
-export async function findDuplicateTask(
-    proposedTaskName: string,
+export async function findDuplicateTasks(
+    proposedTaskNames: string[],
     assignments: CanvasAssignment[]
-): Promise<DuplicateCheckResult> {
+): Promise<DuplicateCheckResult[]> {
+    if (proposedTaskNames.length === 0) {
+        return [];
+    }
+
     if (assignments.length === 0) {
-        return {
-            isDuplicate: false,
-            matchingAssignmentId: null,
-            confidence: "low",
-            reason:
-                "No nearby Canvas assignments were available to compare against.",
-        };
+        return proposedTaskNames.map(() =>
+            fallbackResult(
+                "No nearby Canvas assignments were available to compare against."
+            )
+        );
     }
 
     const assignmentContext =
         buildAssignmentContext(assignments);
 
+    const taskList = proposedTaskNames
+        .map((name, index) => `${index + 1}. ${name}`)
+        .join("\n");
+
     const prompt = `
-Determine whether the proposed student task is already covered by one of the existing Canvas assignments.
+Determine whether EACH of the following proposed student tasks is already covered by one of the existing Canvas assignments below. Evaluate each proposed task independently.
 
 Be SENSITIVE: this is a student-facing suggestion, so prefer a false positive over a false negative when there is reasonable evidence of overlap.
 
@@ -164,39 +184,41 @@ If the relationship is uncertain but there is reasonable evidence the proposed t
 
 If they only share a topic/material but require different work -> NOT DUPLICATE.
 
-Choose the SINGLE best matching assignment.
+Choose the SINGLE best matching assignment for each proposed task.
 
 CONFIDENCE:
 HIGH = clearly the same work or explicitly included.
 MEDIUM = probably the same work or probably included, but somewhat ambiguous.
 LOW = weak/no meaningful overlap.
 
-Return ONLY this JSON:
+PROPOSED TASKS:
+${taskList}
+
+EXISTING CANVAS ASSIGNMENTS:
+${assignmentContext}
+
+Return ONLY this JSON, with exactly one entry per proposed task above, in this exact shape:
 
 {
-  "isDuplicate": true,
-  "matchingAssignmentId": "assignment-id",
-  "confidence": "high"
+  "results": [
+    {
+      "index": 1,
+      "isDuplicate": true,
+      "matchingAssignmentId": "assignment-id",
+      "confidence": "high"
+    }
+  ]
 }
 
-If there is no reasonable match:
+If there is no reasonable match for a proposed task, use:
 
-{
-  "isDuplicate": false,
-  "matchingAssignmentId": null,
-  "confidence": "low"
-}
+{ "index": N, "isDuplicate": false, "matchingAssignmentId": null, "confidence": "low" }
 
+"index" must match the PROPOSED TASKS number above (1-based).
 No markdown.
 No explanation.
 No extra text.
 No additional keys.
-
-PROPOSED TASK:
-${proposedTaskName}
-
-EXISTING CANVAS ASSIGNMENTS:
-${assignmentContext}
 `;
 
     const controller = new AbortController();
@@ -229,6 +251,9 @@ ${assignmentContext}
                 stream: false,
                 options: {
                     temperature: 0,
+                    num_predict:
+                        PREDICT_TOKENS_BASE +
+                        PREDICT_TOKENS_PER_TASK * proposedTaskNames.length,
                 },
             }),
             signal: controller.signal,
@@ -286,7 +311,8 @@ ${assignmentContext}
 
     if (
         typeof parsed !== "object" ||
-        parsed === null
+        parsed === null ||
+        !Array.isArray((parsed as { results?: unknown }).results)
     ) {
         console.error(
             "❌ Invalid duplicate-check structure:",
@@ -294,113 +320,128 @@ ${assignmentContext}
         );
 
         throw new Error(
-            "Ollama returned an invalid duplicate-check structure."
+            "Ollama response did not contain a duplicate-check results array."
         );
     }
 
-    const result =
-        parsed as Record<string, unknown>;
+    const resultsByIndex = new Map<number, Record<string, unknown>>();
 
-    const isDuplicate =
-        typeof result.isDuplicate === "boolean";
-
-    const matchingAssignmentId =
-        result.matchingAssignmentId === null ||
-        typeof result.matchingAssignmentId === "string";
-
-    const confidence =
-        result.confidence === "high" ||
-        result.confidence === "medium" ||
-        result.confidence === "low";
-
-    if (
-        !isDuplicate ||
-        !matchingAssignmentId ||
-        !confidence
-    ) {
-        console.error(
-            "❌ Invalid duplicate-check structure:",
-            parsed
-        );
-
-        throw new Error(
-            "Ollama returned an invalid duplicate-check structure."
-        );
+    for (const entry of (parsed as { results: unknown[] }).results) {
+        if (
+            entry &&
+            typeof entry === "object" &&
+            typeof (entry as { index?: unknown }).index === "number"
+        ) {
+            resultsByIndex.set(
+                (entry as { index: number }).index,
+                entry as Record<string, unknown>
+            );
+        }
     }
 
-    if (
-        result.isDuplicate === false &&
-        result.matchingAssignmentId !== null
-    ) {
-        console.error(
-            "❌ Duplicate checker returned an assignment ID while saying there is no duplicate:",
-            parsed
-        );
+    return proposedTaskNames.map((_, i) => {
+        const result = resultsByIndex.get(i + 1);
 
-        throw new Error(
-            "Ollama returned an inconsistent duplicate-check result."
-        );
-    }
+        if (!result) {
+            console.error(
+                `❌ Duplicate-check response is missing an entry for proposed task ${i + 1}:`,
+                parsed
+            );
 
-    if (
-        result.isDuplicate === true &&
-        result.matchingAssignmentId === null
-    ) {
-        console.error(
-            "❌ Duplicate checker returned true without an assignment ID:",
-            parsed
-        );
+            throw new Error(
+                `Ollama duplicate-check response is missing an entry for proposed task ${i + 1}.`
+            );
+        }
 
-        throw new Error(
-            "Ollama returned an inconsistent duplicate-check result."
-        );
-    }
+        const isDuplicate =
+            typeof result.isDuplicate === "boolean";
 
-    const matchingAssignment =
-        result.matchingAssignmentId
-            ? assignments.find(
-                  (assignment) =>
-                      assignment.id ===
-                      result.matchingAssignmentId
-              )
-            : undefined;
+        const matchingAssignmentId =
+            result.matchingAssignmentId === null ||
+            typeof result.matchingAssignmentId === "string";
 
-    if (
-        result.isDuplicate &&
-        !matchingAssignment
-    ) {
-        console.error(
-            "❌ Ollama returned an assignment ID that does not exist in the provided assignments:",
-            parsed
-        );
+        const confidence =
+            result.confidence === "high" ||
+            result.confidence === "medium" ||
+            result.confidence === "low";
 
-        throw new Error(
-            "Ollama returned an unknown assignment ID."
-        );
-    }
+        if (
+            !isDuplicate ||
+            !matchingAssignmentId ||
+            !confidence
+        ) {
+            console.error(
+                "❌ Invalid duplicate-check structure:",
+                result
+            );
 
-    let reason: string;
+            throw new Error(
+                "Ollama returned an invalid duplicate-check structure."
+            );
+        }
 
-    if (result.isDuplicate) {
-        reason =
-            "This task may already be covered by an existing Canvas assignment.";
-    } else {
-        reason =
-            "No existing Canvas assignment appears to cover this task.";
-    }
+        if (
+            result.isDuplicate === false &&
+            result.matchingAssignmentId !== null
+        ) {
+            console.error(
+                "❌ Duplicate checker returned an assignment ID while saying there is no duplicate:",
+                result
+            );
 
-    return {
-        isDuplicate:
-            result.isDuplicate as boolean,
-        matchingAssignmentId:
-            result.matchingAssignmentId as
-                | string
-                | null,
-        confidence:
-            result.confidence as
-                | "high"
-                | "medium"
-                | "low",
-        reason,
-    };
+            throw new Error(
+                "Ollama returned an inconsistent duplicate-check result."
+            );
+        }
+
+        if (
+            result.isDuplicate === true &&
+            result.matchingAssignmentId === null
+        ) {
+            console.error(
+                "❌ Duplicate checker returned true without an assignment ID:",
+                result
+            );
+
+            throw new Error(
+                "Ollama returned an inconsistent duplicate-check result."
+            );
+        }
+
+        const matchingAssignment =
+            result.matchingAssignmentId
+                ? assignments.find(
+                      (assignment) =>
+                          assignment.id ===
+                          result.matchingAssignmentId
+                  )
+                : undefined;
+
+        if (
+            result.isDuplicate &&
+            !matchingAssignment
+        ) {
+            console.error(
+                "❌ Ollama returned an assignment ID that does not exist in the provided assignments:",
+                result
+            );
+
+            throw new Error(
+                "Ollama returned an unknown assignment ID."
+            );
+        }
+
+        const reason = result.isDuplicate
+            ? "This task may already be covered by an existing Canvas assignment."
+            : "No existing Canvas assignment appears to cover this task.";
+
+        return {
+            isDuplicate: result.isDuplicate as boolean,
+            matchingAssignmentId:
+                result.matchingAssignmentId as string | null,
+            confidence:
+                result.confidence as "high" | "medium" | "low",
+            reason,
+        };
+    });
 }

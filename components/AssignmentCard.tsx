@@ -12,8 +12,10 @@ type AssignmentCardProps = {
     completedAt: string | null;
     estimatedMinutes?: number;
     priority: TaskPriority;
+    isFocused?: boolean;
     onToggleComplete: (id: string) => void;
     onDelete?: (id: string) => void;
+    onFocus?: (id: string) => void;
     onOpen: () => void;
 };
 
@@ -27,8 +29,10 @@ export default function AssignmentCard({
     completedAt,
     estimatedMinutes,
     priority,
+    isFocused,
     onToggleComplete,
     onDelete,
+    onFocus,
     onOpen,
 }: AssignmentCardProps) {
 
@@ -76,7 +80,7 @@ export default function AssignmentCard({
     return (
         <div
             style = {{ gridColumn: gridSpan }}
-            className = {`group rounded-lg border p-2 shadow-sm flex flex-col justify-between transition-all duration-200 overflow-hidden ${wasCompletedLate
+            className = {`group rounded-lg border p-2 shadow-sm flex flex-col justify-between transition-all duration-200 overflow-hidden ${isFocused ? "ring-2 ring-indigo-400" : ""} ${wasCompletedLate
                 ? "bg-slate-900 border-rose-900/80 text-rose-100 hover:border-rose-800"
                 : completed
                     ? "bg-green-900/40 border-slate-800 text-slate-500"
@@ -133,18 +137,33 @@ export default function AssignmentCard({
                 </div>
 
 
-                {onDelete && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete(id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded shrink-0"
-                        title="Delete Task"
-                    >
-                        ✕
-                    </button>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                    {onFocus && !completed && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onFocus(id);
+                            }}
+                            className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${isFocused ? "text-indigo-300 opacity-100" : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-300"}`}
+                            title={isFocused ? "Stop focusing on this task" : "Focus on this task in the Pomodoro timer"}
+                        >
+                            🎯
+                        </button>
+                    )}
+
+                    {onDelete && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded"
+                            title="Delete Task"
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
 
             </div>
     </div>

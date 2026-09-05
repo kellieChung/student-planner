@@ -84,20 +84,31 @@ export async function POST(request: Request) {
         xp: applyLatePenalty(timeBasedXp ?? fallbackBase.xp, daysLate),
     };
 
+    // A deterministic estimatedMinutes already fully determines the XP
+    // tier (see the system prompt below), so calling Ollama here would
+    // only recompute a value that gets discarded in favor of timeBasedXp
+    // anyway — skip the wasted call.
+    if (timeBasedXp !== null) {
+        return NextResponse.json({
+            xp: applyLatePenalty(timeBasedXp, daysLate),
+            source: "fallback",
+        } satisfies XpAward);
+    }
+
     try {
         const response = await fetch(`${process.env.OLLAMA_URL ?? "http://127.0.0.1:11434"}/api/chat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: AbortSignal.timeout(12_000),
             body: JSON.stringify({
-                model: process.env.OLLAMA_MODEL ?? "llama3.2:latest",
+                model: process.env.OLLAMA_MODEL ?? "qwen2.5:3b-instruct",
                 stream: false,
                 format: "json",
                 options: { temperature: 0.2 },
                 messages: [
                     {
                         role: "system",
-                        content: "Estimate only the expected workload of this student task. Do not judge quality, effort, or how well it was completed. Return only JSON: {\"xp\": number}. Choose exactly one base XP value: 10 for a quick routine task, 20 for a small task, 35 for typical homework/quiz/lab, 50 for a substantial assignment, 75 for a major paper/project/exam, or 100 for an exceptional capstone. Do not default to 50: if the title is vague, choose 20. If estimatedMinutes is provided, keep the XP aligned with it: 15 minutes or less is 10 XP, 30 is 20 XP, 60 is 35 XP, 120 is 50 XP, 240 is 75 XP, and longer is 100 XP.",
+                        content: "Estimate only the expected workload of this student task. Do not judge quality, effort, or how well it was completed. Return only JSON: {\"xp\": number}. Choose exactly one base XP value: 10 for a quick routine task, 20 for a small task, 35 for typical homework/quiz/lab, 50 for a substantial assignment, 75 for a major paper/project/exam, or 100 for an exceptional capstone. Do not default to 50: if the title is vague, choose 20.",
                     },
                     {
                         role: "user",
@@ -113,7 +124,7 @@ export async function POST(request: Request) {
         const scoredTask = JSON.parse(result.message?.content ?? "{}") as { xp?: unknown };
 
         return NextResponse.json({
-            xp: applyLatePenalty(timeBasedXp ?? normalizeXp(scoredTask.xp), daysLate),
+            xp: applyLatePenalty(normalizeXp(scoredTask.xp), daysLate),
             source: "ollama",
         } satisfies XpAward);
     } catch {
