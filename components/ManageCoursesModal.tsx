@@ -152,8 +152,8 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
     };
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-[var(--overlay)] backdrop-blur-sm">
-            <div className="theme-surface planner-shell bg-slate-900 rounded-xl p-6 w-[440px] max-h-[80vh] overflow-y-auto space-y-4 border border-slate-700 shadow-2xl">
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-[var(--overlay)] backdrop-blur-sm p-4">
+            <div className="theme-surface planner-shell bg-slate-900 rounded-xl p-6 w-[90vw] max-w-[440px] max-h-[80vh] overflow-y-auto space-y-4 border border-slate-700 shadow-2xl">
                 <div>
                     <h2 className="text-xl font-semibold">Manage Courses</h2>
                     <p className="mt-1 text-sm text-slate-400">

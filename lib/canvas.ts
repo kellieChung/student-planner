@@ -31,42 +31,6 @@ export async function getAssignments(courseId: number) {
         return response.json();
 }
 
-export function transformAssignment(
-    assignment: any,
-    courseName: string
-) {
-    if (!assignment.due_at) {
-        return {
-            id: String(assignment.id),
-            name: assignment.name,
-            due: null,
-            course: courseName,
-        };
-    }
-
-    const localDueDate = new Date(assignment.due_at);
-
-    const year = localDueDate.getFullYear();
-    const month = localDueDate.getMonth();
-    const day = localDueDate.getDate();
-
-    const formattedDue = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-
-    const localDueDateMidnight = new Date(year, month, day).getTime();
-    
-    const today = new Date();
-    const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-
-    const msPerDay = 1000 * 60 * 60 * 24;
-
-    return {
-        id: String(assignment.id),
-        name: assignment.name,
-        due: formattedDue,
-        course: courseName,
-    };
-}
-
 export async function getAllAssignments(userId: string) {
     const courses = await prisma.canvasCourse.findMany({
         where: {

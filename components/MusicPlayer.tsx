@@ -1318,38 +1318,39 @@ export default function MusicPlayer() {
 
     if (loading) {
         return (
-            <div className="p-6">
+            <div className="theme-surface flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)]">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
                 Loading Tavern Radio...
             </div>
         );
     }
 
     return (
-        <div className="flex flex-col gap-6 p-6">
+        <div className="theme-surface @container flex flex-col gap-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4">
             {error && (
-                <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                <div className="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">
                     {error}
                 </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                    <h1 className="text-2xl font-bold">
+                    <h1 className="text-lg font-bold">
                         Tavern Radio
                     </h1>
 
-                    <p className="text-sm text-gray-500">
+                    <p className="text-xs text-gray-500">
                         Your personal study soundtrack.
                     </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5">
                     <button
                         type="button"
                         onClick={() =>
                             setShowImport(true)
                         }
-                        className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+                        className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white"
                     >
                         Import Playlist
                     </button>
@@ -1361,7 +1362,7 @@ export default function MusicPlayer() {
                                 true
                             )
                         }
-                        className="rounded-lg border px-4 py-2 text-sm font-medium"
+                        className="rounded-lg border px-3 py-1.5 text-xs font-medium"
                     >
                         New Playlist
                     </button>
@@ -1374,7 +1375,7 @@ export default function MusicPlayer() {
                                     true
                                 )
                             }
-                            className="rounded-lg border px-4 py-2 text-sm font-medium"
+                            className="rounded-lg border px-3 py-1.5 text-xs font-medium"
                         >
                             Add Track
                         </button>
@@ -1394,7 +1395,7 @@ export default function MusicPlayer() {
                     </p>
                 </div>
             ) : (
-                <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+                <div className="grid gap-4 @lg:grid-cols-[200px_minmax(0,1fr)]">
                     <aside className="rounded-xl border p-3">
                         <div className="mb-3 flex items-center justify-between">
                             <h2 className="font-semibold">
@@ -1539,14 +1540,14 @@ export default function MusicPlayer() {
                     <main className="min-w-0">
                         {selectedPlaylist && (
                             <>
-                                <div className="mb-4">
-                                    <h2 className="text-xl font-semibold">
+                                <div className="mb-2">
+                                    <h2 className="text-base font-semibold">
                                         {
                                             selectedPlaylist.name
                                         }
                                     </h2>
 
-                                    <p className="text-sm text-gray-500">
+                                    <p className="text-xs text-gray-500">
                                         {
                                             selectedPlaylist
                                                 .tracks
@@ -1556,21 +1557,21 @@ export default function MusicPlayer() {
                                     </p>
                                 </div>
 
-                                <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-                                    <section className="rounded-xl border p-4">
+                                <div className="grid gap-4 @xl:grid-cols-[minmax(0,1fr)_240px]">
+                                    <section className="rounded-xl border p-3">
                                         <div
                                             id="youtube-player"
                                             className="aspect-video w-full overflow-hidden rounded-lg bg-black"
                                         />
 
-                                        <div className="mt-4">
-                                            <h3 className="truncate font-semibold">
+                                        <div className="mt-2">
+                                            <h3 className="truncate text-sm font-semibold">
                                                 {currentTrack?.title ??
                                                     "Nothing playing"}
                                             </h3>
 
                                             {currentTrack && (
-                                                <p className="text-sm text-gray-500">
+                                                <p className="text-xs text-gray-500">
                                                     Track{" "}
                                                     {currentIndex +
                                                         1}{" "}
@@ -1584,7 +1585,7 @@ export default function MusicPlayer() {
                                             )}
                                         </div>
 
-                                        <div className="mt-4">
+                                        <div className="mt-2">
                                             <input
                                                 type="range"
                                                 min="0"
@@ -1616,7 +1617,7 @@ export default function MusicPlayer() {
                                             </div>
                                         </div>
 
-                                        <div className="mt-4 flex items-center justify-center gap-3">
+                                        <div className="mt-3 flex items-center justify-center gap-2">
                                             <button
                                                 type="button"
                                                 onClick={
@@ -1627,7 +1628,7 @@ export default function MusicPlayer() {
                                                     currentIndex ===
                                                         0
                                                 }
-                                                className="rounded-full border px-4 py-2 disabled:opacity-40"
+                                                className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-40"
                                             >
                                                 Previous
                                             </button>
@@ -1641,7 +1642,7 @@ export default function MusicPlayer() {
                                                     !currentTrack ||
                                                     !playerReady
                                                 }
-                                                className="rounded-full bg-black px-6 py-2 text-white disabled:opacity-40"
+                                                className="rounded-full bg-[var(--accent)] px-5 py-1.5 text-sm text-white disabled:opacity-40"
                                             >
                                                 {isPlaying
                                                     ? "Pause"
@@ -1661,14 +1662,14 @@ export default function MusicPlayer() {
                                                             .length -
                                                             1
                                                 }
-                                                className="rounded-full border px-4 py-2 disabled:opacity-40"
+                                                className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-40"
                                             >
                                                 Next
                                             </button>
                                         </div>
 
-                                        <div className="mt-5 flex items-center gap-3">
-                                            <span className="text-sm">
+                                        <div className="mt-3 flex items-center gap-2">
+                                            <span className="text-xs">
                                                 Volume
                                             </span>
 
@@ -1693,15 +1694,15 @@ export default function MusicPlayer() {
                                                 className="flex-1"
                                             />
 
-                                            <span className="w-10 text-right text-sm text-gray-500">
+                                            <span className="w-8 text-right text-xs text-gray-500">
                                                 {volume}
                                             </span>
                                         </div>
                                     </section>
 
                                     <section className="rounded-xl border">
-                                        <div className="border-b p-4">
-                                            <h3 className="font-semibold">
+                                        <div className="border-b p-2">
+                                            <h3 className="text-sm font-semibold">
                                                 Tracks
                                             </h3>
                                         </div>
@@ -1710,11 +1711,11 @@ export default function MusicPlayer() {
                                             .tracks
                                             .length ===
                                         0 ? (
-                                            <div className="p-6 text-center text-sm text-gray-500">
+                                            <div className="p-4 text-center text-sm text-gray-500">
                                                 No tracks yet.
                                             </div>
                                         ) : (
-                                            <div className="max-h-[500px] overflow-y-auto">
+                                            <div className="max-h-[280px] overflow-y-auto">
                                                 {selectedPlaylist.tracks.map(
                                                     (
                                                         track,
@@ -1724,7 +1725,7 @@ export default function MusicPlayer() {
                                                             key={
                                                                 track.id
                                                             }
-                                                            className={`border-b p-3 ${
+                                                            className={`border-b p-2 ${
                                                                 index ===
                                                                 currentIndex
                                                                     ? "bg-gray-50"
@@ -1852,7 +1853,7 @@ export default function MusicPlayer() {
              * Create Playlist Modal
              */}
             {showCreatePlaylist && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
                     <form
                         onSubmit={
                             createPlaylist
@@ -1900,7 +1901,7 @@ export default function MusicPlayer() {
                                     isSubmitting ||
                                     !newPlaylistName.trim()
                                 }
-                                className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-40"
+                                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-white disabled:opacity-40"
                             >
                                 Create
                             </button>
@@ -1913,7 +1914,7 @@ export default function MusicPlayer() {
              * Add Track Modal
              */}
             {showAddTrack && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
                     <form
                         onSubmit={addTrack}
                         className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
@@ -1973,7 +1974,7 @@ export default function MusicPlayer() {
                                     !trackTitle.trim() ||
                                     !trackUrl.trim()
                                 }
-                                className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-40"
+                                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-white disabled:opacity-40"
                             >
                                 Add Track
                             </button>
@@ -1986,7 +1987,7 @@ export default function MusicPlayer() {
              * Import YouTube Playlist Modal
              */}
             {showImport && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
                     <form
                         onSubmit={
                             importPlaylist
@@ -2130,7 +2131,7 @@ export default function MusicPlayer() {
                                     (!importTargetId &&
                                         !newImportPlaylistName.trim())
                                 }
-                                className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-40"
+                                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-white disabled:opacity-40"
                             >
                                 {isSubmitting
                                     ? "Importing..."

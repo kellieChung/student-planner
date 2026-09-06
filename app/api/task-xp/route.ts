@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Assignment } from "@/types/assignment";
 import { XpAward } from "@/types/gamification";
+import { daysBetween } from "@/lib/utils";
 
 const XP_VALUES = [10, 20, 35, 50, 75, 100];
 
@@ -51,12 +52,12 @@ function latePenalty(daysLate: number): number {
 function calculateDaysLate(due: string, completedAt: string): number {
     if (!due || !completedAt) return 0;
 
-    const dueDate = new Date(`${due}T00:00:00`).getTime();
-    const completedDate = new Date(`${completedAt}T00:00:00`).getTime();
+    const dueDate = new Date(`${due}T00:00:00`);
+    const completedDate = new Date(`${completedAt}T00:00:00`);
 
-    if (!Number.isFinite(dueDate) || !Number.isFinite(completedDate)) return 0;
+    if (!Number.isFinite(dueDate.getTime()) || !Number.isFinite(completedDate.getTime())) return 0;
 
-    return Math.max(0, Math.floor((completedDate - dueDate) / (1000 * 60 * 60 * 24)));
+    return Math.max(0, daysBetween(completedDate, dueDate));
 }
 
 function applyLatePenalty(baseXp: number, daysLate: number): number {

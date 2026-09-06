@@ -1,0 +1,148 @@
+/* Mirrors the main app's theme variables (app/globals.css) so the
+   extension popup reads as the same product. popup.js sets
+   documentElement's data-theme to whatever theme.js (a content script)
+   last observed on the planner web app itself — see theme-sync.js —
+   falling back to the OS color-scheme preference if the web app has never
+   been opened. Dark ("Enchanted Forest") is the default; [data-theme="light"]
+   applies "Cozy Tavern". */
+:root {
+    --app-background: #0a1410;
+    --panel: #142820;
+    --panel-raised: #1c3528;
+    --border: #3d6b52;
+    --foreground: #ecfdf5;
+    --muted: #86b09a;
+    --heading: #a7f3d0;
+    --accent: #34d399;
+    --accent-hover: #6ee7b7;
+    --status-overdue-text: #fecaca;
+    --status-overdue-bg: rgb(127 29 29 / 0.55);
+    --status-done-text: #86efac;
+    --status-done-bg: rgb(20 83 45 / 0.45);
+}
+
+:root[data-theme="light"] {
+    --app-background: #fff7ed;
+    --panel: #fffbeb;
+    --panel-raised: #fef3c7;
+    --border: #fdba74;
+    --foreground: #431407;
+    --muted: #9a3412;
+    --heading: #c2410c;
+    --accent: #ea580c;
+    --accent-hover: #c2410c;
+    --status-overdue-text: #991b1b;
+    --status-overdue-bg: rgb(254 202 202 / 0.85);
+    --status-done-text: #166534;
+    --status-done-bg: rgb(187 247 208 / 0.7);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    width: 340px;
+    margin: 0;
+    padding: 16px;
+    background-color: var(--app-background);
+    color: var(--foreground);
+    font-family: -apple-system, "Segoe UI", system-ui, Arial, sans-serif;
+    font-size: 13px;
+}
+
+h1 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--heading);
+}
+
+p {
+    margin: 0 0 10px;
+    color: var(--muted);
+    line-height: 1.4;
+}
+
+label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+}
+
+input[type="text"] {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background-color: var(--panel);
+    color: var(--foreground);
+    font-size: 13px;
+}
+
+input[type="text"]:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+button {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 8px;
+    background-color: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 150ms ease, opacity 150ms ease;
+}
+
+button:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+button#syncButton {
+    background-color: var(--panel-raised);
+    color: var(--foreground);
+    border: 1px solid var(--border);
+}
+
+button#syncButton:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+#status {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background-color: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12px;
+    word-break: break-word;
+}
+
+#status.status-success {
+    background-color: var(--status-done-bg);
+    border-color: var(--status-done-text);
+    color: var(--status-done-text);
+}
+
+#status.status-error {
+    background-color: var(--status-overdue-bg);
+    border-color: var(--status-overdue-text);
+    color: var(--status-overdue-text);
+}

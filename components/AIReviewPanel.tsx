@@ -129,14 +129,14 @@ export default function AIReviewPanel() {
             {!started && (
                 <button
                     onClick={analyzeAnnouncements}
-                    className="rounded-xl bg-black px-5 py-3 font-semibold text-white transition hover:opacity-80"
+                    className="rounded-xl bg-[var(--accent)] px-5 py-3 font-semibold text-white transition hover:bg-[var(--accent-hover)]"
                 >
                     🤖 Review AI Suggestions
                 </button>
             )}
 
             {loading && (
-                <div className="rounded-xl border p-6">
+                <div className="theme-surface rounded-xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="font-semibold">
                         🤖 Analyzing announcements...
                     </p>
@@ -166,7 +166,7 @@ export default function AIReviewPanel() {
             )}
 
             {finished && (
-                <div className="rounded-2xl border p-6">
+                <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="text-xl font-bold">
                         🎉 You're all caught up!
                     </p>
@@ -181,7 +181,7 @@ export default function AIReviewPanel() {
             {started &&
                 !loading &&
                 tasks.length === 0 && (
-                    <div className="rounded-2xl border p-6">
+                    <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                         <p className="font-semibold">
                             No tasks found!
                         </p>

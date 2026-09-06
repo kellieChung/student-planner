@@ -68,6 +68,55 @@ const OLLAMA_TIMEOUT_MS = 25_000;
 const PREDICT_TOKENS_PER_ASSIGNMENT = 200;
 const PREDICT_TOKENS_BASE = 100;
 
+// Deterministic keyword-based fallback used whenever the Ollama call fails
+// or returns something malformed — see CLAUDE.md's "must degrade
+// gracefully" convention for lib/analyzeAssignment.ts and app/api/task-xp.
+function fallbackAssignmentAnalysis(
+    assignment: AssignmentInput
+): AssignmentAnalysis {
+    const text =
+        `${assignment.name} ${assignment.course} ${assignment.description ?? ""}`
+            .toLowerCase();
+
+    if (/(exam|midterm|final|research paper|presentation|project|capstone)/.test(text)) {
+        return {
+            importance: 8,
+            difficulty: 8,
+            consequence: 7,
+            assignmentType: "exam",
+            reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
+        };
+    }
+
+    if (/(essay|lab|problem set|homework)/.test(text)) {
+        return {
+            importance: 6,
+            difficulty: 6,
+            consequence: 5,
+            assignmentType: "homework",
+            reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
+        };
+    }
+
+    if (/(quiz|reading|discussion|worksheet)/.test(text)) {
+        return {
+            importance: 4,
+            difficulty: 3,
+            consequence: 3,
+            assignmentType: "reading",
+            reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
+        };
+    }
+
+    return {
+        importance: 4,
+        difficulty: 3,
+        consequence: 3,
+        assignmentType: "other",
+        reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
+    };
+}
+
 function buildAssignmentBlock(
     assignment: AssignmentInput,
     index: number
@@ -86,10 +135,12 @@ POINTS POSSIBLE: ${assignment.pointsPossible ?? "Unknown"}
  * Analyzes a batch of assignments in a single Ollama call rather than one
  * call per assignment — each call resends the full rubric/instructions, so
  * batching cuts that fixed per-call cost proportionally. A malformed or
- * missing entry for any one assignment fails the whole batch (caller falls
- * back to the deterministic heuristic for all of them); this is a
- * deliberate simplicity/robustness tradeoff for a reasonably small batch
- * size, not a partial-recovery attempt.
+ * missing entry for any one assignment falls back to the deterministic
+ * heuristic for the whole batch; this is a deliberate simplicity/robustness
+ * tradeoff for a reasonably small batch size, not a partial-recovery
+ * attempt. Never throws — degrades to `fallbackAssignmentAnalysis` on any
+ * failure (timeout, non-2xx, malformed JSON), per this repo's convention
+ * for Ollama calls.
  */
 export async function analyzeAssignments(
     assignments: AssignmentInput[]
@@ -98,6 +149,16 @@ export async function analyzeAssignments(
         return [];
     }
 
+    try {
+        return await analyzeAssignmentsWithOllama(assignments);
+    } catch {
+        return assignments.map(fallbackAssignmentAnalysis);
+    }
+}
+
+async function analyzeAssignmentsWithOllama(
+    assignments: AssignmentInput[]
+): Promise<AssignmentAnalysis[]> {
     const prompt = `
 You are an academic planning assistant. Analyze EACH of the following ${assignments.length} assignments independently, using the rubric below. Base your judgments only on the information provided for that specific assignment; do not invent grading policies, course weights, or requirements, and do not let one assignment's context influence another assignment's scores.
 
@@ -174,45 +235,28 @@ Rules:
 - Do not include markdown or any text outside the JSON.
 `;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), OLLAMA_TIMEOUT_MS);
-
-    let response: Response;
-
-    try {
-        response = await fetch(OLLAMA_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            signal: controller.signal,
-            body: JSON.stringify({
-                model: MODEL,
-                messages: [
-                    {
-                        role: "user",
-                        content: prompt,
-                    },
-                ],
-                stream: false,
-                options: {
-                    num_predict:
-                        PREDICT_TOKENS_BASE +
-                        PREDICT_TOKENS_PER_ASSIGNMENT * assignments.length,
+    const response = await fetch(OLLAMA_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+        body: JSON.stringify({
+            model: MODEL,
+            messages: [
+                {
+                    role: "user",
+                    content: prompt,
                 },
-            }),
-        });
-    } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-            throw new Error(
-                `Ollama request timed out after ${OLLAMA_TIMEOUT_MS / 1000} seconds.`
-            );
-        }
-
-        throw error;
-    } finally {
-        clearTimeout(timeout);
-    }
+            ],
+            stream: false,
+            options: {
+                num_predict:
+                    PREDICT_TOKENS_BASE +
+                    PREDICT_TOKENS_PER_ASSIGNMENT * assignments.length,
+            },
+        }),
+    });
 
     if (!response.ok) {
         throw new Error(

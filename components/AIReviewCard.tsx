@@ -38,7 +38,7 @@ export default function AIReviewCard({
     }
 
     return (
-        <div className="w-full max-w-6xl overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] shadow-xl">
+        <div className="theme-surface w-full max-w-6xl overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--panel)] shadow-xl">
 
             {/* ================================================== */}
             {/* HEADER */}
@@ -326,7 +326,7 @@ export default function AIReviewCard({
 
                 <button
                     onClick={handleAccept}
-                    className="rounded-2xl bg-black px-4 py-4 font-semibold text-white transition hover:opacity-80 dark:bg-white dark:text-black"
+                    className="rounded-2xl bg-[var(--accent)] px-4 py-4 font-semibold text-white transition hover:bg-[var(--accent-hover)]"
                 >
                     ✅
                     <span className="ml-2">

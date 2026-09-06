@@ -1,6 +1,34 @@
 "use client";
 
 import {TaskPriority} from "@/types/taskPlanning";
+import {parseLocalDate} from "@/lib/utils";
+
+// Deterministic per-course color, so any course name (synced or
+// custom-added) gets a stable, theme-consistent badge color instead of a
+// flat gray fallback for anything outside a hardcoded name list.
+// Deliberately avoids blue/indigo (the app's accent color), green (done),
+// rose/red (overdue), and amber/yellow (urgent/frog) — those hues already
+// carry a status meaning elsewhere in the planner.
+const COURSE_COLORS = [
+    "bg-teal-700",
+    "bg-purple-700",
+    "bg-fuchsia-700",
+    "bg-lime-700",
+    "bg-cyan-700",
+    "bg-pink-700",
+    "bg-violet-700",
+    "bg-orange-700",
+];
+
+function courseColorFor(course: string): string {
+    let hash = 0;
+
+    for (let i = 0; i < course.length; i++) {
+        hash = (hash * 31 + course.charCodeAt(i)) | 0;
+    }
+
+    return COURSE_COLORS[Math.abs(hash) % COURSE_COLORS.length];
+}
 
 type AssignmentCardProps = {
     id: string;
@@ -45,32 +73,18 @@ export default function AssignmentCard({
     onOpen,
 }: AssignmentCardProps) {
 
-    let courseColor = "bg-gray-700";
-
-    if (course === "Physics") {
-        courseColor = "bg-blue-700";
-    }
-
-    if (course === "English") {
-        courseColor = "bg-yellow-700";
-    }
-
-    if (course === "Math") {
-        courseColor = "bg-red-700";
-    }
+    const courseColor = courseColorFor(course);
 
     let isLate = false;
     let wasCompletedLate = false;
 
     if (due) {
-        const [year, month, day] = due.split("-").map(Number);
-        const dueDate = new Date(year, month - 1, day).setHours(0, 0, 0, 0);
+        const dueDate = parseLocalDate(due).setHours(0, 0, 0, 0);
         const today = new Date().setHours(0, 0, 0, 0);
         isLate = dueDate < today && !completed;
 
         if (completed && completedAt) {
-            const [completedYear, completedMonth, completedDay] = completedAt.split("-").map(Number);
-            const completedDate = new Date(completedYear, completedMonth - 1, completedDay).setHours(0, 0, 0, 0);
+            const completedDate = parseLocalDate(completedAt).setHours(0, 0, 0, 0);
             wasCompletedLate = completedDate > dueDate;
         }
     }
@@ -120,7 +134,7 @@ export default function AssignmentCard({
                     <div className="min-w-0">
 
                         <div className="flex gap-1.5 items-center flex-wrap">
-                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border ${courseColor}`}>
+                            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border text-[#fff] ${courseColor}`}>
                                 {course}
                             </span>
 
@@ -144,7 +158,7 @@ export default function AssignmentCard({
                         </h3>
 
 
-                        <p className={`text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-gray-400"}`}>
+                        <p className={`text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-slate-400"}`}>
                             Due: {due}{dueTime ? ` at ${dueTime}` : ""}{estimatedTime ? ` · Est. ${estimatedTime}` : ""}
                         </p>
 

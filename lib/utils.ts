@@ -21,7 +21,6 @@ export function calculateGridSpan(
     task: TaskSpanInput,
     weekStartDate: Date
 ): GridSpan {
-    const msPerDay = 1000 * 60 * 60 * 24;
     const dueFraction = task.dueFraction ?? 1;
 
     const monday = new Date(weekStartDate);
@@ -44,9 +43,7 @@ export function calculateGridSpan(
      * due-date column rather than extending it backward.
      */
     if (due < today) {
-        const dueOffset = Math.floor(
-            (due.getTime() - monday.getTime()) / msPerDay
-        );
+        const dueOffset = daysBetween(due, monday);
 
         const dueColumn = Math.max(
             1,
@@ -63,13 +60,9 @@ export function calculateGridSpan(
         ? monday
         : start;
 
-    const startOffset = Math.floor(
-        (effectiveStart.getTime() - monday.getTime()) / msPerDay
-    );
+    const startOffset = daysBetween(effectiveStart, monday);
 
-    const dueOffset = Math.floor(
-        (due.getTime() - monday.getTime()) / msPerDay
-    );
+    const dueOffset = daysBetween(due, monday);
 
     const startColumn = Math.max(
         1,
@@ -101,4 +94,15 @@ export function parseLocalDate(dateString: string): Date {
     const [year, month, day] = dateString.split("-").map(Number);
 
     return new Date(year, month - 1, day);
+}
+
+// Whole-calendar-day difference (a - b), immune to the 23/25-hour days a
+// naive `(a.getTime() - b.getTime()) / MS_PER_DAY` produces across a DST
+// transition — this diffs Y/M/D components via UTC instead of raw local
+// timestamps.
+export function daysBetween(a: Date, b: Date): number {
+    const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+    const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+
+    return Math.round((utcA - utcB) / (1000 * 60 * 60 * 24));
 }

@@ -67,7 +67,11 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
     const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
     const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
-    const [theme, setTheme] = useState<"dark" | "light">("dark");
+    const [theme, setTheme] = useState<"dark" | "light">(() => {
+        if (typeof document === "undefined") return "dark";
+        const domTheme = document.documentElement.dataset.theme;
+        return domTheme === "light" ? "light" : "dark";
+    });
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
@@ -235,9 +239,11 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     };
 
     const returnToCurrentWeek = () => {
-        const currentWeekStart = new Date(weekStartDate);
-        currentWeekStart.setHours(0, 0, 0, 0);
-        setActiveWeekStart(currentWeekStart);
+        const today = new Date();
+        const sunday = new Date(today);
+        sunday.setDate(today.getDate() - today.getDay());
+        sunday.setHours(0, 0, 0, 0);
+        setActiveWeekStart(sunday);
     };
 
     const changeMonth = (numberOfMonths: number) => {
@@ -274,18 +280,12 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         const savedStates = getTaskStates();
         const savedGamification = getGamificationState();
         const savedTaskPlanning = getTaskPlanningEstimates();
-        const savedTheme = localStorage.getItem("planner_theme");
         const savedFocusTaskId = localStorage.getItem(FOCUS_TASK_STORAGE_KEY);
 
         setTaskStates(savedStates);
         setGamification(savedGamification);
         setTaskPlanning(savedTaskPlanning);
         setActiveFocusTaskId(savedFocusTaskId);
-        if (savedTheme === "light" || savedTheme === "dark") {
-            setTheme(savedTheme);
-        } else {
-            document.documentElement.dataset.theme = "dark";
-        }
 
         const customTasks = storedTasks
             ? JSON.parse(storedTasks)
@@ -844,7 +844,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 }}
             />
 
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
                 <PomodoroTimer
                     focusTask={
                         activeFocusTask

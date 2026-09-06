@@ -6,12 +6,14 @@
 
   "permissions": [
     "storage",
-    "identity"
+    "identity",
+    "scripting"
   ],
 
   "host_permissions": [
     "https://*/*",
-    "http://localhost:300/*"
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*"
   ],
 
   "action": {
@@ -26,6 +28,10 @@
     {
       "matches": ["https://*/*"],
       "js": ["content.js"]
+    },
+    {
+      "matches": ["http://localhost:3000/*", "http://127.0.0.1:3000/*"],
+      "js": ["theme-sync.js"]
     }
   ]
 }

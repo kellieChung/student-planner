@@ -269,3 +269,99 @@ html[data-theme="dark"] .planner-shell [class*="bg-rose-950"],
 html[data-theme="dark"] .planner-shell [class*="bg-rose-950/"] {
   background-color: var(--status-overdue-bg) !important;
 }
+
+/* Remap Tailwind gray utilities the same way slate is remapped — gray and
+   slate carry no theme identity of their own, so both themes treat them
+   identically. */
+.theme-surface [class~="border"],
+.theme-surface [class~="border-b"],
+.planner-shell [class~="border"],
+.planner-shell [class~="border-b"] {
+  border-color: var(--border);
+}
+
+.theme-surface [class*="bg-gray-50"],
+.theme-surface [class*="bg-gray-100"],
+.theme-surface [class*="bg-gray-700"],
+.planner-shell [class*="bg-gray-50"],
+.planner-shell [class*="bg-gray-100"],
+.planner-shell [class*="bg-gray-700"] {
+  background-color: var(--panel-muted) !important;
+}
+
+.theme-surface [class*="text-gray-4"],
+.theme-surface [class*="text-gray-5"],
+.planner-shell [class*="text-gray-4"],
+.planner-shell [class*="text-gray-5"] {
+  color: var(--muted) !important;
+}
+
+.theme-surface [class*="bg-white"],
+.planner-shell [class*="bg-white"] {
+  background-color: var(--panel-raised) !important;
+  color: var(--foreground);
+}
+
+/* Generic danger/error accents (delete buttons, error banners) used
+   outside the rose-based status-badge system above. */
+.theme-surface [class*="text-red-500"],
+.theme-surface [class*="text-red-700"],
+.planner-shell [class*="text-red-500"],
+.planner-shell [class*="text-red-700"] {
+  color: var(--status-overdue-text) !important;
+}
+
+.theme-surface [class*="border-red-"],
+.planner-shell [class*="border-red-"] {
+  border-color: color-mix(in srgb, var(--status-overdue-text) 45%, var(--border)) !important;
+}
+
+.theme-surface [class*="bg-red-50"],
+.planner-shell [class*="bg-red-50"] {
+  background-color: var(--status-overdue-bg) !important;
+}
+
+/*
+ * amber/orange/yellow "urgent" accents are the light theme's ("Cozy
+ * Tavern") native identity — they already match --accent there. In dark
+ * mode ("Enchanted Forest") they'd otherwise stay static orange/amber
+ * instead of picking up the dark palette, so remap them to the dark
+ * accent/quest-glow variables, mirroring the indigo/blue treatment above.
+ */
+html[data-theme="dark"] .theme-surface [class*="bg-amber-950"],
+html[data-theme="dark"] .planner-shell [class*="bg-amber-950"] {
+  background-color: var(--quest-glow) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="bg-amber-500"],
+html[data-theme="dark"] .theme-surface [class*="bg-amber-400"],
+html[data-theme="dark"] .theme-surface [class*="bg-yellow-500"],
+html[data-theme="dark"] .planner-shell [class*="bg-amber-500"],
+html[data-theme="dark"] .planner-shell [class*="bg-amber-400"],
+html[data-theme="dark"] .planner-shell [class*="bg-yellow-500"] {
+  background-color: var(--accent) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="hover:bg-amber-400"]:hover,
+html[data-theme="dark"] .planner-shell [class*="hover:bg-amber-400"]:hover {
+  background-color: var(--accent-hover) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="border-amber-"],
+html[data-theme="dark"] .theme-surface [class*="border-yellow-"],
+html[data-theme="dark"] .planner-shell [class*="border-amber-"],
+html[data-theme="dark"] .planner-shell [class*="border-yellow-"] {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border)) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="text-amber-4"],
+html[data-theme="dark"] .theme-surface [class*="text-yellow-4"],
+html[data-theme="dark"] .planner-shell [class*="text-amber-4"],
+html[data-theme="dark"] .planner-shell [class*="text-yellow-4"] {
+  color: var(--heading) !important;
+}
+
+html[data-theme="dark"] .theme-surface [class*="text-amber-2"],
+html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
+  color: var(--accent-hover) !important;
+}

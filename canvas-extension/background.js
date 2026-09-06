@@ -10,6 +10,35 @@ async function getCanvasData(url) {
     return response.json();
 }
 
+// Looked up on demand (rather than relying solely on theme-sync.js having
+// already run in an already-open tab) so the popup shows the right theme
+// even right after installing/reloading the extension.
+async function getPlannerTabTheme() {
+    const tabs = await chrome.tabs.query({
+        url: [
+            "http://localhost:3000/*",
+            "http://127.0.0.1:3000/*",
+        ],
+    });
+
+    if (tabs.length === 0) {
+        console.log("🎨 No open Student Planner tab found.");
+        return null;
+    }
+
+    const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: tabs[0].id },
+        func: () =>
+            document.documentElement.dataset.theme === "light"
+                ? "light"
+                : "dark",
+    });
+
+    console.log("🎨 Read live planner theme from open tab:", result);
+
+    return result ?? null;
+}
+
 async function clearExtensionAuth() {
     console.log("🔓 Clearing stale extension authentication...");
 
@@ -65,7 +94,13 @@ async function startExtensionAuth() {
             "🔐 Login page opened!"
         );
 
-        await watchAuthState(state);
+        const authenticated = await watchAuthState(state);
+
+        if (!authenticated) {
+            throw new Error(
+                "Sign-in timed out. Please try again."
+            );
+        }
 
     } catch (error) {
         console.error(
@@ -114,7 +149,7 @@ async function watchAuthState(state) {
                     "🎉 Extension successfully authenticated!"
                 );
 
-                return;
+                return true;
             }
 
         } catch (error) {
@@ -132,6 +167,8 @@ async function watchAuthState(state) {
     console.log(
         "❌ Extension authentication timed out."
     );
+
+    return false;
 }
 
 async function signInWithGoogle() {
@@ -187,6 +224,30 @@ async function signInWithGoogle() {
 
 chrome.runtime.onMessage.addListener(
     (message, sender, sendResponse) => {
+
+        if (message.type === "GET_PLANNER_THEME") {
+
+            getPlannerTabTheme()
+                .then((theme) => {
+                    sendResponse({
+                        success: true,
+                        theme,
+                    });
+                })
+                .catch((error) => {
+                    console.error(
+                        "❌ Could not read planner theme:",
+                        error
+                    );
+
+                    sendResponse({
+                        success: false,
+                        error: error.message,
+                    });
+                });
+
+            return true;
+        }
 
         if (message.type === "START_EXTENSION_AUTH") {
 

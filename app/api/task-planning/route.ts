@@ -12,52 +12,6 @@ type PlanningTask = {
     pointsPossible?: number | null;
 };
 
-function fallbackAnalysis(task: PlanningTask) {
-    const text =
-        `${task.name} ${task.course} ${task.description ?? ""}`
-            .toLowerCase();
-
-    let importance = 4;
-    let difficulty = 3;
-    let consequence = 3;
-    let assignmentType = "other";
-
-    if (
-        /(exam|midterm|final|research paper|presentation|project|capstone)/
-            .test(text)
-    ) {
-        importance = 8;
-        difficulty = 8;
-        consequence = 7;
-        assignmentType = "exam";
-    } else if (
-        /(essay|lab|problem set|homework)/
-            .test(text)
-    ) {
-        importance = 6;
-        difficulty = 6;
-        consequence = 5;
-        assignmentType = "homework";
-    } else if (
-        /(quiz|reading|discussion|worksheet)/
-            .test(text)
-    ) {
-        importance = 4;
-        difficulty = 3;
-        consequence = 3;
-        assignmentType = "reading";
-    }
-
-    return {
-        importance,
-        difficulty,
-        consequence,
-        assignmentType,
-        reason:
-            "This estimate was generated using a fallback because AI analysis was unavailable.",
-    };
-}
-
 function normalizeAnalysis(analysis: {
     importance: unknown;
     difficulty: unknown;
@@ -162,24 +116,17 @@ export async function POST(request: Request) {
         batches,
         OLLAMA_CONCURRENCY,
         async (batch) => {
-            let analyses;
-
-            try {
-                analyses = await analyzeAssignments(
-                    batch.map((task) => ({
-                        name: task.name,
-                        course: task.course,
-                        description: task.description,
-                        due: task.due,
-                        pointsPossible: task.pointsPossible,
-                    }))
-                );
-            } catch {
-                // One malformed/missing entry fails the whole batch; fall
-                // back to the deterministic heuristic for every task in it
-                // rather than trying to partially recover.
-                analyses = batch.map((task) => fallbackAnalysis(task));
-            }
+            // analyzeAssignments never throws — it degrades to its own
+            // deterministic fallback internally on any Ollama failure.
+            const analyses = await analyzeAssignments(
+                batch.map((task) => ({
+                    name: task.name,
+                    course: task.course,
+                    description: task.description,
+                    due: task.due,
+                    pointsPossible: task.pointsPossible,
+                }))
+            );
 
             return batch.map((task, i) => {
                 const normalized =

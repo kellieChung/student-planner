@@ -14,13 +14,13 @@ export default async function ExtensionCallbackPage({
     const state = params.state;
 
     if (!state) {
-        return <p>❌ Missing extension state.</p>;
+        return <ExtensionCallbackMessage text="❌ Missing extension state." />;
     }
 
     const session = await auth();
 
     if (!session?.user?.email) {
-        return <p>❌ You are not signed in.</p>;
+        return <ExtensionCallbackMessage text="❌ You are not signed in." />;
     }
 
     const user = await prisma.user.findUnique({
@@ -31,9 +31,7 @@ export default async function ExtensionCallbackPage({
 
     if (!user) {
         return (
-            <p>
-                ❌ Could not find your Student Planner account.
-            </p>
+            <ExtensionCallbackMessage text="❌ Could not find your Student Planner account." />
         );
     }
 
@@ -76,15 +74,26 @@ export default async function ExtensionCallbackPage({
     }
 
     return (
-        <main className="min-h-screen flex items-center justify-center">
-            <div className="text-center">
-                <h1>Student Planner</h1>
+        <main className="min-h-screen flex items-center justify-center p-4">
+            <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
+                <h1 className="text-2xl font-bold text-[var(--heading)]">Student Planner</h1>
 
-                <p>✅ You're signed in!</p>
+                <p className="mt-4 text-sm font-semibold text-[var(--foreground)]">✅ You&apos;re signed in!</p>
 
-                <p>
+                <p className="mt-1 text-sm text-[var(--muted)]">
                     You can close this tab and return to the extension.
                 </p>
+            </div>
+        </main>
+    );
+}
+
+function ExtensionCallbackMessage({ text }: { text: string }) {
+    return (
+        <main className="min-h-screen flex items-center justify-center p-4">
+            <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
+                <h1 className="text-2xl font-bold text-[var(--heading)]">Student Planner</h1>
+                <p className="mt-4 text-sm font-semibold text-[var(--status-overdue-text)]">{text}</p>
             </div>
         </main>
     );

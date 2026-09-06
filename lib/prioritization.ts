@@ -28,6 +28,17 @@ const BASELINE_LEAD_HOURS = 48;
 // badly-missed task can't make everything else look artificially urgent.
 const MAX_URGENCY_SHIFT_HOURS = 120;
 
+// importance/difficulty are on the same 1-10 scale the frog bonus's own
+// threshold uses (see calculatePriority's `frogScore`) — kept in sync with
+// the "high-value, difficult task" reason text below so both describe the
+// same condition.
+const FROG_THRESHOLD = 7;
+
+// estimatedMinutes above this is treated as "as long as it gets" for the
+// effort tie-breaker below — there's no benefit to distinguishing a 4-hour
+// task from an 8-hour one for prioritization purposes.
+const EFFORT_CAP_MINUTES = 240;
+
 function calculateUrgencyShiftHours(procrastinationIndexHours: number): number {
     return Math.min(
         MAX_URGENCY_SHIFT_HOURS,
@@ -102,10 +113,15 @@ export function calculatePriority(
     const historyAdjusted = urgencyScore > rawUrgencyScore;
 
     const frogScore =
-        task.importance >= 7 &&
-        task.difficulty >= 7
+        task.importance >= FROG_THRESHOLD &&
+        task.difficulty >= FROG_THRESHOLD
             ? 100
             : 0;
+
+    const effortScore =
+        Math.min(task.estimatedMinutes, EFFORT_CAP_MINUTES) /
+        EFFORT_CAP_MINUTES *
+        100;
 
     /*
      * Urgency must be dominant, not just heavily weighted: the planner
@@ -118,17 +134,18 @@ export function calculatePriority(
      *
      * So urgencyScore (the bucketed, procrastination-adjusted value, in
      * increments of at least 5) is the primary key, and the
-     * importance/difficulty/consequence/frog blend is squashed into a
-     * secondary term capped well under that smallest possible gap — it can
-     * only break ties between tasks of similar urgency, never overcome a
-     * real difference in how soon something is due.
+     * importance/difficulty/consequence/frog/effort blend is squashed into
+     * a secondary term capped well under that smallest possible gap — it
+     * can only break ties between tasks of similar urgency, never overcome
+     * a real difference in how soon something is due.
      */
 
     const secondaryScore =
-        task.importance * 10 * 0.40 +
-        task.difficulty * 10 * 0.30 +
-        task.consequence * 10 * 0.20 +
-        frogScore * 0.10;
+        task.importance * 10 * 0.35 +
+        task.difficulty * 10 * 0.25 +
+        task.consequence * 10 * 0.15 +
+        frogScore * 0.10 +
+        effortScore * 0.15;
 
     const score =
         urgencyScore +
@@ -143,8 +160,8 @@ export function calculatePriority(
         reason =
             "You've historically finished tasks like this close to the deadline, so it's prioritized earlier than the due date alone would suggest.";
     } else if (
-        task.importance >= 8 &&
-        task.difficulty >= 8
+        task.importance >= FROG_THRESHOLD &&
+        task.difficulty >= FROG_THRESHOLD
     ) {
         reason =
             "This is a high-value, difficult task, making it a strong candidate for your Frog.";

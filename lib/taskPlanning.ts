@@ -1,9 +1,8 @@
 import { Assignment } from "@/types/assignment";
 import { TaskPlanningEstimates, TaskPriority } from "@/types/taskPlanning";
-import { parseLocalDate } from "@/lib/utils";
+import { parseLocalDate, daysBetween } from "@/lib/utils";
 
 const STORAGE_KEY = "task_planning_estimates";
-const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
 // Local Ollama inference is CPU/GPU-heavy per call — auto-estimating a
 // whole backlog (150+ assignments) back-to-back visibly heats up the
@@ -71,10 +70,10 @@ export function getTaskPriority(
     const importanceOffset = importance >= 8 ? 0 : importance >= 5 ? 1 : 2;
 
     if (task.due) {
-        const due = new Date(`${task.due}T00:00:00`).getTime();
+        const due = new Date(`${task.due}T00:00:00`);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const daysUntilDue = Math.floor((due - today.getTime()) / MS_PER_DAY);
+        const daysUntilDue = daysBetween(due, today);
 
         if (daysUntilDue < 0) return { level: "critical", label: "Overdue", rank: 0 };
         if (daysUntilDue === 0) return { level: "high", label: "Due today", rank: 1 + importanceOffset };
