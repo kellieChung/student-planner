@@ -5,4 +5,8 @@ export type Course = {
     // A user-added category (e.g. "Personal") rather than one Canvas
     // synced — deleting one is permanent, unlike a Canvas-synced course.
     isCustom: boolean;
+    // User-editable short code shown on planner cards (e.g. "MA"). Null
+    // means "use the auto-derived default"
+    // (lib/taskLabel.ts's courseAbbreviationDefault).
+    abbreviation: string | null;
 };

@@ -32,6 +32,16 @@ function courseColorFor(course: string): string {
 type AssignmentCardProps = {
     id: string;
     name: string;
+    // Pieces of the normalized "COURSE - TYPE - DAY - SHORTTITLE" card
+    // title (lib/taskLabel.ts, computed by the caller) — kept separate
+    // rather than one flat string so the course segment can show the
+    // full name when the card is wide enough to fit it (see the
+    // @container spans below) and fall back to the short code otherwise.
+    // `name` (the raw, full title) is kept as the hover tooltip.
+    courseAbbreviation: string;
+    typeCode: string;
+    dayCode: string;
+    shortTitle: string;
     due: string;
     // Raw UTC instant, if known (Canvas-synced tasks only) — formatted
     // below in the viewer's own local timezone.
@@ -55,6 +65,10 @@ type AssignmentCardProps = {
 export default function AssignmentCard({
     id,
     name,
+    courseAbbreviation,
+    typeCode,
+    dayCode,
+    shortTitle,
     due,
     dueAt,
     course,
@@ -104,7 +118,7 @@ export default function AssignmentCard({
                 gridColumn: gridSpan,
                 marginRight: dueEndInsetPercent ? `${dueEndInsetPercent}%` : undefined,
             }}
-            className = {`group relative rounded-lg border p-1.5 shadow-sm overflow-hidden transition-all duration-200 ${isFocused ? "ring-2 ring-indigo-400" : ""} ${wasCompletedLate
+            className = {`group @container relative rounded-lg border p-1.5 shadow-sm overflow-hidden transition-all duration-200 ${isFocused ? "ring-2 ring-indigo-400" : ""} ${wasCompletedLate
                 ? "bg-slate-900 border-rose-900/80 text-rose-100 hover:border-rose-800"
                 : completed
                     ? "bg-green-900/40 border-slate-800 text-slate-500"
@@ -129,8 +143,13 @@ export default function AssignmentCard({
                         {course}
                     </span>
 
-                    <h3 className={`text-sm font-semibold leading-tight truncate ${completed ? "line-through" : ""}`}>
-                        {name}
+                    <h3
+                        title={name}
+                        className={`text-sm font-semibold leading-tight truncate ${completed ? "line-through" : ""}`}
+                    >
+                        <span className="hidden @[200px]:inline">{course}</span>
+                        <span className="@[200px]:hidden">{courseAbbreviation}</span>
+                        {` - ${typeCode} - ${dayCode} - ${shortTitle}`}
                     </h3>
 
                     {detailLine && (

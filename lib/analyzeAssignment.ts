@@ -68,53 +68,62 @@ const OLLAMA_TIMEOUT_MS = 25_000;
 const PREDICT_TOKENS_PER_ASSIGNMENT = 200;
 const PREDICT_TOKENS_BASE = 100;
 
+// Deterministic keyword classification of an assignment's type, shared by
+// `fallbackAssignmentAnalysis` below and by lib/taskLabel.ts's card-label
+// normalization (which needs a type code without ever calling Ollama).
+// Narrower patterns are checked before broader ones (e.g. "quiz" before
+// "test|exam") so a quiz doesn't fall into the exam bucket.
+export function classifyAssignmentType(text: {
+    name: string;
+    course?: string;
+    description?: string | null;
+}): AssignmentType {
+    const haystack =
+        `${text.name} ${text.course ?? ""} ${text.description ?? ""}`
+            .toLowerCase();
+
+    if (/\bquiz(zes)?\b/.test(haystack)) return "quiz";
+    if (/\b(midterms?|final exams?|exams?)\b/.test(haystack)) return "exam";
+    if (/\btests?\b/.test(haystack)) return "test";
+    if (/\b(discussions?|discussion board|forum post)\b/.test(haystack)) return "discussion";
+    if (/\breflections?\b/.test(haystack)) return "reflection";
+    if (/\b(problem sets?|psets?|p-sets?)\b/.test(haystack)) return "problem_set";
+    if (/\blabs?\b/.test(haystack)) return "lab";
+    if (/\bpresentations?\b/.test(haystack)) return "presentation";
+    if (/\b(projects?|capstones?)\b/.test(haystack)) return "project";
+    if (/\b(essays?|research papers?)\b/.test(haystack)) return "essay";
+    // Explicit "homework"/"hw" checked before the weaker practice/reading
+    // signals below, so e.g. "Homework 2: Derivatives Practice" still
+    // classifies as homework rather than practice.
+    if (/\b(homework|hw)\b/.test(haystack)) return "homework";
+    if (/\b(practice|drills?|worksheets?)\b/.test(haystack)) return "practice";
+    if (/\b(readings?|chapter\s*\d|pp?\.\s*\d)/.test(haystack)) return "reading";
+
+    return "other";
+}
+
 // Deterministic keyword-based fallback used whenever the Ollama call fails
 // or returns something malformed — see CLAUDE.md's "must degrade
 // gracefully" convention for lib/analyzeAssignment.ts and app/api/task-xp.
 function fallbackAssignmentAnalysis(
     assignment: AssignmentInput
 ): AssignmentAnalysis {
-    const text =
-        `${assignment.name} ${assignment.course} ${assignment.description ?? ""}`
-            .toLowerCase();
+    const assignmentType = classifyAssignmentType(assignment);
+    const reason = "This estimate was generated using a fallback because AI analysis was unavailable.";
 
-    if (/(exam|midterm|final|research paper|presentation|project|capstone)/.test(text)) {
-        return {
-            importance: 8,
-            difficulty: 8,
-            consequence: 7,
-            assignmentType: "exam",
-            reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
-        };
+    if (assignmentType === "exam" || assignmentType === "test" || assignmentType === "project" || assignmentType === "presentation") {
+        return { importance: 8, difficulty: 8, consequence: 7, assignmentType, reason };
     }
 
-    if (/(essay|lab|problem set|homework)/.test(text)) {
-        return {
-            importance: 6,
-            difficulty: 6,
-            consequence: 5,
-            assignmentType: "homework",
-            reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
-        };
+    if (assignmentType === "essay" || assignmentType === "lab" || assignmentType === "problem_set" || assignmentType === "homework") {
+        return { importance: 6, difficulty: 6, consequence: 5, assignmentType, reason };
     }
 
-    if (/(quiz|reading|discussion|worksheet)/.test(text)) {
-        return {
-            importance: 4,
-            difficulty: 3,
-            consequence: 3,
-            assignmentType: "reading",
-            reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
-        };
+    if (assignmentType === "quiz" || assignmentType === "reading" || assignmentType === "discussion" || assignmentType === "practice" || assignmentType === "reflection") {
+        return { importance: 4, difficulty: 3, consequence: 3, assignmentType, reason };
     }
 
-    return {
-        importance: 4,
-        difficulty: 3,
-        consequence: 3,
-        assignmentType: "other",
-        reason: "This estimate was generated using a fallback because AI analysis was unavailable.",
-    };
+    return { importance: 4, difficulty: 3, consequence: 3, assignmentType, reason };
 }
 
 function buildAssignmentBlock(

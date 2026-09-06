@@ -7,6 +7,7 @@ import StartDateField from "./StartDateField";
 import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import {resolveDueTime, formatTimeInputValue, formatEstimatedMinutes} from "@/lib/utils";
+import {classifyLabelType, courseAbbreviationDefault, deterministicShortTitle, formatTaskLabel} from "@/lib/taskLabel";
 
 type EditTaskModalProps = {
     task: Assignment | null;
@@ -19,6 +20,10 @@ type EditTaskModalProps = {
     onClose: () => void;
     onSaveTask: (updatedTask: Assignment, startDate: string, notes: string) => void;
     onDeleteTask: (id:string) => void;
+    // Forces a fresh Ollama-backed short title for a Canvas-synced task,
+    // bypassing "never recompute once set" — persists server-side and
+    // resolves with the new value (or null on failure).
+    onRegenerateShortTitle: (taskId: string) => Promise<string | null>;
 };
 
 export default function EditTaskModal({
@@ -32,6 +37,7 @@ export default function EditTaskModal({
     onClose,
     onSaveTask,
     onDeleteTask,
+    onRegenerateShortTitle,
 }: EditTaskModalProps) {
     const [name, setName] = useState("");
     const [course, setCourse] = useState("");
@@ -39,6 +45,9 @@ export default function EditTaskModal({
     const [dueTime, setDueTime] = useState("");
     const [start, setStart] = useState("");
     const [notes, setNotes] = useState("");
+    const [shortTitle, setShortTitle] = useState("");
+    const [regenerating, setRegenerating] = useState(false);
+    const [regenerateError, setRegenerateError] = useState<string | null>(null);
 
     useEffect(() => {
         if (task) {
@@ -48,12 +57,47 @@ export default function EditTaskModal({
             setDueTime(formatTimeInputValue(task.dueAt));
             setStart(startDate || "");
             setNotes(initialNotes || "");
+            setShortTitle(task.shortTitle ?? "");
+            setRegenerateError(null);
         }
     }, [task, startDate, initialNotes]);
 
     if (!isOpen ||!task) return null;
 
     const startAfterDue = Boolean(start && due && start > due);
+    const isCustomTask = task.id.startsWith("custom-");
+
+    const typeCode = classifyLabelType({
+        name,
+        course,
+        isCustomCourse: courses.find((c) => c.name === course)?.isCustom,
+    });
+    const courseAbbreviation =
+        courses.find((c) => c.name === course)?.abbreviation || courseAbbreviationDefault(course || "General");
+    const deterministicTitle = deterministicShortTitle({ name, course, typeCode });
+    const cardLabel = formatTaskLabel({
+        courseAbbreviation,
+        typeCode,
+        dueDateKey: due,
+        shortTitle: shortTitle || null,
+        name,
+        course,
+    });
+
+    const handleRegenerate = async () => {
+        setRegenerating(true);
+        setRegenerateError(null);
+
+        const result = await onRegenerateShortTitle(task.id);
+
+        if (result === null) {
+            setRegenerateError("Couldn't regenerate right now. Try again in a moment.");
+        } else {
+            setShortTitle(result);
+        }
+
+        setRegenerating(false);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -65,6 +109,7 @@ export default function EditTaskModal({
             name,
             course,
             due,
+            shortTitle: shortTitle.trim() || null,
             ...resolveDueTime(due, dueTime),
         }, start, notes);
 
@@ -128,6 +173,42 @@ export default function EditTaskModal({
             <DueTimeField value={dueTime} onChange={setDueTime} />
 
             <StartDateField value={start} onChange={setStart} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+              Card Label
+            </label>
+            <p className="text-xs text-slate-500 mb-1.5 font-mono">{cardLabel}</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={shortTitle}
+                onChange={(e) => setShortTitle(e.target.value)}
+                placeholder={deterministicTitle}
+                maxLength={40}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+              />
+              {!isCustomTask && (
+                <button
+                  type="button"
+                  disabled={regenerating}
+                  onClick={handleRegenerate}
+                  title="Regenerate the short title using AI"
+                  className="shrink-0 rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {regenerating ? "Regenerating..." : "↻ Regenerate"}
+                </button>
+              )}
+            </div>
+            {isCustomTask && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Custom tasks can&apos;t be regenerated with AI — type a short title directly.
+              </p>
+            )}
+            {regenerateError && (
+              <p className="mt-1 text-[11px] text-rose-400">{regenerateError}</p>
+            )}
           </div>
 
           {typeof estimatedMinutes === "number" && (

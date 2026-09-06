@@ -1,6 +1,11 @@
 import {Announcement} from "@/types/announcement";
 import {prisma} from "@/lib/prisma";
 
+// Sentinel CanvasCourse.canvasOrigin value for a user-added course (e.g.
+// "Personal") rather than one synced from Canvas — shared so every call
+// site checks the same literal instead of each hardcoding "custom".
+export const CUSTOM_COURSE_ORIGIN = "custom";
+
 const CANVAS_URL = "https://davidsononline.instructure.com";
 
 const headers = {
@@ -56,6 +61,7 @@ export async function getAllAssignments(userId: string) {
             dueAt: assignment.dueAt ? assignment.dueAt.toISOString() : null,
             course: course.displayName ?? course.name,
             createdAt: assignment.createdAt.toISOString(),
+            shortTitle: assignment.shortTitle,
         }))
     );
 

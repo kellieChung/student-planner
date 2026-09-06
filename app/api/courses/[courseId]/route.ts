@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
 
 type Params = {
     params: Promise<{
@@ -61,11 +62,11 @@ export async function PATCH(
         );
     }
 
-    const { hidden, name } = body as { hidden?: unknown; name?: unknown };
+    const { hidden, name, abbreviation } = body as { hidden?: unknown; name?: unknown; abbreviation?: unknown };
 
-    if (hidden === undefined && name === undefined) {
+    if (hidden === undefined && name === undefined && abbreviation === undefined) {
         return NextResponse.json(
-            { error: "Provide 'hidden' and/or 'name' to update." },
+            { error: "Provide 'hidden', 'name', and/or 'abbreviation' to update." },
             { status: 400 }
         );
     }
@@ -84,11 +85,24 @@ export async function PATCH(
         );
     }
 
-    const data: { hidden?: boolean; displayName?: string } = {};
+    if (abbreviation !== undefined && typeof abbreviation !== "string") {
+        return NextResponse.json(
+            { error: "'abbreviation' must be a string." },
+            { status: 400 }
+        );
+    }
+
+    const data: { hidden?: boolean; displayName?: string; abbreviation?: string | null } = {};
     if (hidden !== undefined) data.hidden = hidden as boolean;
     // Rename only ever touches displayName — the canonical `name` column
     // is owned by Canvas sync and would revert this on the next sync.
     if (name !== undefined) data.displayName = (name as string).trim();
+    // An empty string clears the override, reverting to the auto-derived
+    // default (lib/taskLabel.ts's courseAbbreviationDefault).
+    if (abbreviation !== undefined) {
+        const trimmed = (abbreviation as string).trim();
+        data.abbreviation = trimmed ? trimmed : null;
+    }
 
     const course = await prisma.canvasCourse.update({
         where: { id: courseId },
@@ -99,6 +113,7 @@ export async function PATCH(
             displayName: true,
             hidden: true,
             canvasOrigin: true,
+            abbreviation: true,
         },
     });
 
@@ -107,7 +122,8 @@ export async function PATCH(
             id: course.id,
             name: course.displayName ?? course.name,
             hidden: course.hidden,
-            isCustom: course.canvasOrigin === "custom",
+            isCustom: course.canvasOrigin === CUSTOM_COURSE_ORIGIN,
+            abbreviation: course.abbreviation,
         },
     });
 }

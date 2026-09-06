@@ -2,6 +2,7 @@
 
 import React, {useEffect, useState} from "react";
 import {Course} from "@/types/course";
+import {courseAbbreviationDefault} from "@/lib/taskLabel";
 
 type ManageCoursesModalProps = {
     isOpen: boolean;
@@ -19,6 +20,8 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
     const [adding, setAdding] = useState(false);
     const [renamingId, setRenamingId] = useState<string | null>(null);
     const [renameValue, setRenameValue] = useState("");
+    const [editingAbbrId, setEditingAbbrId] = useState<string | null>(null);
+    const [abbrValue, setAbbrValue] = useState("");
 
     useEffect(() => {
         if (!isOpen) return;
@@ -117,6 +120,45 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
     const startRename = (course: Course) => {
         setRenamingId(course.id);
         setRenameValue(course.name);
+    };
+
+    const startEditAbbr = (course: Course) => {
+        setEditingAbbrId(course.id);
+        setAbbrValue(course.abbreviation ?? "");
+    };
+
+    const saveAbbr = async (course: Course) => {
+        const trimmed = abbrValue.trim();
+
+        if (trimmed === (course.abbreviation ?? "")) {
+            setEditingAbbrId(null);
+            return;
+        }
+
+        setBusyCourseId(course.id);
+
+        try {
+            const response = await fetch(`/api/courses/${course.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ abbreviation: trimmed }),
+            });
+
+            if (!response.ok) throw new Error("Failed to update abbreviation.");
+
+            const { course: updated } = await response.json() as { course: Course };
+
+            setCourses((current) =>
+                current.map((c) => (c.id === updated.id ? updated : c))
+            );
+            setEditingAbbrId(null);
+
+            onChanged();
+        } catch {
+            setError("Couldn't update that course's abbreviation. Try again.");
+        } finally {
+            setBusyCourseId(null);
+        }
     };
 
     const saveRename = async (course: Course) => {
@@ -257,6 +299,50 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
                                         >
                                             ✎
                                         </button>
+
+                                        {editingAbbrId === course.id ? (
+                                            <div
+                                                className="flex shrink-0 items-center gap-1"
+                                                onClick={(e) => e.preventDefault()}
+                                            >
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    maxLength={6}
+                                                    value={abbrValue}
+                                                    onChange={(e) => setAbbrValue(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && saveAbbr(course)}
+                                                    className="w-14 rounded border border-slate-600 bg-slate-900 px-1 py-0.5 text-xs uppercase text-white focus:outline-none focus:border-indigo-500"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    disabled={busyCourseId === course.id}
+                                                    onClick={() => saveAbbr(course)}
+                                                    className="shrink-0 rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-indigo-500"
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingAbbrId(null)}
+                                                    className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px]"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    startEditAbbr(course);
+                                                }}
+                                                className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${course.abbreviation ? "border-indigo-700 text-indigo-300" : "border-slate-600 text-slate-500"}`}
+                                                title="Edit the course code shown on planner cards"
+                                            >
+                                                {course.abbreviation ?? courseAbbreviationDefault(course.name)}
+                                            </button>
+                                        )}
                                     </label>
                                 )}
 

@@ -14,4 +14,9 @@ export type Assignment = {
     // Time-of-day of `due`, as a 0-1 fraction (0 = midnight, 1 = end of
     // day). Absent means "treat as end of day" for grid-span rendering.
     dueFraction?: number;
+    // Persisted, LLM-assisted short title for the card label
+    // (lib/taskLabel.ts). Null/absent means "not yet computed" — the
+    // card falls back to a live deterministic short title until a
+    // background pass fills this in. Never recomputed once set.
+    shortTitle?: string | null;
 }

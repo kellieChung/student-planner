@@ -2,8 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-
-const CUSTOM_COURSE_ORIGIN = "custom";
+import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
 
 async function getAuthenticatedUser() {
     const session = await auth();
@@ -35,6 +34,7 @@ export async function GET() {
             displayName: true,
             hidden: true,
             canvasOrigin: true,
+            abbreviation: true,
         },
         orderBy: { name: "asc" },
     });
@@ -45,6 +45,7 @@ export async function GET() {
             name: course.displayName ?? course.name,
             hidden: course.hidden,
             isCustom: course.canvasOrigin === CUSTOM_COURSE_ORIGIN,
+            abbreviation: course.abbreviation,
         })),
     });
 }
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
             displayName: true,
             hidden: true,
             canvasOrigin: true,
+            abbreviation: true,
         },
     });
 
@@ -100,6 +102,7 @@ export async function POST(request: Request) {
             name: course.displayName ?? course.name,
             hidden: course.hidden,
             isCustom: course.canvasOrigin === CUSTOM_COURSE_ORIGIN,
+            abbreviation: course.abbreviation,
         },
     });
 }

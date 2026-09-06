@@ -16,6 +16,7 @@ import {GamificationState, XpAward} from "@/types/gamification";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
+import {classifyLabelType, courseAbbreviationDefault, dayCode, deterministicShortTitle, selectTasksNeedingShortTitles} from "@/lib/taskLabel";
 import {getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
 import PomodoroTimer from "./PomodoroTimer";
 import MusicPlayer from "./MusicPlayer";
@@ -73,6 +74,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         return domTheme === "light" ? "light" : "dark";
     });
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [bulkRegenerateConfirming, setBulkRegenerateConfirming] = useState(false);
+    const [bulkRegenerating, setBulkRegenerating] = useState(false);
+    const [bulkRegenerateProgress, setBulkRegenerateProgress] = useState<{ done: number; total: number } | null>(null);
+    const [bulkRegenerateResult, setBulkRegenerateResult] = useState<string | null>(null);
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
         start.setHours(0, 0, 0, 0);
@@ -440,6 +445,48 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     }, [tasks, taskPlanning]);
 
     useEffect(() => {
+        const tasksNeedingShortTitles = selectTasksNeedingShortTitles(tasks);
+
+        if (tasksNeedingShortTitles.length === 0) return;
+
+        const controller = new AbortController();
+
+        const fetchShortTitles = async () => {
+            try {
+                const response = await fetch("/api/task-short-titles", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    signal: controller.signal,
+                    body: JSON.stringify({
+                        taskIds: tasksNeedingShortTitles.map(({ id }) => id),
+                    }),
+                });
+
+                if (!response.ok) return;
+
+                const data = await response.json() as {
+                    shortTitles: Array<{ id: string; shortTitle: string }>;
+                };
+
+                setTasks((current) =>
+                    current.map((task) => {
+                        const match = data.shortTitles.find(({ id }) => id === task.id);
+                        return match ? { ...task, shortTitle: match.shortTitle } : task;
+                    })
+                );
+            } catch (error) {
+                if ((error as Error).name !== "AbortError") {
+                    console.error("Could not generate short titles", error);
+                }
+            }
+        };
+
+        void fetchShortTitles();
+
+        return () => controller.abort();
+    }, [tasks]);
+
+    useEffect(() => {
         const types = new Set(
             Object.values(taskPlanning)
                 .map((estimate) => estimate.assignmentType)
@@ -716,7 +763,108 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 notes,
             });
         }
+
+        // shortTitle is a field this app owns (unlike name/due, which
+        // Canvas sync would just overwrite again) — a manual edit from
+        // EditTaskModal's "Short title" field is persisted directly here.
+        // Custom tasks have no DB row; their shortTitle already persisted
+        // to localStorage via the custom_tasks write above.
+        if (!isCustomTask && (updatedTask.shortTitle ?? "") !== (rawTask?.shortTitle ?? "")) {
+            fetch("/api/task-short-titles", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    taskId: updatedTask.id,
+                    shortTitle: updatedTask.shortTitle ?? "",
+                }),
+            }).catch((error) => {
+                console.error("Could not save short title", error);
+            });
+        }
     }
+
+    const handleRegenerateShortTitle = async (taskId: string): Promise<string | null> => {
+        try {
+            const response = await fetch("/api/task-short-titles", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ taskIds: [taskId], force: true }),
+            });
+
+            if (!response.ok) return null;
+
+            const data = await response.json() as {
+                shortTitles: Array<{ id: string; shortTitle: string }>;
+            };
+
+            const match = data.shortTitles.find(({ id }) => id === taskId);
+            if (!match) return null;
+
+            setTasks((current) =>
+                current.map((task) => (task.id === taskId ? { ...task, shortTitle: match.shortTitle } : task))
+            );
+
+            return match.shortTitle;
+        } catch (error) {
+            console.error("Could not regenerate short title", error);
+            return null;
+        }
+    }
+
+    // Matches the server's own defensive per-request cap
+    // (app/api/task-short-titles/route.ts's `.slice(0, 75)`).
+    const REGENERATE_ALL_BATCH_SIZE = 75;
+
+    const handleRegenerateAllShortTitles = async () => {
+        const eligibleIds = tasks
+            .filter((task) => !task.id.startsWith("custom-"))
+            .map((task) => task.id);
+
+        if (eligibleIds.length === 0) {
+            setBulkRegenerateConfirming(false);
+            return;
+        }
+
+        setBulkRegenerating(true);
+        setBulkRegenerateResult(null);
+        setBulkRegenerateProgress({ done: 0, total: eligibleIds.length });
+
+        let completed = 0;
+
+        for (let i = 0; i < eligibleIds.length; i += REGENERATE_ALL_BATCH_SIZE) {
+            const batch = eligibleIds.slice(i, i + REGENERATE_ALL_BATCH_SIZE);
+
+            try {
+                const response = await fetch("/api/task-short-titles", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ taskIds: batch, force: true }),
+                });
+
+                if (response.ok) {
+                    const data = await response.json() as {
+                        shortTitles: Array<{ id: string; shortTitle: string }>;
+                    };
+
+                    setTasks((current) =>
+                        current.map((task) => {
+                            const match = data.shortTitles.find(({ id }) => id === task.id);
+                            return match ? { ...task, shortTitle: match.shortTitle } : task;
+                        })
+                    );
+                }
+            } catch (error) {
+                console.error("Could not regenerate a batch of short titles", error);
+            }
+
+            completed += batch.length;
+            setBulkRegenerateProgress({ done: completed, total: eligibleIds.length });
+        }
+
+        setBulkRegenerating(false);
+        setBulkRegenerateConfirming(false);
+        setBulkRegenerateResult(`Re-analyzed ${eligibleIds.length} task${eligibleIds.length === 1 ? "" : "s"}.`);
+    };
 
     return (
         <div className = "theme-surface planner-shell w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
@@ -763,6 +911,55 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                     >
                                         🍺 Tavern
                                     </button>
+                                </div>
+
+                                <div className="mt-3 border-t border-slate-800 pt-3">
+                                    <p className="mb-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
+                                        ⚠ Testing Tools
+                                    </p>
+
+                                    {!bulkRegenerateConfirming ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setBulkRegenerateResult(null);
+                                                setBulkRegenerateConfirming(true);
+                                            }}
+                                            className="w-full rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-left text-xs font-semibold text-amber-300 hover:bg-amber-900/40"
+                                        >
+                                            🔄 Re-analyze All Task Labels
+                                        </button>
+                                    ) : (
+                                        <div className="rounded-lg border border-amber-700/60 bg-amber-950/40 p-2">
+                                            <p className="mb-2 text-[11px] text-amber-200">
+                                                Re-run AI shortening for every task&apos;s card label? This calls the local AI model once per task and can take a while.
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    disabled={bulkRegenerating}
+                                                    onClick={handleRegenerateAllShortTitles}
+                                                    className="flex-1 rounded-md bg-amber-600 px-2 py-1.5 text-xs font-bold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {bulkRegenerating
+                                                        ? `Working... ${bulkRegenerateProgress?.done ?? 0}/${bulkRegenerateProgress?.total ?? 0}`
+                                                        : "Confirm re-analyze all"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    disabled={bulkRegenerating}
+                                                    onClick={() => setBulkRegenerateConfirming(false)}
+                                                    className="rounded-md bg-slate-700 px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {bulkRegenerateResult && !bulkRegenerating && (
+                                        <p className="mt-1.5 text-[11px] text-emerald-400">{bulkRegenerateResult}</p>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -873,6 +1070,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 onClose = {() => setSelectedTask(null)}
                 onSaveTask = {handleSaveTask}
                 onDeleteTask = {handleDelete}
+                onRegenerateShortTitle = {handleRegenerateShortTitle}
             />
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -970,11 +1168,29 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                     activeWeekStart
                                 );
 
+                                const taskCourse = courses.find((c) => c.name === task.course);
+                                const taskCourseAbbreviation = taskCourse?.abbreviation || courseAbbreviationDefault(task.course);
+                                const taskTypeCode = classifyLabelType({
+                                    name: task.name,
+                                    course: task.course,
+                                    isCustomCourse: taskCourse?.isCustom,
+                                });
+                                const taskDayCode = dayCode(task.due) ?? "—";
+                                const taskShortTitle = task.shortTitle ?? deterministicShortTitle({
+                                    name: task.name,
+                                    course: task.course,
+                                    typeCode: taskTypeCode,
+                                });
+
                                 return (
                                     <AssignmentCard
                                         key = {task.id}
                                         id = {task.id}
                                         name = {task.name}
+                                        courseAbbreviation = {taskCourseAbbreviation}
+                                        typeCode = {taskTypeCode}
+                                        dayCode = {taskDayCode}
+                                        shortTitle = {taskShortTitle}
                                         due = {task.due}
                                         dueAt = {task.dueAt}
                                         course = {task.course}

@@ -12,536 +12,316 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   model (`qwen2.5:3b-instruct` — avoids Ollama swapping models in/out of
   GPU memory) and one pattern: `try/catch` → deterministic fallback,
   `AbortSignal.timeout(...)`, and batch multiple items into one call
-  instead of one-per-item (each call resends the full instructional prompt
-  regardless of batch size — see `lib/concurrency.ts`'s
+  instead of one-per-item (see `lib/concurrency.ts`'s
   `mapWithConcurrency`/`chunk`). A malformed/missing entry anywhere in a
   batch fails the whole batch rather than attempting partial recovery.
-  `task-xp` additionally skips its Ollama call entirely whenever a
-  deterministic `estimatedMinutes`-based XP value is already available,
-  since that value always wins over the AI's guess anyway.
+  `task-xp` skips its Ollama call entirely whenever a deterministic
+  `estimatedMinutes`-based XP value already covers it.
 - **Canvas integration goes through a Chrome extension**
-  (`canvas-extension/`), not a server-to-server Canvas API integration —
-  the extension reads the user's existing Canvas session/cookies in-browser
-  and posts synced data to `app/api/canvas/sync`, authenticated via a
-  `Bearer` token backed by `prisma.extensionSession` (issued through
-  `app/api/extension/auth`). This is because Canvas doesn't give students a
-  simple way to mint their own API token for a third-party app.
-- **Priority scoring is urgency-dominant by design** (`lib/prioritization.ts`):
-  urgency is 50% of the score specifically so the planner won't rank a hard
-  assignment due next week above a routine one due tonight. Don't rebalance
-  these weights without checking this reasoning first.
-- **Personalized "procrastination index" per task type** (see
-  `prioritizationModule.md` for the full spec, `lib/procrastinationHistory.ts`
-  for the implementation): every completed task with a known `assignmentType`,
-  due date, and "added" timestamp logs a `{taskType, addedAt, dueAt,
-  completedAt}` record in localStorage (rolling window of the last 12 per
-  type). `getProcrastinationIndexHours(type)` averages hours-before-deadline
-  across those, excluding records whose add→due window was under 24h (no real
-  chance to procrastinate). `calculatePriority()` in `lib/prioritization.ts`
-  takes this as an optional `procrastinationIndexHours` input and shifts the
-  *effective* due date earlier (capped at 120h, only when the index is below
-  a 48h "healthy lead time" baseline) — so a task type the student
-  chronically leaves late surfaces sooner even when its literal deadline
-  isn't nearest. No history yet for a type → behaves exactly like before
-  (verified: `calculatePriority` is backward-compatible when the field is
-  omitted, since every existing caller omits it).
-- **`assignmentType` is now actually captured**, not just requested: the
-  Ollama prompt in `lib/analyzeAssignment.ts` always asked for it but the
-  code discarded it. Both `analyzeAssignment.ts` and the fallback path in
-  `app/api/task-planning/route.ts` now normalize it against a fixed enum
-  (`ASSIGNMENT_TYPES`, defaulting unknown values to `"other"`) and it's
-  persisted on `TaskPlanningEstimate` — it's the grouping key the
-  procrastination index uses.
-- **`estimatedMinutes` is NOT AI-generated** — it wasted a call/prompt/output
-  field and wasn't even used in `calculatePriority`'s scoring formula.
-  `estimateMinutesByType()` (`lib/analyzeAssignment.ts`) is a deterministic
-  type→minutes lookup used everywhere it's needed. A per-student historical
-  estimator is the intended real version of this — not built yet (see
-  `prioritizationModule.md`).
-- **"Up Next" card + Pomodoro "focus task"** both derive from the same
-  `computeTaskPriority(task)` helper in `WeeklyPlannerView.tsx` (factored
-  out so they can't drift), independent of the `getTaskPriority`-based grid
-  sort (deliberately left untouched — see Active TODOs). "Up Next" is a
-  `useMemo` over all open tasks; the focus task is `activeFocusTaskId`
-  (persisted to localStorage as `pomodoro_active_task_id`, selected from
-  the Up Next card or a weekly-grid `AssignmentCard`, auto-cleared when
-  that task is completed/deleted/hidden) passed down into
-  `PomodoroTimer.tsx`. Procrastination indices feeding both are loaded via
-  a `useEffect`, never read from `localStorage` during render — this
-  component is server-rendered first and `localStorage` doesn't exist
-  there; every localStorage read in this file follows that rule.
+  (`canvas-extension/`), not a server-to-server API — the extension reads
+  the user's existing Canvas session/cookies in-browser and posts synced
+  data to `app/api/canvas/sync`, authenticated via a `Bearer` token backed
+  by `prisma.extensionSession` (issued through `app/api/extension/auth`).
+  Canvas doesn't give students a simple way to mint their own API token.
+- **Priority scoring**: see `prioritizationModule.md`'s "Scoring formula"
+  section for the full rationale — urgency is deliberately dominant so a
+  hard-but-distant assignment can't outrank something due tonight. Don't
+  rebalance `lib/prioritization.ts`'s weights without reading that first.
+- **Personalized "procrastination index" per task type** (full spec in
+  `prioritizationModule.md`, implementation in
+  `lib/procrastinationHistory.ts`): every completed task with a known
+  type/due date/added-timestamp logs a rolling-window record;
+  `getProcrastinationIndexHours(type)` averages them, and
+  `calculatePriority()` uses that to shift a chronically-late task type's
+  *effective* due date earlier (capped, only below a healthy-lead-time
+  baseline). No history for a type → behaves exactly as before.
+- **`assignmentType` and `estimatedMinutes` are not AI-guessed** — the
+  Ollama prompt asks for `assignmentType` and it's normalized/persisted
+  (grouping key for the procrastination index); `estimatedMinutes` is a
+  deterministic type→minutes lookup (`estimateMinutesByType()`,
+  `lib/analyzeAssignment.ts`) formatted for display via
+  `formatEstimatedMinutes()` (`lib/utils.ts`). See prioritizationModule.md's
+  "Time estimation" note for why.
+- **Due date/time**: `Assignment.due` is always a plain "YYYY-MM-DD" key;
+  `dueAt` (raw UTC instant) and `dueFraction` (0-1 time-of-day, absent =
+  end of day) are resolved client-side from the viewer's own browser
+  timezone (`WeeklyPlannerView.tsx`'s mount effect, for Canvas-synced
+  tasks) or set directly via `lib/utils.ts`'s `resolveDueTime(date, time)`
+  (for a custom time picked in `AddTaskModal`/`EditTaskModal`'s
+  `DueTimeField`) — no server-side timezone guessing anywhere.
+  `calculateGridSpan`'s `endInsetPercent` renders that time-of-day as a
+  proportionally shorter bar, capped at `MAX_END_INSET_PERCENT` (currently
+  40) so an early due time can't shrink a bar below ~60% of its column —
+  a floor, not a perfect fix (two close-together times can still look
+  similar once both hit the cap).
+- **"Up Next" card + Pomodoro "focus task"** both derive from
+  `computeTaskPriority(task)` in `WeeklyPlannerView.tsx`, independent of
+  the `getTaskPriority`-based grid sort/labels (deliberately left
+  unmerged — see Active TODOs). Focus task persists to localStorage
+  (`pomodoro_active_task_id`), auto-clears on completion/deletion.
+  Everything here reads localStorage only inside `useEffect`, never during
+  render (this component is server-rendered first).
+- **Theming**: dark ("Enchanted Forest") / light ("Cozy Tavern") via CSS
+  variables + a Tailwind-class remap layer in `app/globals.css`, scoped to
+  `.theme-surface`/`.planner-shell`. `ThemeScript.tsx` sets `data-theme`
+  pre-paint from `localStorage`; the Chrome extension mirrors whichever
+  theme is active on the web app itself (`canvas-extension/theme-sync.js`
+  content script + an active `GET_PLANNER_THEME` query from the popup on
+  open — see `background.js`), not the OS color-scheme preference.
 - **No test framework is installed.** `lib/prioritization.test.ts` is a
-  manual verification script (run with `npx tsx`), not part of any suite —
-  it now also has a synthetic (non-Ollama-dependent) demonstration of the
-  procrastination adjustment, runnable even without Ollama up.
+  manual verification script (`npx tsx`), not part of any suite.
+- **Task name normalization** (card titles now read
+  `COURSE - TYPE - DAY - SHORTTITLE`, e.g. `MA - HW - F - HW 2`): split by
+  cost, per the same reasoning as everything else Ollama-related in this
+  file. `courseCode`/`typeCode`/`dayCode` are free and computed live on
+  every render (`lib/taskLabel.ts`'s `formatTaskLabel`, called from
+  `WeeklyPlannerView.tsx`'s `AssignmentCard` render site) — never
+  persisted, so editing a course's abbreviation or a task's due date
+  updates the label instantly with no reprocessing. `assignmentType` is
+  classified via a deterministic keyword function,
+  `classifyAssignmentType` (`lib/analyzeAssignment.ts`, extracted out of
+  `fallbackAssignmentAnalysis` so both features share one classifier) —
+  no LLM call for this segment. Only `shortTitle` is expensive: a
+  deterministic stripping pass (`deterministicShortTitle`, same file)
+  always runs first and is the final fallback; Ollama
+  (`lib/generateShortTitle.ts`) only runs when that result is still
+  longer than `SHORT_TITLE_OLLAMA_THRESHOLD` (14 chars), for tasks due
+  within ±14 days of today (`selectTasksNeedingShortTitles`'s window —
+  deliberately separate from the *forward-only* 21-day/cap-60 estimate
+  window above, since this one needs to also cover recently-past tasks).
+  The result persists to a new `Assignment.shortTitle` column (nullable =
+  not yet computed) via `POST /api/task-short-titles`, and — unlike the
+  localStorage-cached `TaskPlanningEstimate`s — is server-persisted and
+  never recomputed once set (enforced by re-checking `shortTitle: null`
+  server-side, not just trusting the client's filter). Course
+  abbreviations are a new user-editable `CanvasCourse.abbreviation`
+  column (same "sync never touches it" pattern as `displayName`), edited
+  inline in `ManageCoursesModal.tsx`; unset falls back to
+  `courseAbbreviationDefault`'s auto-derived initials. Custom
+  (non-Canvas) tasks have no DB row, so they always render the live
+  deterministic short title — a permanent, accepted limitation.
+- Two follow-up fixes to the deterministic short-title algorithm, both
+  caught by testing against the user's own worked examples/complaints
+  (not covered by any automated test — there is none): `classifyAssignmentType`
+  checked `practice` before `homework` (misclassified "Homework 2:
+  Derivatives Practice"), and leading "Week N"/weekday-name scheduling
+  noise (e.g. "Week 3 Tuesday In-Class Assignment") wasn't stripped, so
+  truncation kept that noise and cut the actual descriptor — fixed by
+  stripping "Week N" and a leading weekday name the same way a leading
+  type-word label is stripped (they duplicate the DAY segment shown
+  elsewhere in the label anyway), and by no longer treating "assignment"
+  as unconditional filler (it's sometimes the only real descriptor left,
+  e.g. "In-Class Assignment"). Day codes are fully capitalized
+  (SU/M/T/W/TH/F/SA — Tuesday is single "T", unambiguous since Thursday
+  is "TH").
+- **Manual control over the generated label**: `EditTaskModal.tsx` now
+  shows a live "Card Label" preview plus an editable short-title input
+  (manual edits persist via a new `PATCH /api/task-short-titles`) and a
+  "Regenerate" button (Canvas-synced tasks only — custom tasks have no DB
+  row) that calls `POST /api/task-short-titles` with `force: true`,
+  bypassing both "never recompute once set" and the deterministic
+  short-circuit so it always goes through Ollama. See
+  `WeeklyPlannerView.tsx`'s `handleRegenerateShortTitle` and the
+  short-title branch added to `handleSaveTask`.
+- **Ollama became the primary short-title source, not a rarely-used
+  overflow valve**: per direct user feedback that the deterministic-first
+  gate ("only call Ollama when the regex result is still too long") was
+  producing bad results because regexes can't judge importance —
+  `app/api/task-short-titles/route.ts` now sends *every* eligible task
+  through `generateShortTitles` unconditionally (the length-based
+  partition and `SHORT_TITLE_OLLAMA_THRESHOLD` are gone); the ±14-day/
+  cap-60 windowing in `selectTasksNeedingShortTitles` is unchanged since
+  that bounds Ollama *load*, not quality. `lib/generateShortTitle.ts`'s
+  prompt now treats the deterministic value as a "reference attempt,
+  often wrong" rather than an anchor to trim, works primarily from the
+  original `NAME`, and includes few-shot examples (the exact failure
+  patterns found earlier this session) to ground the desired
+  transformation. `deterministicShortTitle` still matters as the offline
+  fallback when Ollama is down and as that reference hint.
+- **Course segment now adapts to card width** instead of always forcing
+  the abbreviation: `AssignmentCard.tsx`'s root div is a Tailwind v4
+  `@container` (same pattern as `MusicPlayer.tsx`'s `@lg:`/`@xl:`, just at
+  a much smaller pixel scale via an arbitrary breakpoint), and the title
+  renders two spans — the full course name shown via `@[200px]:inline`,
+  the abbreviation via `@[200px]:hidden` — so a wide (multi-day) card
+  shows the real course name and a narrow one shows the code. No JS
+  measurement needed: the card's actual rendered width already reflects
+  its day-span and the viewport. The `label` prop was split into
+  `courseAbbreviation`/`typeCode`/`dayCode`/`shortTitle` so the caller
+  (`WeeklyPlannerView.tsx`'s render site) still assembles the pieces but
+  `AssignmentCard` decides which course variant to show. `200px` is an
+  unverified starting guess (see Active TODOs).
+- **Card label type code is now a fixed 4-value set: `HW`/`R`/`EXAM`/`TODO`**
+  — per direct user feedback removing the generic `TASK` catch-all. New
+  `LabelType`/`classifyLabelType()` in `lib/taskLabel.ts` is the *only*
+  place that produces these 4 values; the existing 14-value `AssignmentType`
+  in `lib/analyzeAssignment.ts` is untouched and keeps driving priority
+  scoring/time estimates/the procrastination index exactly as before —
+  deliberately scoped to the label only, confirmed with the user, since
+  that other system is flagged above as sensitive to rebalance.
+  `classifyLabelType` collapses exam/test/quiz → `EXAM`, reading → `R`,
+  everything else school-related → `HW`; `TODO` is reserved for a task
+  under a user-added custom course (`Course.isCustom`, e.g. "Personal") —
+  a Canvas-synced task can never resolve to `TODO`. Added
+  `CUSTOM_COURSE_ORIGIN` to `lib/canvas.ts` as the single source of truth
+  for that "custom course" sentinel (previously duplicated as a local
+  const/inline literal across the two `app/api/courses` route files).
+  `ASSIGNMENT_TYPE_CODES`/`assignmentTypeCode()` (the old 14→string
+  lookup) are gone — `deterministicShortTitle`/`formatTaskLabel` now take
+  the already-resolved `typeCode: LabelType` directly instead of an
+  `AssignmentType` to look up.
+- **Bulk "Re-analyze All Task Labels" button** for testing the label
+  feature without waiting on the ±14-day window: in `WeeklyPlannerView.tsx`'s
+  Settings dropdown, under a visually distinct "⚠ Testing Tools" section
+  (amber styling, separated by a divider) so it reads as a deliberate,
+  not-everyday action. Requires an explicit second-click confirm (same
+  pattern as `ManageCoursesModal.tsx`'s course-delete confirm) before
+  doing anything. `handleRegenerateAllShortTitles` collects every
+  non-custom task id currently loaded, batches them in groups of 75
+  (matching `app/api/task-short-titles/route.ts`'s own defensive
+  per-request cap) and calls that route with `force: true` per batch —
+  sequentially, not concurrently, to avoid piling load on top of the
+  route's own internal Ollama concurrency limit — showing a live
+  "Working... done/total" count while running.
 
 ## Active TODOs (as of 2026-09-06)
 
-- **Nothing is committed yet** — everything below passed `tsc`/`eslint`/
-  `next build` but has not been clicked through in a live browser. Worth a
-  full manual pass: real Canvas re-sync (confirm inactive courses actually
-  disappear — stale rows already in Postgres won't clear until a sync
-  runs), the "📚 Courses" hide/delete manager, adding+completing a task
-  (confirm `procrastination_history` grows and a same-type task gets
-  bumped up next time), the "🧠 Estimating N tasks..." indicator, the
-  Pomodoro focus-task flow (select from Up Next / a grid card, confirm it
-  clears on completion, confirm GPU load is actually lower with the real
-  197-assignment backlog), and the new task start-date feature (see below —
-  DB round-trip verified directly against Postgres, but never clicked
-  through in a browser; no Claude in Chrome access this session).
-- `findDuplicateTasks` batching occasionally misses an obvious duplicate in
-  ad-hoc testing — looks like inherent 3B-model judgment variance, not a
-  batching regression, but worth a second look if duplicate-detection
-  quality seems to have dropped.
+- **Task name normalization, including the new manual edit/regenerate UI
+  (see Architecture Decisions above), has not been clicked through in a
+  real browser** — no login credentials available this session, only a
+  logged-out smoke test (dev server boots, `/api/courses` correctly
+  401s) plus a throwaway `npx tsx` script exercising the pure label
+  functions directly. Worth a manual pass once logged in: confirm cards
+  show a deterministic label immediately, confirm a due-soon task's label
+  upgrades after the background Ollama pass, confirm reload doesn't
+  re-trigger processing, confirm editing a course's abbreviation updates
+  its cards instantly, confirm the EditTaskModal "Regenerate" button and
+  manual short-title edit both actually persist across reload, and test
+  with Ollama stopped.
+- **The `@[200px]` container-query breakpoint for the adaptive course
+  name (`AssignmentCard.tsx`) is an unverified guess** — needs visual
+  tuning against real rendered card widths/fonts once there's browser
+  access: open the planner, compare a single-day card against a wider
+  multi-day one, and adjust the pixel value up/down until the full course
+  name reliably fits without visibly clipping. `truncate` on the `<h3>`
+  prevents anything broken-looking in the meantime.
+- **The now-always-on Ollama short-title pass (see Architecture Decisions
+  above) hasn't been judged against real messy Canvas titles** — only the
+  pure/offline `deterministicShortTitle` path was exercised this session
+  (no Ollama server, no login). Worth checking real output quality once
+  both are available.
+- Most of this session's UI/theming work (see log below) has **not been
+  clicked through in a real browser** — no Claude-in-Chrome access. Worth
+  a full manual pass, especially: the extension popup's live theme sync,
+  Music Player at real laptop widths, and the new due-time picker.
+- `findDuplicateTasks` batching occasionally misses an obvious duplicate
+  in ad-hoc testing — looks like inherent 3B-model judgment variance, not
+  a batching regression.
 - Canvas sync reconciliation only prunes courses, not individual
   assignments/discussions/announcements within a still-active course
-  (deliberate scope trim — `canvas-extension/background.js`'s
-  `getCanvasData()` has no pagination follow-up, so per-item pruning could
-  wrongly drop real assignments past page 1; fix that gap first if
-  per-item pruning is wanted).
+  (`canvas-extension/background.js`'s `getCanvasData()` has no pagination
+  follow-up, so per-item pruning could wrongly drop real items past page
+  1 — fix that gap first if per-item pruning is wanted).
 - The `getTaskPriority`-based sort/labels in the weekly grid were
-  intentionally **not** replaced with `calculatePriority`-based scoring —
-  only the Up Next card and the Pomodoro focus task use it. Unifying the
-  grid sort too is a separate, larger change (touches grid-span layout).
+  intentionally **not** unified with `calculatePriority`-based scoring —
+  only the Up Next card and Pomodoro focus task use the latter. A larger,
+  separate change (touches grid-span layout).
+- A task whose course was manually overridden to something other than its
+  natural Canvas course will go stale again if that *target* course is
+  later renamed (the override stores a name, not a course id). Narrow
+  edge case; would need a `courseId`-based override + migration to fix
+  properly.
 
 ## Session log
 
-### 2026-09-06 (final) — show due time on assignment cards
+### 2026-09-06 — task name normalization (compact card labels)
 
-Small follow-up to the proportional-bar work: added the actual due time
-as text on `AssignmentCard.tsx` (e.g. "Due: 2026-09-10 at 8:00 AM"), not
-just implied by the bar's visual endpoint. New `dueAt?: string | null`
-prop, formatted via `toLocaleTimeString([], { hour: "numeric", minute:
-"2-digit" })` — no explicit timezone passed, so (same as the due-date
-resolution added earlier this session) it's implicitly the viewer's own
-local timezone. Only Canvas-synced tasks have a `dueAt`; custom tasks
-show no time, same as before. Wired through from `WeeklyPlannerView.tsx`'s
-existing `task.dueAt` (already resolved client-side).
+Added the `COURSE - TYPE - DAY - SHORTTITLE` card label (e.g.
+`MA - HW - F - HW 2`, `ENG - R - M - Beowulf 113-207`) replacing the raw
+assignment name as each card's title (raw name kept as a hover tooltip).
+Full design/rationale in Architecture Decisions above. Not yet committed.
 
-Verified: `tsc`/`eslint`/`next build` clean, lint unchanged from baseline.
-Spot-checked the time formatting directly (`8:59 AM`/`5:00 PM`/`1:00 PM`
-for a few sample instants) — correct, human-readable 12-hour format.
+New files: `lib/taskLabel.ts` (pure label assembly + the ±14-day
+windowing/cap selector), `lib/generateShortTitle.ts` (Ollama batch call,
+modeled on `analyzeAssignments`), `app/api/task-short-titles/route.ts`.
+Changed: `prisma/schema.prisma` (+`CanvasCourse.abbreviation`,
++`Assignment.shortTitle`, migration `add_task_label_fields`),
+`lib/analyzeAssignment.ts` (extracted `classifyAssignmentType`),
+`types/assignment.ts`/`types/course.ts`, `lib/canvas.ts`,
+`app/api/courses/route.ts` + `[courseId]/route.ts`,
+`components/ManageCoursesModal.tsx` (abbreviation inline-edit UI),
+`components/WeeklyPlannerView.tsx` (new background-fetch effect +
+render-site label computation), `components/AssignmentCard.tsx`.
 
-### 2026-09-06 (very latest) — due-date timezone fix, Sunday-first calendar, proportional due-time bar
+Caught two bugs against the user's own worked examples before calling it
+done: `classifyAssignmentType` checked `practice` before `homework`, so
+"Homework 2: Derivatives Practice" misclassified; and the punctuation
+cleanup step in `deterministicShortTitle` blanket-replaced `-` with a
+space, breaking page ranges like "113-207" → "113 207". Both fixed and
+re-verified with a throwaway `npx tsx` script (deleted after) reproducing
+the user's exact two examples — both now match verbatim. Verified with
+`npx tsc --noEmit`, `npm run lint` (identical pre-existing 18
+problems/0 new), and `npm run build`; a logged-out dev-server smoke test
+only (see Active TODOs — no login this session).
 
-User reported due dates showing one day off. Root cause:
-`lib/canvas.ts`'s `toInstitutionDateString` hardcoded `timeZone:
-"America/New_York"` to turn each assignment's raw `dueAt` UTC instant into
-a calendar-date string — but the user's actual due times are Pacific, so
-converting through the wrong zone rolled things past midnight into the
-next day. Rather than hardcode a different (still potentially wrong) zone
-or make it `.env`-configurable, the user asked for it to auto-adapt to
-whoever's viewing it — so the fix removes server-side timezone guessing
-entirely:
+### 2026-09-05/06 — theming pass, extension theme sync, card compaction, due-time editing
 
-- `lib/canvas.ts`: deleted `toInstitutionDateString`; `getAllAssignments`
-  now returns the raw `dueAt` ISO instant instead of a pre-formatted
-  `due` string (`due` is left as an unused `""` placeholder), and sorts by
-  `dueAt` instead of parsing `due`.
-- `types/assignment.ts`: added `dueAt?: string | null` and
-  `dueFraction?: number` (0-1 time-of-day, resolved below; absent = "end
-  of day", so nothing changes for custom tasks).
-- `WeeklyPlannerView.tsx`'s existing mount `useEffect` (the one place
-  `assignments` prop → `tasks` state conversion already happens
-  client-side, post-mount — so this doesn't introduce any new hydration-
-  mismatch risk that wasn't already there) now resolves each task's real
-  local `due`/`dueFraction` from `dueAt` via plain `Date` getters, which
-  are implicitly the *browser's own* timezone — auto-adapting per viewer
-  with no IANA zone name anywhere.
+Large multi-round session: a full app-wide audit and fix pass (bugs +
+theming normalization across the web app and the Chrome extension), then
+several rounds of user feedback tightening the weekly-grid assignment
+cards and the Pomodoro/Music Player layout. Committed as `7f981d3`
+("housekeeping, and dark/light mode carryover into extension") and
+`39d1fc1` ("refined assignment cards").
 
-Also two explicitly-requested UI changes, done together since they touch
-the same file:
+Highlights still relevant to future work (see Architecture Decisions above
+for the parts that are now just "how it works"):
+- Fixed real bugs found during the audit: a theme-flash race in
+  `WeeklyPlannerView.tsx` (three competing sources of truth for
+  `data-theme`), DST-unsafe day-diff math (new shared `daysBetween()` in
+  `lib/utils.ts`), a mismatched frog-score threshold in
+  `lib/prioritization.ts`, an unused `estimatedMinutes` input to the
+  priority formula (now folded in as a small tie-breaker), a
+  `localhost:300` typo in `canvas-extension/manifest.json`, and
+  `lib/analyzeAssignment.ts` not following this repo's own
+  Ollama-fallback convention (fixed to match `task-xp`'s pattern).
+- `MusicPlayer.tsx`'s internal layout was keyed to viewport breakpoints
+  even though it only ever renders at half the window width (inside
+  `WeeklyPlannerView`'s Pomodoro/Music Player grid) — switched to Tailwind
+  v4 container queries (`@container`/`@lg:`/`@xl:`) so it actually
+  responds to its own rendered width; also uses `minmax(0, 1fr)` instead
+  of bare `1fr` in its grid templates (bare `1fr` doesn't shrink below its
+  content's intrinsic width, which is what caused a visible page-overflow
+  bug earlier in this same session).
+- Assignment cards went through several compaction rounds per direct user
+  feedback: removed the due-date text (date is redundant with grid
+  position), the "✓ Completed late" badge (color-coding already conveys
+  it), and the priority-label badge entirely (redundant with bar length);
+  moved the focus/delete icon buttons to a hover-only absolute overlay so
+  they stop reserving layout width; tightened padding repeatedly to match
+  "still too much padding" feedback.
+- Added the due-*time* picker that was missing from task creation/editing
+  (`components/DueTimeField.tsx`, an Auto/Custom toggle mirroring
+  `StartDateField.tsx`) — see Architecture Decisions' "Due date/time"
+  bullet for how it flows through.
 
-- **Sunday-first calendar**: `dayNames` reordered, `app/page.tsx`'s
-  week-start calc changed from "most recent Monday" to "most recent
-  Sunday", and the monthly grid's alignment (`monthGridStart`) updated to
-  match.
-- **Due-time shown proportionally, not as a badge**: rather than add a
-  clock icon (extra UI chrome, needing a judgment call about what counts
-  as "early"), extended the existing grid-span "bar" metaphor —
-  `calculateGridSpan` (`lib/utils.ts`) now takes a `dueFraction` and
-  returns `{ gridColumn, endInsetPercent }` instead of a bare string; a
-  task's bar visually ends proportionally within its final day's column
-  based on the real due time (8 AM ends near the start of that segment,
-  11:59 PM reaches the far edge), applied via `marginRight` on
-  `AssignmentCard`'s existing element — no new wrapper, no icons/badges.
-  `endInsetPercent` is scaled by how many day-columns the bar spans, not
-  just the final day's width, so a 5-day-spanning task due at 8 AM insets
-  much less (~13%) than the same time on a single-day span (~67%).
+### Earlier sessions (2026-09-04 – 2026-09-06), condensed
 
-Verified: `tsc`/`eslint`/`next build` clean, lint findings unchanged from
-baseline (same pre-existing errors, just shifted line numbers in
-`lib/canvas.ts` after removing the deleted function). Verified
-`calculateGridSpan`'s new math synthetically — single-day spans at
-dueFraction 1/0.5/0.333/0 produce exactly 0%/50%/66.7%/100% inset; a
-4-column multi-day span at 8 AM produces exactly 16.67% (matches
-`(1 - 1/3) / 4`); omitting `dueFraction` entirely reproduces the old 0%-
-inset (full-bar) behavior exactly, confirming custom tasks are
-unaffected; the overdue single-column branch also computes its inset
-correctly. **Not verified against real Canvas data or rendered CSS** — no
-way to do that from here; the user should confirm a real assignment's due
-date now matches Canvas exactly, both grids start on Sunday, and an
-early-due task's bar visibly falls short of its column's right edge.
-
-### 2026-09-06 (latest) — cap automatic Ollama estimation load
-
-User reported their machine heating up from Ollama load. Root cause: the
-estimation `useEffect` in `WeeklyPlannerView.tsx` had no due-date or count
-filtering — with a 150-197 assignment backlog, and the effect re-firing
-every time `taskPlanning` updates (which happens after every response),
-this cascaded through the *entire* backlog in back-to-back
-`POST /api/task-planning` calls, each running real batched Ollama
-inference. The server's existing `.slice(0, 40)` in that route was just a
-per-request safety net, not a real cap on total volume.
-
-- New `selectTasksNeedingEstimates()` (`lib/taskPlanning.ts`) replaces the
-  old unfiltered `tasks.filter(...)` in that effect: only tasks due within
-  a 21-day window are eligible (tasks with no due date at all are now
-  **never** auto-estimated — no date to window/rank them by; documented
-  as a deliberate trade-off in `prioritizationModule.md`, not left as a
-  silent code decision), and even within that window the result is capped
-  at 60, soonest-due first, as a hard backstop independent of how tasks
-  happen to cluster in time. Numbers chosen with the user: "above 50" was
-  the hard requirement, 60 is a clean multiple of the route's existing
-  `ANALYSIS_BATCH_SIZE = 5` (12 batches instead of ~30-40) and a ~60% cut
-  from the ~150-task baseline.
-- **Bumped `app/api/task-planning/route.ts`'s defensive `.slice(0, 40)` to
-  `.slice(0, 75)`** — left at 40, it would've silently truncated the new
-  60-task capped request back down every time, leaving ~20 tasks that
-  never get a cached signature and recreating the exact same cascading-
-  request problem for that remainder. This was a real latent bug the fix
-  would have walked straight into.
-
-Verified: `tsc`/`eslint`/`next build` clean (no new findings vs. the
-established baseline). Ran a synthetic check (100 tasks: 70 near-term, 20
-far-future, 10 no-due-date) confirming `selectTasksNeedingEstimates`
-returns exactly 60, all near-term, none far-future or no-due-date, and
-that already-cached (matching-signature) tasks are correctly excluded.
-**Could not observe actual Ollama/CPU load from here** — no way to run
-Ollama or watch system load in this environment; the user should confirm
-the "🧠 Estimating N tasks..." indicator now tops out around 60 instead of
-climbing through the whole backlog, and that the machine actually runs
-cooler.
-
-### 2026-09-06 (still later) — quick-add task from any calendar day
-
-Added a small "+" button to every day, so adding a task due that day
-doesn't require the main "+ Add Task" button then manually picking the
-date. Weekly view: next to each day-of-week header. Monthly view: in each
-day cell's corner (hover-revealed, since those cells are small and already
-crowded with up to 3 tasks + a "+N more" line).
-
-- `AddTaskModal.tsx` gained an optional `defaultDue?: string` prop and a
-  `useEffect` that resets the Due Date field to it whenever the modal
-  opens (`[isOpen, defaultDue]`) — needed because the same modal instance
-  is now opened from several different buttons that should each seed a
-  different (or no) due date. This is the same "sync local form state from
-  a prop via effect" pattern `EditTaskModal.tsx` already uses for its own
-  fields, so it adds one more instance of this repo's already-accepted
-  `react-hooks/set-state-in-effect` lint finding rather than a new kind of
-  issue (confirmed via the same `git stash` baseline-diff technique as
-  prior sessions: 23 problems/17 errors after, vs. 22/16 before, and the
-  one new instance is exactly this).
-- `WeeklyPlannerView.tsx`: `days` (the weekly header array) now also
-  carries a `dateKey` (via the existing `toDateKey()` helper already used
-  by the monthly view) so its new per-day button can pass the right date.
-  New `openAddTask()`/`openAddTaskForDate(dateKey)` helpers wrap
-  `setIsModalOpen(true)`, the latter also setting a new `quickAddDueDate`
-  state that's passed into `AddTaskModal` as `defaultDue`; the main
-  "+ Add Task" button now calls `openAddTask()` (which clears
-  `quickAddDueDate`) instead of setting `isModalOpen` directly, so it
-  never accidentally inherits a date from a previous per-day click.
-
-Verified: `tsc`/`eslint`/`next build` clean (lint delta explained above,
-otherwise unchanged). Not clicked through in a browser this session
-(still no Claude in Chrome access) — worth confirming both the weekly
-per-day button and the monthly hover-reveal one open Add Task with the
-right date pre-filled.
-
-### 2026-09-06 (yet later) — fix: renamed courses not updating on cards
-
-User-reported bug: renaming a course in "📚 Courses" didn't show up on any
-task cards until you manually reselected that task's course in Edit Task
-(then switched away and back). Two separate bugs, both fixed:
-
-1. **`lib/canvas.ts`'s `getAllAssignments`** built every task's `course`
-   field from `course.name`, never `course.displayName` — so the base
-   course text for *every* Canvas-synced task was permanently stuck at
-   whatever Canvas originally called it, even across a full page refresh.
-   This is the primary bug; fixed by reading `course.displayName ?? course.name`,
-   matching the same pattern already used in `app/api/courses/route.ts`.
-2. **`WeeklyPlannerView.tsx`'s `handleSaveTask`** used to unconditionally
-   freeze a `TaskCustomization.course` override to whatever was currently
-   showing, on *every* Edit Task save — including saves that only touched
-   the start date or notes. Once frozen, that task's course would never
-   pick up a later rename again (the exact "switch away and back"
-   workaround the user found: reselecting the course re-freezes the
-   override to the current, correct name). Fixed by only writing a course
-   override when the saved value actually differs from what was
-   previously effectively shown (`current override ?? the task's raw base
-   course`), so unrelated saves no longer silently pin a task's course.
-
-Residual limitation (not fixed, and not worth the schema rework right
-now): a task whose course *was* deliberately overridden to a different
-course than its natural one will still go stale if that target course is
-renamed later, since the override stores a frozen name string, not a
-course id. Fixing that for good would mean storing a `courseId` reference
-on `TaskCustomization` instead — flagged as a possible future TODO, not
-done here since it's a narrower case and would need a data migration for
-whatever override rows already exist.
-
-Did **not** touch any existing `TaskCustomization` rows already frozen by
-the old buggy `handleSaveTask` — couldn't safely tell an accidental freeze
-apart from an intentional recategorization after the fact, so left as a
-one-time manual fix (reselect the course once more) for any task already
-affected; new saves won't reproduce the bug.
-
-Verified: `tsc`/`eslint`/`next build` clean, lint output unchanged from
-the established baseline (22 problems/16 errors/6 warnings). Not clicked
-through in a browser this session either (still no Claude in Chrome
-access) — the user should confirm renaming a course now updates cards
-immediately after this fix, with no manual per-task workaround needed.
-
-### 2026-09-06 (even later) — course dropdown + manageable course list
-
-Replaced the task modals' free-text "Course / Category" input with a
-dropdown, and extended course management beyond the existing hide/delete
-to include renaming and adding non-Canvas ("custom") courses.
-
-- **Found and fixed a latent bug while doing this**: `app/api/canvas/sync/route.ts`'s
-  course upsert always overwrites `CanvasCourse.name` from Canvas on every
-  sync — unlike `hidden`, which the upsert never touches. So a naive rename
-  (writing straight to `name`) would've silently reverted on the next sync.
-  Fixed the same way `hidden` was: a new `CanvasCourse.displayName String?`
-  column (migration `20260906020805_add_course_display_name`) that sync
-  never writes to; display value everywhere is `displayName ?? name`.
-  Verified directly against the dev DB with a simulated re-sync (`update: { name: ... }`,
-  exactly what the sync route does) — the `displayName` survived.
-- **Custom (non-Canvas) courses** are just ordinary `CanvasCourse` rows
-  with a sentinel `canvasOrigin: "custom"` and a random `canvasId`
-  (`crypto.randomUUID()`) — no schema change needed for this part, since
-  the existing `@@unique([userId, canvasOrigin, canvasId])` already can't
-  collide with a real Canvas instance URL. `isCustom` is computed
-  (`canvasOrigin === "custom"`) rather than stored.
-- `app/api/courses/route.ts` gained `POST` (create a custom course);
-  `app/api/courses/[courseId]/route.ts`'s `PATCH` now independently accepts
-  `hidden` and/or `name` (writes to `displayName`) so the hide-toggle and a
-  new rename control don't clobber each other.
-- New shared `types/course.ts` (`Course` type, replacing
-  `ManageCoursesModal.tsx`'s locally-defined one) and
-  `components/CourseSelect.tsx` — a `<select>` used by both
-  `EditTaskModal.tsx`/`AddTaskModal.tsx` in place of the old text input,
-  with a trailing "+ Add new course..." option that creates a course
-  inline (`POST /api/courses`) without leaving the task modal. It always
-  includes the task's current course as a fallback option even if it's not
-  in the list (legacy free-typed text, or a since-deleted course), so nothing
-  goes blank. `course` itself is still just a plain string everywhere
-  downstream (`TaskCustomization.course`, a custom task's own `course`) —
-  this only changed how that string gets picked, not its representation.
-- `ManageCoursesModal.tsx` gained an "+ Add Course" input and a per-row
-  rename control (pencil → inline text input); its delete-confirmation
-  copy now differs for `isCustom` courses ("permanent" vs. "comes back on
-  next sync").
-- `WeeklyPlannerView.tsx` gained a `courses` state (fetched alongside the
-  existing task-customizations fetch on mount) and a `refetchCourses()`
-  helper, called both on mount and from `ManageCoursesModal`'s `onChanged`
-  so a rename/add/delete there shows up in the task modals' dropdown
-  without a full reload.
-
-Verified: `tsc`/`eslint`/`next build` clean — confirmed via the same
-`git stash` diff technique used in prior sessions that the lint output is
-byte-for-byte the original pre-session baseline (22 problems/16 errors/6
-warnings), i.e. this change introduced zero new lint findings (caught and
-fixed two unescaped-apostrophe errors in `ManageCoursesModal.tsx`'s new
-copy along the way). Verified create/rename/re-sync-safety/delete directly
-against the real dev DB (see above). Confirmed `GET`/`POST /api/courses`
-and `PATCH /api/courses/[courseId]` all still 401 without a session.
-**Not clicked through in a browser** — still no Claude in Chrome access
-this session; someone should manually verify the dropdown, the inline
-"+ Add new course" flow, and that renaming a course in "📚 Courses"
-immediately updates what the task modals show.
-
-### 2026-09-06 (later) — auto start date toggle, editable course, notes
-
-Extended the `TaskCustomization` mechanism from earlier today with two more
-nullable fields, `course` and `notes` (migration
-`20260906015320_add_course_and_notes_to_task_customization`), plus a UI-only
-"Auto" concept for start date — no new server-side idea, just a toggle over
-the null-means-auto semantics that already existed.
-
-- New shared `components/StartDateField.tsx` (Auto/Custom toggle + the date
-  `<input>`, only shown in Custom mode) used by both `EditTaskModal.tsx` and
-  `AddTaskModal.tsx`, replacing their bare date inputs — extracted once
-  since the exact same stateful block would otherwise be duplicated.
-- `course` override is written **only for Canvas-synced tasks** (id not
-  `"custom-"`-prefixed) — custom tasks keep editing course via their
-  existing whole-object `localStorage` write (`handleSaveTask` in
-  `WeeklyPlannerView.tsx`), so there's never two sources of truth for a
-  custom task's course. `WeeklyPlannerView.tsx` gained an `effectiveTasks`
-  `useMemo` (course override layered over `task.course`) that
-  `sortedTasks`/`openTasks`/`upNext`/`activeFocusTask`/the monthly view all
-  now read from instead of raw `tasks` — the one place this merge happens,
-  so `AssignmentCard`/the Up Next card/Pomodoro focus card all pick up an
-  edited course for free via their existing `task.course` reads.
-- `notes` has no pre-existing home (not on `types/assignment.ts`'s
-  `Assignment`) — it's a `TaskCustomization`-only field for every task
-  kind, shown as a textarea in both modals (per the user's explicit ask,
-  only inside the modal — not on the card face).
-- `taskStartDates: Record<string, string>` generalized into
-  `taskCustomizations: Record<string, { startAt; course; notes }>`;
-  `persistStartDate` generalized into `persistCustomization` (same
-  optimistic-update-then-fire-and-forget-`PATCH` shape). `GET`/`PATCH
-  /api/task-customizations[/[taskId]]` extended accordingly — the `PATCH`
-  route still expects all three fields together in one call (no
-  partial-update logic) since every caller already sends all three from a
-  single modal submit.
-
-Verified: `tsc`/`eslint`/`next build` clean (same 4 pre-existing
-`set-state-in-effect` findings, line numbers shifted, confirmed via
-`git stash` diff same as last session). Verified the exact upsert/read/
-clear-to-null the routes use round-trips `startAt`+`course`+`notes`
-correctly against the real dev DB (`kelliecpiano@gmail.com`, throwaway row
-cleaned up after). Confirmed both routes still 401 with no session.
-**Not clicked through in a browser** — still no Claude in Chrome access
-this session; someone should manually verify the Auto/Custom toggle shows/
-hides the date picker correctly, a Canvas assignment's edited course
-survives a reload, and a saved note reappears next time its task is
-opened.
-
-### 2026-09-06 — persistent, user-editable task start date
-
-Added the first DB-backed per-task customization: a "Start Date" field,
-independent of Canvas's `dueAt`/the task's own `due`, that actually
-persists to Postgres (previously **no** task edit persisted anywhere but
-`localStorage`, not even for Canvas-synced assignments — see
-`handleSaveTask`/`handleAddTask` in `WeeklyPlannerView.tsx`, unchanged for
-every other field).
-
-- New `TaskCustomization` Prisma model (migration
-  `20260906014206_add_task_customization`): `{ userId, taskId, startAt }`,
-  unique on `(userId, taskId)`. `taskId` is a free-form string (a Canvas
-  `Assignment.id` cuid, or a client-generated `"custom-<timestamp>"` id) —
-  deliberately **not** a foreign key into `Assignment`, so it works for
-  custom tasks (which have no DB row at all) without a join, and so
-  Canvas's re-sync upsert can never touch/clobber it (same reasoning as
-  `CanvasCourse.hidden`). Dates are stored/read as UTC-midnight instants
-  and round-tripped via `.toISOString().slice(0, 10)` — this is a plain
-  calendar date the user picked in a `<input type="date">`, not a Canvas
-  UTC instant, so none of `lib/canvas.ts`'s institution-timezone handling
-  applies here.
-- New routes: `GET /api/task-customizations` (list all of the current
-  user's), `PATCH /api/task-customizations/[taskId]` (upsert one — has to
-  be an upsert, not courses'-style `findFirst`-then-`update`, since "no row
-  yet" is every task's normal starting state).
-- `WeeklyPlannerView.tsx`: new `taskStartDates` state (same
-  `Record<taskId, value>`-merged-at-render pattern as `taskStates`/
-  `taskPlanning`, not stored on the `Assignment` type itself), fetched
-  alongside the existing localStorage reads on mount. `calculateGridSpan`'s
-  `startDate` input now prefers a real user-set value over the old
-  `taskState?.completedAt` stand-in (kept as a fallback so already-completed
-  tasks' existing visual span doesn't change). `handleSaveTask`/
-  `handleAddTask` now also fire a `PATCH` when the start date changes
-  (optimistic local update, fire-and-forget persist, matching
-  `awardXpForTask`'s existing try/catch-and-continue style).
-- `EditTaskModal.tsx` and `AddTaskModal.tsx` both gained a "Start Date"
-  date input next to "Due Date", with a shared lightweight guard (start
-  after due → inline error, Save/Add disabled) — no other validation
-  exists in either form beyond that, matching their existing minimalism.
-
-Verified: `tsc`/`eslint`/`next build` clean (the only lint errors present
-are the 4 pre-existing `set-state-in-effect` findings already called out in
-earlier sessions — confirmed identical count via `git stash`). Verified the
-exact Prisma upsert/read the new routes use round-trips correctly against
-the real dev DB (create → read back → delete a throwaway row under the
-real signed-in user, `kelliecpiano@gmail.com` — *not* `subjack@gmail.com`,
-which isn't a user in this DB, just this session's own identity metadata).
-Confirmed `GET /api/task-customizations` 401s with no session. **Not
-verified by clicking through the actual UI** — no Claude in Chrome access
-this session (user declined the extension) and no other browser-automation
-path was available; someone should click through this by hand before
-trusting it fully (see Active TODOs).
-
-### 2026-09-05 — priority fix, stale-data cleanup, course management, GPU reduction, Pomodoro focus
-
-Five pieces of work, in order:
-
-1. **Fixed the priority scoring bug**: urgency must dominate importance/
-   difficulty/consequence, not just be weighted ~50/50 (a due-in-10-days
-   project was outscoring a due-today task). See `prioritizationModule.md`'s
-   "Scoring formula" section.
-2. **Stale Canvas data + related fixes**, prompted by old/inactive courses
-   never disappearing: `app/api/canvas/sync/route.ts` never deleted
-   anything, so added course-level reconciliation (`deleteMany` anything
-   not in the latest sync payload, guarded against an empty payload —
-   confirmed via `canvas-extension/background.js` that a completed sync is
-   always a full snapshot, never partial). Fixed a real cross-user data
-   leak (`getAllAssignments`/`getAllAnnouncements` had no `userId` filter)
-   and a due-date timezone bug (server-local instead of institution-local)
-   in `lib/canvas.ts`. Deleted `app/test/page.tsx`, a leftover debug page
-   whose `prisma.user.create()` on every build was the actual source of
-   the leaked `test2@example.com` row. Bounded Ollama concurrency to 2 in
-   `app/api/task-planning/route.ts` and hardened a stale-closure risk in
-   `WeeklyPlannerView.tsx`'s `handleToggleComplete`.
-3. **Manual course hide/delete** (`ManageCoursesModal.tsx`, "📚 Courses"
-   button), since some teachers never conclude a course so it never drops
-   out of Canvas's active list on its own. `CanvasCourse.hidden` flag
-   (migration `20260905041240_add_course_hidden_flag`) + `app/api/courses/
-   route.ts` + `[courseId]/route.ts`. Hiding survives re-sync (the sync
-   upsert never touches `hidden`); deleting a still-Canvas-active course
-   does not (documented in the UI copy).
-4. **Reduced Ollama GPU usage** — see the "AI scoring" architecture bullet
-   above for the resulting call pattern. Root causes: 197 real
-   never-estimated assignments silently driving the automatic background
-   estimation effect (zero UI indicator — now has one, "🧠 Estimating N
-   tasks..."), plus a fully sequential N+M-call announcement-analysis
-   pipeline (now batched). Mid-task, user redirected to drop AI-based time
-   estimation entirely (see the `estimatedMinutes` bullet above).
-5. **Pomodoro focus task** — see the "Up Next card + Pomodoro" bullet
-   above.
-
-Verified throughout: `tsc`, `eslint`, `next build` clean at every step
-(only new lint finding was one unescaped-quotes JSX error, fixed
-immediately; everything else was more instances of the same pre-existing
-`set-state-in-effect` pattern already used elsewhere in
-`WeeklyPlannerView.tsx`/`PomodoroTimer.tsx`). Batched Ollama functions
-tested against the real local server with realistic data. The course
-migration was applied against the real dev DB (`prisma migrate dev` +
-manual `prisma generate` — the generate didn't trigger automatically this
-time). **Nothing from today verified live in a browser yet** — see Active
-TODOs.
-
-### 2026-09-04 (later) — prioritization module (Up Next / procrastination index)
-
-Implemented `prioritizationModule.md`'s spec end-to-end: new
-`types/procrastination.ts` + `lib/procrastinationHistory.ts`; extended
-`lib/prioritization.ts` (`procrastinationIndexHours` input,
-`historyAdjusted` output); threaded `assignmentType` through
-`lib/analyzeAssignment.ts` → `app/api/task-planning/route.ts` →
-`types/taskPlanning.ts`; added `createdAt` to `types/assignment.ts` /
-`lib/canvas.ts` (Prisma already had it, just wasn't passed through); added
-the "Up Next" card + completion-recording hook in `WeeklyPlannerView.tsx`.
-Along the way, fixed two pre-existing type errors in the same file/module
-that were blocking a clean `tsc` build (`getTaskPriority` was being passed
-a 1-10 number where it expected a `"low"|"medium"|"high"` string it never
-actually received, and the `/api/task-planning` response was being merged
-into `TaskPlanningEstimate` under a stale, too-narrow type). See "Active
-TODOs" above for what's still open.
-
-### 2026-09-04 — workspace scaffolding
-
-Set up the Claude Code workspace only — **no application code was changed**.
-- Added project-specific sections to `CLAUDE.md` (summary, conventions,
-  run/build/lint/test commands, "never do X" rules). The pre-existing
-  `@AGENTS.md` include (managed by `next dev`) was left untouched.
-- Added `.claude/skills/`: `commit-message` (Conventional Commits, since
-  existing history is informal free-text), `api-route-handler` (codifies the
-  auth+Prisma+error-handling shape shared by every existing route), and
-  `code-review` (project-specific checklist layered on the built-in
-  `/code-review`: auth scoping, generated-file edits, Ollama fallback/timeout,
-  client/server boundary, migrations, style, no speculative deps).
-- Added this file.
-- Noted but did not act on: `AGENTS.md`'s "read node_modules/next/dist/docs/
-  before writing code" instruction turned out to be a genuine Next.js 16.3
-  feature (verified the docs and the generator script on disk), not an
-  injected instruction — flagged to the user during investigation, resolved
-  as a false alarm.
+- Workspace scaffolding: `CLAUDE.md` conventions/commands, `.claude/skills/`
+  (`commit-message`, `api-route-handler`, `code-review`).
+- Prioritization module built end-to-end per `prioritizationModule.md`
+  (procrastination index, Up Next card, `assignmentType` threading).
+- Priority-scoring bug fixed (urgency must dominate — see Architecture
+  Decisions); stale/cross-user Canvas data bugs fixed in `lib/canvas.ts`;
+  manual course hide/delete added (`CanvasCourse.hidden`); Ollama GPU load
+  reduced (batching + a background-estimation window+cap, now documented
+  in `prioritizationModule.md`'s "Automatic estimation scope"); Pomodoro
+  focus-task flow added.
+- Persistent per-task customization added (`TaskCustomization` Prisma
+  model): start date, then course override + notes, then a course
+  dropdown/rename/custom-course management UI
+  (`components/CourseSelect.tsx`, `ManageCoursesModal.tsx`). Fixed a bug
+  where a renamed course wouldn't show on existing cards (course text was
+  read from the wrong field, and an edit-save was over-freezing the
+  override — see the residual limitation in Active TODOs).
+- Quick-add: a "+" on any calendar day pre-fills that day's due date in
+  `AddTaskModal`.
