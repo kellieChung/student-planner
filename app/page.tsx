@@ -32,9 +32,8 @@ export default async function TestPage() {
 
     const today = new Date();
     const dayOfWeek = today.getDay();
-    const distanceToMonday = (dayOfWeek + 6) % 7; 
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - distanceToMonday);
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - dayOfWeek);
 
     return (
         <main className="min-h-screen p-8">
@@ -51,7 +50,7 @@ export default async function TestPage() {
                 <p className="mb-8 text-[var(--muted)]">Weekly calendar overview</p>
 
                 <AnalyzeAnnouncementsButton />
-                <WeeklyPlannerView assignments={assignments} weekStartDate={monday} />
+                <WeeklyPlannerView assignments={assignments} weekStartDate={sunday} />
                 <AIReviewPanel />
             </div>
         </main>

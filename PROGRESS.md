@@ -106,6 +106,83 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Session log
 
+### 2026-09-06 (final) — show due time on assignment cards
+
+Small follow-up to the proportional-bar work: added the actual due time
+as text on `AssignmentCard.tsx` (e.g. "Due: 2026-09-10 at 8:00 AM"), not
+just implied by the bar's visual endpoint. New `dueAt?: string | null`
+prop, formatted via `toLocaleTimeString([], { hour: "numeric", minute:
+"2-digit" })` — no explicit timezone passed, so (same as the due-date
+resolution added earlier this session) it's implicitly the viewer's own
+local timezone. Only Canvas-synced tasks have a `dueAt`; custom tasks
+show no time, same as before. Wired through from `WeeklyPlannerView.tsx`'s
+existing `task.dueAt` (already resolved client-side).
+
+Verified: `tsc`/`eslint`/`next build` clean, lint unchanged from baseline.
+Spot-checked the time formatting directly (`8:59 AM`/`5:00 PM`/`1:00 PM`
+for a few sample instants) — correct, human-readable 12-hour format.
+
+### 2026-09-06 (very latest) — due-date timezone fix, Sunday-first calendar, proportional due-time bar
+
+User reported due dates showing one day off. Root cause:
+`lib/canvas.ts`'s `toInstitutionDateString` hardcoded `timeZone:
+"America/New_York"` to turn each assignment's raw `dueAt` UTC instant into
+a calendar-date string — but the user's actual due times are Pacific, so
+converting through the wrong zone rolled things past midnight into the
+next day. Rather than hardcode a different (still potentially wrong) zone
+or make it `.env`-configurable, the user asked for it to auto-adapt to
+whoever's viewing it — so the fix removes server-side timezone guessing
+entirely:
+
+- `lib/canvas.ts`: deleted `toInstitutionDateString`; `getAllAssignments`
+  now returns the raw `dueAt` ISO instant instead of a pre-formatted
+  `due` string (`due` is left as an unused `""` placeholder), and sorts by
+  `dueAt` instead of parsing `due`.
+- `types/assignment.ts`: added `dueAt?: string | null` and
+  `dueFraction?: number` (0-1 time-of-day, resolved below; absent = "end
+  of day", so nothing changes for custom tasks).
+- `WeeklyPlannerView.tsx`'s existing mount `useEffect` (the one place
+  `assignments` prop → `tasks` state conversion already happens
+  client-side, post-mount — so this doesn't introduce any new hydration-
+  mismatch risk that wasn't already there) now resolves each task's real
+  local `due`/`dueFraction` from `dueAt` via plain `Date` getters, which
+  are implicitly the *browser's own* timezone — auto-adapting per viewer
+  with no IANA zone name anywhere.
+
+Also two explicitly-requested UI changes, done together since they touch
+the same file:
+
+- **Sunday-first calendar**: `dayNames` reordered, `app/page.tsx`'s
+  week-start calc changed from "most recent Monday" to "most recent
+  Sunday", and the monthly grid's alignment (`monthGridStart`) updated to
+  match.
+- **Due-time shown proportionally, not as a badge**: rather than add a
+  clock icon (extra UI chrome, needing a judgment call about what counts
+  as "early"), extended the existing grid-span "bar" metaphor —
+  `calculateGridSpan` (`lib/utils.ts`) now takes a `dueFraction` and
+  returns `{ gridColumn, endInsetPercent }` instead of a bare string; a
+  task's bar visually ends proportionally within its final day's column
+  based on the real due time (8 AM ends near the start of that segment,
+  11:59 PM reaches the far edge), applied via `marginRight` on
+  `AssignmentCard`'s existing element — no new wrapper, no icons/badges.
+  `endInsetPercent` is scaled by how many day-columns the bar spans, not
+  just the final day's width, so a 5-day-spanning task due at 8 AM insets
+  much less (~13%) than the same time on a single-day span (~67%).
+
+Verified: `tsc`/`eslint`/`next build` clean, lint findings unchanged from
+baseline (same pre-existing errors, just shifted line numbers in
+`lib/canvas.ts` after removing the deleted function). Verified
+`calculateGridSpan`'s new math synthetically — single-day spans at
+dueFraction 1/0.5/0.333/0 produce exactly 0%/50%/66.7%/100% inset; a
+4-column multi-day span at 8 AM produces exactly 16.67% (matches
+`(1 - 1/3) / 4`); omitting `dueFraction` entirely reproduces the old 0%-
+inset (full-bar) behavior exactly, confirming custom tasks are
+unaffected; the overdue single-column branch also computes its inset
+correctly. **Not verified against real Canvas data or rendered CSS** — no
+way to do that from here; the user should confirm a real assignment's due
+date now matches Canvas exactly, both grids start on Sunday, and an
+early-due task's bar visibly falls short of its column's right edge.
+
 ### 2026-09-06 (latest) — cap automatic Ollama estimation load
 
 User reported their machine heating up from Ollama load. Root cause: the

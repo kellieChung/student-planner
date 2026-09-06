@@ -80,7 +80,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     });
 
 
-    const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     const days = Array.from({length: 7}).map((_,index) => {
         const date = new Date(activeWeekStart);
@@ -205,7 +205,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     };
 
     const monthGridStart = new Date(activeMonthStart);
-    monthGridStart.setDate(1 - ((activeMonthStart.getDay() + 6) % 7));
+    monthGridStart.setDate(1 - activeMonthStart.getDay());
     const monthDays = Array.from({ length: 42 }, (_, index) => {
         const date = new Date(monthGridStart);
         date.setDate(monthGridStart.getDate() + index);
@@ -295,8 +295,25 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             localStorage.getItem("deleted_task_ids") || "[]"
         );
 
+        // Resolve each Canvas-synced task's real due date/time from its
+        // raw UTC instant using the browser's own local timezone (plain
+        // Date getters, same as toDateKey below) rather than a guessed
+        // institution timezone — this is the one place that conversion
+        // happens, since it can only be done correctly client-side.
+        const resolvedAssignments = assignments.map((task) => {
+            if (!task.dueAt) return task;
+
+            const local = new Date(task.dueAt);
+
+            return {
+                ...task,
+                due: toDateKey(local),
+                dueFraction: (local.getHours() * 60 + local.getMinutes()) / (24 * 60),
+            };
+        });
+
         const allTasks = [
-            ...assignments,
+            ...resolvedAssignments,
             ...customTasks
         ];
 
@@ -944,8 +961,12 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                 const taskState = taskStates[task.id];
                                 const estimate = taskPlanning[task.id];
                                 const priority = getTaskPriority(task, estimate?.importance);
-                                const gridSpan = calculateGridSpan(
-                                    { dueDate: task.due, startDate: taskCustomizations[task.id]?.startAt || taskState?.completedAt || undefined },
+                                const { gridColumn, endInsetPercent } = calculateGridSpan(
+                                    {
+                                        dueDate: task.due,
+                                        startDate: taskCustomizations[task.id]?.startAt || taskState?.completedAt || undefined,
+                                        dueFraction: task.dueFraction,
+                                    },
                                     activeWeekStart
                                 );
 
@@ -955,8 +976,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         id = {task.id}
                                         name = {task.name}
                                         due = {task.due}
+                                        dueAt = {task.dueAt}
                                         course = {task.course}
-                                        gridSpan = {gridSpan}
+                                        gridSpan = {gridColumn}
+                                        dueEndInsetPercent = {endInsetPercent}
                                         completed = {taskStates[task.id]?.completed ?? false}
                                         completedAt = {taskStates[task.id]?.completedAt ?? null}
                                         estimatedMinutes = {estimate?.estimatedMinutes}

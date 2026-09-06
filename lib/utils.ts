@@ -1,13 +1,28 @@
 export type TaskSpanInput = {
     startDate?: string;
     dueDate: string;
+    // Time-of-day of dueDate, 0 (midnight) to 1 (end of day). Absent
+    // means "treat as end of day" — a full-width bar, same as before
+    // this existed.
+    dueFraction?: number;
+};
+
+export type GridSpan = {
+    gridColumn: string;
+    // How much of the bar's total rendered width to leave uncovered on
+    // its right edge, as a percentage — lets the bar's end land
+    // proportionally within its final day's column based on the actual
+    // due time (e.g. an 8 AM due time ends near the start of that day's
+    // segment) instead of always reaching the column's far edge.
+    endInsetPercent: number;
 };
 
 export function calculateGridSpan(
     task: TaskSpanInput,
     weekStartDate: Date
-): string {
+): GridSpan {
     const msPerDay = 1000 * 60 * 60 * 24;
+    const dueFraction = task.dueFraction ?? 1;
 
     const monday = new Date(weekStartDate);
     monday.setHours(0, 0, 0, 0);
@@ -38,7 +53,10 @@ export function calculateGridSpan(
             Math.min(7, dueOffset + 1)
         );
 
-        return `${dueColumn} / ${dueColumn + 1}`;
+        return {
+            gridColumn: `${dueColumn} / ${dueColumn + 1}`,
+            endInsetPercent: (1 - dueFraction) * 100,
+        };
     }
 
     const effectiveStart = start < monday
@@ -62,7 +80,12 @@ export function calculateGridSpan(
         Math.min(8, dueOffset + 2)
     );
 
-    return `${startColumn} / ${endColumn}`;
+    const columnsSpanned = endColumn - startColumn;
+
+    return {
+        gridColumn: `${startColumn} / ${endColumn}`,
+        endInsetPercent: ((1 - dueFraction) / columnsSpanned) * 100,
+    };
 }
 
 export function getTodayString(): string{

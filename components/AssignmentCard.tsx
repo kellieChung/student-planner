@@ -6,8 +6,15 @@ type AssignmentCardProps = {
     id: string;
     name: string;
     due: string;
+    // Raw UTC instant, if known (Canvas-synced tasks only) — formatted
+    // below in the viewer's own local timezone.
+    dueAt?: string | null;
     course: string;
     gridSpan?: string;
+    // Percentage of the bar's total rendered width to leave uncovered on
+    // its right edge, so the bar's end lands proportionally within its
+    // final day's column based on the actual due time.
+    dueEndInsetPercent?: number;
     completed: boolean;
     completedAt: string | null;
     estimatedMinutes?: number;
@@ -23,8 +30,10 @@ export default function AssignmentCard({
     id,
     name,
     due,
+    dueAt,
     course,
     gridSpan,
+    dueEndInsetPercent,
     completed,
     completedAt,
     estimatedMinutes,
@@ -66,6 +75,10 @@ export default function AssignmentCard({
         }
     }
 
+    const dueTime = dueAt
+        ? new Date(dueAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        : null;
+
     const estimatedTime = estimatedMinutes
         ? estimatedMinutes >= 60
             ? `${Math.floor(estimatedMinutes / 60)}h${estimatedMinutes % 60 ? ` ${estimatedMinutes % 60}m` : ""}`
@@ -79,7 +92,10 @@ export default function AssignmentCard({
             : "border-slate-600 bg-slate-800 text-slate-300";
     return (
         <div
-            style = {{ gridColumn: gridSpan }}
+            style = {{
+                gridColumn: gridSpan,
+                marginRight: dueEndInsetPercent ? `${dueEndInsetPercent}%` : undefined,
+            }}
             className = {`group rounded-lg border p-2 shadow-sm flex flex-col justify-between transition-all duration-200 overflow-hidden ${isFocused ? "ring-2 ring-indigo-400" : ""} ${wasCompletedLate
                 ? "bg-slate-900 border-rose-900/80 text-rose-100 hover:border-rose-800"
                 : completed
@@ -129,7 +145,7 @@ export default function AssignmentCard({
 
 
                         <p className={`text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-gray-400"}`}>
-                            Due: {due}{estimatedTime ? ` · Est. ${estimatedTime}` : ""}
+                            Due: {due}{dueTime ? ` at ${dueTime}` : ""}{estimatedTime ? ` · Est. ${estimatedTime}` : ""}
                         </p>
 
                     </div>

@@ -7,13 +7,6 @@ const headers = {
     Authorization: `Bearer ${process.env.CANVAS_TOKEN}`,
 };
 
-// Canvas due dates are UTC instants; format them as the institution's local
-// calendar date (Davidson College, matching CANVAS_URL above) rather than
-// the server process's own timezone, which may not match.
-function toInstitutionDateString(date: Date): string {
-    return date.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-}
-
 export async function getCourses() {
     const response = await fetch(
         `${CANVAS_URL}/api/v1/courses?enrollment_state=active`,
@@ -85,29 +78,30 @@ export async function getAllAssignments(userId: string) {
         },
     });
 
+    // `due` is resolved client-side (WeeklyPlannerView.tsx) from `dueAt`,
+    // using the viewer's own browser timezone — there's no single
+    // "institution timezone" that's correct for every viewer, and this
+    // avoids guessing one server-side. `due` is left as an unused
+    // placeholder here only to satisfy the Assignment shape before that
+    // resolution happens.
     const allAssignments = courses.flatMap((course) =>
-        course.assignments.map((assignment) => {
-            const due = assignment.dueAt
-                ? toInstitutionDateString(assignment.dueAt)
-                : "";
-
-            return {
-                id: assignment.id,
-                name: assignment.name,
-                due,
-                course: course.displayName ?? course.name,
-                createdAt: assignment.createdAt.toISOString(),
-            };
-        })
+        course.assignments.map((assignment) => ({
+            id: assignment.id,
+            name: assignment.name,
+            due: "",
+            dueAt: assignment.dueAt ? assignment.dueAt.toISOString() : null,
+            course: course.displayName ?? course.name,
+            createdAt: assignment.createdAt.toISOString(),
+        }))
     );
 
     return allAssignments.sort((a, b) => {
-        const timeA = a.due
-            ? new Date(a.due).getTime()
+        const timeA = a.dueAt
+            ? new Date(a.dueAt).getTime()
             : Infinity;
 
-        const timeB = b.due
-            ? new Date(b.due).getTime()
+        const timeB = b.dueAt
+            ? new Date(b.dueAt).getTime()
             : Infinity;
 
         return timeA - timeB;
