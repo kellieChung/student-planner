@@ -4,7 +4,9 @@ import React, {useEffect, useState} from "react";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import StartDateField from "./StartDateField";
+import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
+import {resolveDueTime} from "@/lib/utils";
 
 type AddTaskModalProps = {
     isOpen: boolean;
@@ -21,12 +23,14 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
     const [name, setName] = useState("");
     const [course, setCourse] = useState("Personal");
     const [due, setDue] = useState("");
+    const [dueTime, setDueTime] = useState("");
     const [start, setStart] = useState("");
     const [notes, setNotes] = useState("");
 
     useEffect(() => {
         if (isOpen) {
             setDue(defaultDue ?? "");
+            setDueTime("");
         }
     }, [isOpen, defaultDue]);
 
@@ -45,6 +49,7 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
             course,
             due,
             completed: false,
+            ...resolveDueTime(due, dueTime),
         };
 
         onAddTask(newTask, start, notes);
@@ -52,6 +57,7 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
         setName("");
         setCourse("Personal");
         setDue("");
+        setDueTime("");
         setStart("");
         setNotes("");
 
@@ -99,6 +105,8 @@ return (
                     className = "w-full rounded bg-slate-800 px-3 py-2"
                 />
             </div>
+
+            <DueTimeField value={dueTime} onChange={setDueTime} />
 
             <StartDateField value={start} onChange={setStart} />
 

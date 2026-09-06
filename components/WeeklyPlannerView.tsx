@@ -867,6 +867,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 isOpen = {selectedTask !== null}
                 startDate = {taskCustomizations[selectedTask?.id ?? ""]?.startAt ?? ""}
                 notes = {taskCustomizations[selectedTask?.id ?? ""]?.notes ?? ""}
+                estimatedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
                 courses = {courses}
                 onCourseCreated = {handleCourseCreated}
                 onClose = {() => setSelectedTask(null)}
@@ -960,7 +961,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                             {tasksForActiveWeek.map((task) => {
                                 const taskState = taskStates[task.id];
                                 const estimate = taskPlanning[task.id];
-                                const priority = getTaskPriority(task, estimate?.importance);
                                 const { gridColumn, endInsetPercent } = calculateGridSpan(
                                     {
                                         dueDate: task.due,
@@ -983,7 +983,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         completed = {taskStates[task.id]?.completed ?? false}
                                         completedAt = {taskStates[task.id]?.completedAt ?? null}
                                         estimatedMinutes = {estimate?.estimatedMinutes}
-                                        priority = {priority}
                                         isFocused={task.id === activeFocusTaskId}
                                         onToggleComplete = {() => handleToggleComplete(task, estimate?.estimatedMinutes)}
                                         onDelete = {handleDelete}

@@ -4,7 +4,9 @@ import React, {useState, useEffect} from "react";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import StartDateField from "./StartDateField";
+import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
+import {resolveDueTime, formatTimeInputValue, formatEstimatedMinutes} from "@/lib/utils";
 
 type EditTaskModalProps = {
     task: Assignment | null;
@@ -12,6 +14,7 @@ type EditTaskModalProps = {
     startDate: string;
     notes: string;
     courses: Course[];
+    estimatedMinutes?: number;
     onCourseCreated: (course: Course) => void;
     onClose: () => void;
     onSaveTask: (updatedTask: Assignment, startDate: string, notes: string) => void;
@@ -24,6 +27,7 @@ export default function EditTaskModal({
     startDate,
     notes: initialNotes,
     courses,
+    estimatedMinutes,
     onCourseCreated,
     onClose,
     onSaveTask,
@@ -32,6 +36,7 @@ export default function EditTaskModal({
     const [name, setName] = useState("");
     const [course, setCourse] = useState("");
     const [due, setDue] = useState("");
+    const [dueTime, setDueTime] = useState("");
     const [start, setStart] = useState("");
     const [notes, setNotes] = useState("");
 
@@ -40,6 +45,7 @@ export default function EditTaskModal({
             setName(task.name || "");
             setCourse(task.course || "");
             setDue(task.due || "");
+            setDueTime(formatTimeInputValue(task.dueAt));
             setStart(startDate || "");
             setNotes(initialNotes || "");
         }
@@ -59,6 +65,7 @@ export default function EditTaskModal({
             name,
             course,
             due,
+            ...resolveDueTime(due, dueTime),
         }, start, notes);
 
         onClose();
@@ -98,7 +105,7 @@ export default function EditTaskModal({
                             className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
                         />
                     </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3">
             <CourseSelect
               courses={courses}
               value={course}
@@ -118,8 +125,17 @@ export default function EditTaskModal({
               />
             </div>
 
+            <DueTimeField value={dueTime} onChange={setDueTime} />
+
             <StartDateField value={start} onChange={setStart} />
           </div>
+
+          {typeof estimatedMinutes === "number" && (
+            <p className="text-xs text-slate-400">
+              <span className="font-semibold text-slate-300">Estimated time:</span>{" "}
+              {formatEstimatedMinutes(estimatedMinutes)}
+            </p>
+          )}
 
           {startAfterDue && (
             <p className="text-xs font-medium text-rose-400">

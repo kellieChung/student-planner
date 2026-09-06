@@ -17,6 +17,16 @@ export type GridSpan = {
     endInsetPercent: number;
 };
 
+// Cap how much of a bar the due-time inset can hide, so an early-in-the-day
+// due time on a single-day task doesn't shrink the bar to an unreadable
+// sliver — every bar keeps at least 60% of its column's width, even though
+// that's less than a strictly time-proportional inset would allow. This is
+// a floor, not a perfect fix: two due times whose raw insets both land
+// above the cap (e.g. two times close together, both earlier in the day)
+// will still look similar once both get clamped to it — only times spread
+// further apart across the day are guaranteed a visibly different length.
+const MAX_END_INSET_PERCENT = 40;
+
 export function calculateGridSpan(
     task: TaskSpanInput,
     weekStartDate: Date
@@ -52,7 +62,7 @@ export function calculateGridSpan(
 
         return {
             gridColumn: `${dueColumn} / ${dueColumn + 1}`,
-            endInsetPercent: (1 - dueFraction) * 100,
+            endInsetPercent: Math.min(MAX_END_INSET_PERCENT, (1 - dueFraction) * 100),
         };
     }
 
@@ -77,7 +87,10 @@ export function calculateGridSpan(
 
     return {
         gridColumn: `${startColumn} / ${endColumn}`,
-        endInsetPercent: ((1 - dueFraction) / columnsSpanned) * 100,
+        endInsetPercent: Math.min(
+            MAX_END_INSET_PERCENT,
+            ((1 - dueFraction) / columnsSpanned) * 100
+        ),
     };
 }
 
@@ -105,4 +118,43 @@ export function daysBetween(a: Date, b: Date): number {
     const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
 
     return Math.round((utcA - utcB) / (1000 * 60 * 60 * 24));
+}
+
+// Combines a "YYYY-MM-DD" due date with an optional "HH:MM" time-of-day
+// into the dueAt/dueFraction pair calculateGridSpan and AssignmentCard
+// expect. An empty time means "end of day" — the same default already
+// used when both fields are simply absent.
+export function resolveDueTime(
+    dueDateKey: string,
+    time: string
+): { dueAt: string | null; dueFraction: number | undefined } {
+    if (!time) {
+        return { dueAt: null, dueFraction: undefined };
+    }
+
+    const [hours, minutes] = time.split(":").map(Number);
+    const due = parseLocalDate(dueDateKey);
+    due.setHours(hours, minutes, 0, 0);
+
+    return {
+        dueAt: due.toISOString(),
+        dueFraction: (hours * 60 + minutes) / (24 * 60),
+    };
+}
+
+// Inverse of resolveDueTime's time component, for hydrating an
+// <input type="time"> from an existing dueAt. Absent dueAt (or a task
+// with no time-of-day) means "end of day" — represented as "".
+export function formatTimeInputValue(dueAt: string | null | undefined): string {
+    if (!dueAt) return "";
+
+    const date = new Date(dueAt);
+
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+export function formatEstimatedMinutes(minutes: number): string {
+    return minutes >= 60
+        ? `${Math.floor(minutes / 60)}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`
+        : `${minutes}m`;
 }
