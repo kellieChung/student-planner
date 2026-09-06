@@ -20,6 +20,12 @@ drag-grid planner UI alongside a Pomodoro timer and a YouTube-backed music
 player. Auth is Google OAuth via NextAuth v5 (beta), data lives in Postgres
 via Prisma 7.
 
+## Session Protocol
+- At the start of every session, read PROGRESS.md before doing anything else.
+- Before ending a session (or when the user says "wrap up" / "save progress"), 
+  update PROGRESS.md with: what changed, key decisions made, and current TODOs.
+- If context gets compacted mid-session, re-read PROGRESS.md afterward to recover anything lost.
+
 ## Conventions detected in this codebase
 
 - **Indentation is 4 spaces**, double-quoted strings, semicolons — this

@@ -4,6 +4,7 @@ import React, {useEffect, useMemo, useState} from "react";
 import {useRouter} from "next/navigation";
 import {calculateGridSpan, getTodayString, parseLocalDate} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
+import {Course} from "@/types/course";
 import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
 import ManageCoursesModal from "./ManageCoursesModal";
@@ -12,7 +13,7 @@ import {TaskState} from "@/types/taskState";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
-import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates} from "@/lib/taskPlanning";
+import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
 import {getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
@@ -53,12 +54,15 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [quickAddDueDate, setQuickAddDueDate] = useState<string | undefined>(undefined);
     const [isCourseManagerOpen, setIsCourseManagerOpen] = useState(false);
     const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
+    const [taskCustomizations, setTaskCustomizations] = useState<Record<string, { startAt: string; course: string; notes: string }>>({});
+    const [courses, setCourses] = useState<Course[]>([]);
     const [estimatingCount, setEstimatingCount] = useState(0);
     const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
     const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
@@ -84,11 +88,20 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         return {
             name: dayNames[index],
-            dateNumber: date.getDate()
+            dateNumber: date.getDate(),
+            dateKey: toDateKey(date)
         };
     });
 
-    const sortedTasks = [...tasks].sort((a,b) => {
+    const effectiveTasks = useMemo(
+        () => tasks.map((task) => {
+            const courseOverride = taskCustomizations[task.id]?.course;
+            return courseOverride ? { ...task, course: courseOverride } : task;
+        }),
+        [tasks, taskCustomizations]
+    );
+
+    const sortedTasks = [...effectiveTasks].sort((a,b) => {
         const aCompleted = taskStates[a.id]?.completed ?? false;
         const bCompleted = taskStates[b.id]?.completed ?? false;
 
@@ -120,8 +133,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const tasksWithoutDueDate = sortedTasks.filter((task) => !task.due);
 
     const openTasks = useMemo(
-        () => tasks.filter((task) => !(taskStates[task.id]?.completed ?? false)),
-        [tasks, taskStates]
+        () => effectiveTasks.filter((task) => !(taskStates[task.id]?.completed ?? false)),
+        [effectiveTasks, taskStates]
     );
 
     /*
@@ -167,12 +180,12 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const activeFocusTask = useMemo(() => {
         if (!activeFocusTaskId) return null;
 
-        const task = tasks.find((t) => t.id === activeFocusTaskId);
+        const task = effectiveTasks.find((t) => t.id === activeFocusTaskId);
         if (!task || taskStates[task.id]?.completed) return null;
 
         return { task, priority: computeTaskPriority(task) };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeFocusTaskId, tasks, taskStates, taskPlanning, procrastinationIndexByType]);
+    }, [activeFocusTaskId, effectiveTasks, taskStates, taskPlanning, procrastinationIndexByType]);
 
     useEffect(() => {
         if (activeFocusTaskId && !activeFocusTask) {
@@ -240,6 +253,22 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setActiveMonthStart(new Date(today.getFullYear(), today.getMonth(), 1));
     };
 
+    const refetchCourses = async () => {
+        try {
+            const response = await fetch("/api/courses");
+            if (!response.ok) return;
+
+            const data = await response.json() as { courses: Course[] };
+            setCourses(data.courses ?? []);
+        } catch (error) {
+            console.error("Could not load courses", error);
+        }
+    };
+
+    const handleCourseCreated = (course: Course) => {
+        setCourses((current) => [...current, course]);
+    };
+
     useEffect(() => {
         const storedTasks = localStorage.getItem("custom_tasks");
         const savedStates = getTaskStates();
@@ -276,6 +305,38 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         );
 
         setTasks(visibleTasks);
+
+        const loadCustomizations = async () => {
+            try {
+                const response = await fetch("/api/task-customizations");
+                if (!response.ok) return;
+
+                const data = await response.json() as {
+                    customizations: Array<{
+                        taskId: string;
+                        startAt: string | null;
+                        course: string | null;
+                        notes: string | null;
+                    }>;
+                };
+
+                const next: Record<string, { startAt: string; course: string; notes: string }> = {};
+                for (const customization of data.customizations) {
+                    next[customization.taskId] = {
+                        startAt: customization.startAt ?? "",
+                        course: customization.course ?? "",
+                        notes: customization.notes ?? "",
+                    };
+                }
+
+                setTaskCustomizations(next);
+            } catch (error) {
+                console.error("Could not load task customizations", error);
+            }
+        };
+
+        void loadCustomizations();
+        void refetchCourses();
     }, [assignments]);
 
     const updateTheme = (nextTheme: "dark" | "light") => {
@@ -304,9 +365,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     }, [isSettingsOpen]);
 
     useEffect(() => {
-        const tasksNeedingEstimates = tasks.filter((task) =>
-            taskPlanning[task.id]?.signature !== getTaskSignature(task)
-        );
+        const tasksNeedingEstimates = selectTasksNeedingEstimates(tasks, taskPlanning);
 
         if (tasksNeedingEstimates.length === 0) return;
 
@@ -524,7 +583,29 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         }
 
     }
-    const handleAddTask = (newTask: Assignment) => {
+    const persistCustomization = (
+        taskId: string,
+        updates: { startAt: string; course: string; notes: string }
+    ) => {
+        setTaskCustomizations((current) => ({
+            ...current,
+            [taskId]: updates,
+        }));
+
+        fetch(`/api/task-customizations/${taskId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                startAt: updates.startAt || null,
+                course: updates.course || null,
+                notes: updates.notes || null,
+            }),
+        }).catch((error) => {
+            console.error("Could not save task customization", error);
+        });
+    };
+
+    const handleAddTask = (newTask: Assignment, startDate: string, notes: string) => {
         const updatedTasks = [
             ...tasks,
             newTask
@@ -539,7 +620,21 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             "custom_tasks",
             JSON.stringify(customTasks)
         )
+
+        if (startDate || notes) {
+            persistCustomization(newTask.id, { startAt: startDate, course: "", notes });
+        }
     }
+
+    const openAddTask = () => {
+        setQuickAddDueDate(undefined);
+        setIsModalOpen(true);
+    };
+
+    const openAddTaskForDate = (dateKey: string) => {
+        setQuickAddDueDate(dateKey);
+        setIsModalOpen(true);
+    };
 
     const handleDelete = (id:string) => {
         const updatedTasks = tasks.filter(
@@ -561,7 +656,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         )
     }
 
-    const handleSaveTask = (updatedTask: Assignment) => {
+    const handleSaveTask = (updatedTask: Assignment, startDate: string, notes: string) => {
         const updatedTasks = tasks.map((task) =>
             task.id === updatedTask.id ? updatedTask : task
         );
@@ -574,7 +669,36 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         localStorage.setItem("custom_tasks", JSON.stringify(customTasks));
 
+        // Custom tasks already keep their edited course on the localStorage
+        // object above; only Canvas-synced tasks need a course override.
+        const isCustomTask = updatedTask.id.startsWith("custom-");
+        const current = taskCustomizations[updatedTask.id];
+        const rawTask = tasks.find((task) => task.id === updatedTask.id);
 
+        // Only freeze a course override when the user actually picked a
+        // different course than what's currently shown — otherwise saving
+        // for an unrelated reason (a note, a start date) would silently
+        // pin this task's course, so it stops tracking future renames of
+        // whatever course it naturally belongs to.
+        const previousEffectiveCourse = current?.course || rawTask?.course || "";
+        const courseOverride = isCustomTask
+            ? ""
+            : updatedTask.course !== previousEffectiveCourse
+                ? updatedTask.course
+                : (current?.course ?? "");
+
+        const changed =
+            (current?.startAt ?? "") !== startDate ||
+            (current?.notes ?? "") !== notes ||
+            (current?.course ?? "") !== courseOverride;
+
+        if (changed) {
+            persistCustomization(updatedTask.id, {
+                startAt: startDate,
+                course: courseOverride,
+                notes,
+            });
+        }
     }
 
     return (
@@ -582,7 +706,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                     <button
-                        onClick = {() => setIsModalOpen(true)}
+                        onClick = {openAddTask}
                         className = "bg-blue-600 px-4 py-2 rounded"
                     >
                         + Add Task
@@ -687,6 +811,9 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
             <AddTaskModal
                 isOpen = {isModalOpen}
+                defaultDue = {quickAddDueDate}
+                courses = {courses}
+                onCourseCreated = {handleCourseCreated}
                 onClose = {() => setIsModalOpen(false)}
                 onAddTask = {handleAddTask}
             />
@@ -694,7 +821,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             <ManageCoursesModal
                 isOpen={isCourseManagerOpen}
                 onClose={() => setIsCourseManagerOpen(false)}
-                onChanged={() => router.refresh()}
+                onChanged={() => {
+                    router.refresh();
+                    void refetchCourses();
+                }}
             />
 
             <div className="grid gap-6 lg:grid-cols-2">
@@ -718,6 +848,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             <EditTaskModal
                 task = {selectedTask}
                 isOpen = {selectedTask !== null}
+                startDate = {taskCustomizations[selectedTask?.id ?? ""]?.startAt ?? ""}
+                notes = {taskCustomizations[selectedTask?.id ?? ""]?.notes ?? ""}
+                courses = {courses}
+                onCourseCreated = {handleCourseCreated}
                 onClose = {() => setSelectedTask(null)}
                 onSaveTask = {handleSaveTask}
                 onDeleteTask = {handleDelete}
@@ -782,9 +916,18 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 <>
                     <div className = "grid grid-cols-7 gap-2 border-b border-slate-800 pb-4 mb-4 text-center">
                         {days.map((day, idx) => (
-                            <div key={idx} className = "flex flex-col items-center">
+                            <div key={idx} className = "flex flex-col items-center gap-1">
                                 <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">{day.name}</span>
                                 <span className = "text-base font-semibold text-slate-200 mt-1">{day.dateNumber}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => openAddTaskForDate(day.dateKey)}
+                                    className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 text-xs leading-none text-slate-400 transition-colors hover:border-indigo-500 hover:bg-indigo-600/20 hover:text-white"
+                                    aria-label={`Add task due ${day.dateKey}`}
+                                    title="Add task due this day"
+                                >
+                                    +
+                                </button>
                             </div>
                         ))}
                     </div>
@@ -802,7 +945,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                 const estimate = taskPlanning[task.id];
                                 const priority = getTaskPriority(task, estimate?.importance);
                                 const gridSpan = calculateGridSpan(
-                                    { dueDate: task.due, startDate: taskState?.completedAt ?? undefined },
+                                    { dueDate: task.due, startDate: taskCustomizations[task.id]?.startAt || taskState?.completedAt || undefined },
                                     activeWeekStart
                                 );
 
@@ -844,8 +987,19 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                             const isToday = dateKey === getTodayString();
 
                             return (
-                                <div key={dateKey} className={`min-h-28 rounded-lg border p-1.5 ${isCurrentMonth ? "border-slate-800 bg-slate-900/50" : "border-slate-900 bg-slate-950/40 text-slate-600"}`}>
-                                    <div className={`mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${isToday ? "bg-indigo-600 text-white" : ""}`}>{date.getDate()}</div>
+                                <div key={dateKey} className={`group relative min-h-28 rounded-lg border p-1.5 ${isCurrentMonth ? "border-slate-800 bg-slate-900/50" : "border-slate-900 bg-slate-950/40 text-slate-600"}`}>
+                                    <div className="mb-1 flex items-center justify-between">
+                                        <div className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${isToday ? "bg-indigo-600 text-white" : ""}`}>{date.getDate()}</div>
+                                        <button
+                                            type="button"
+                                            onClick={() => openAddTaskForDate(dateKey)}
+                                            className="rounded px-1 text-xs leading-none text-slate-400 opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"
+                                            aria-label={`Add task due ${dateKey}`}
+                                            title="Add task due this day"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
                                     <div className="space-y-1">
                                         {dayTasks.slice(0, 3).map((task) => {
                                             const completed = taskStates[task.id]?.completed ?? false;

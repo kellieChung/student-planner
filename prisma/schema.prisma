@@ -21,6 +21,7 @@ model User {
   discussions       Discussion[]
   announcements     Announcement[]
   musicPlaylists MusicPlaylist[]
+  taskCustomizations TaskCustomization[]
 }
 
 model Account {
@@ -70,6 +71,10 @@ model CanvasCourse {
   // User-controlled: hide a course Canvas still reports as active (e.g. a
   // teacher never concluded it) without it reappearing on the next sync.
   hidden          Boolean  @default(false)
+  // User rename override — sync (app/api/canvas/sync/route.ts) always
+  // overwrites `name` from Canvas, so a rename has to live in a column
+  // sync never touches, same reasoning as `hidden` above.
+  displayName     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -142,6 +147,28 @@ model Announcement {
   course          CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, canvasId])
+  @@index([userId])
+}
+
+model TaskCustomization {
+  id        String    @id @default(cuid())
+  // Free-form task id: either a Canvas-synced Assignment.id or a client-
+  // generated "custom-<timestamp>" id. Not a foreign key — custom tasks
+  // have no DB row of their own, so ownership is enforced purely by
+  // scoping every query by userId, same as everywhere else in this file.
+  taskId    String
+  startAt   DateTime?
+  // Only meaningfully set for Canvas-synced tasks — custom tasks already
+  // store their own course directly on their localStorage object.
+  course    String?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
   @@index([userId])
 }
 

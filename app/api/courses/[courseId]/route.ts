@@ -51,26 +51,65 @@ export async function PATCH(
         );
     }
 
-    const body = await request.json();
+    let body: unknown;
+    try {
+        body = await request.json();
+    } catch {
+        return NextResponse.json(
+            { error: "Invalid JSON body." },
+            { status: 400 }
+        );
+    }
 
-    if (typeof body.hidden !== "boolean") {
+    const { hidden, name } = body as { hidden?: unknown; name?: unknown };
+
+    if (hidden === undefined && name === undefined) {
+        return NextResponse.json(
+            { error: "Provide 'hidden' and/or 'name' to update." },
+            { status: 400 }
+        );
+    }
+
+    if (hidden !== undefined && typeof hidden !== "boolean") {
         return NextResponse.json(
             { error: "'hidden' must be a boolean." },
             { status: 400 }
         );
     }
 
+    if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+        return NextResponse.json(
+            { error: "'name' must be a non-empty string." },
+            { status: 400 }
+        );
+    }
+
+    const data: { hidden?: boolean; displayName?: string } = {};
+    if (hidden !== undefined) data.hidden = hidden as boolean;
+    // Rename only ever touches displayName — the canonical `name` column
+    // is owned by Canvas sync and would revert this on the next sync.
+    if (name !== undefined) data.displayName = (name as string).trim();
+
     const course = await prisma.canvasCourse.update({
         where: { id: courseId },
-        data: { hidden: body.hidden },
+        data,
         select: {
             id: true,
             name: true,
+            displayName: true,
             hidden: true,
+            canvasOrigin: true,
         },
     });
 
-    return NextResponse.json({ course });
+    return NextResponse.json({
+        course: {
+            id: course.id,
+            name: course.displayName ?? course.name,
+            hidden: course.hidden,
+            isCustom: course.canvasOrigin === "custom",
+        },
+    });
 }
 
 export async function DELETE(

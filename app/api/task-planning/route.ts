@@ -128,7 +128,13 @@ export async function POST(request: Request) {
         tasks =
             Array.isArray(body.tasks)
                 ? body.tasks
-                    .slice(0, 40)
+                    // Defensive upper bound on request size, not the real
+                    // policy — the client already scopes/caps which tasks
+                    // it sends (lib/taskPlanning.ts's
+                    // selectTasksNeedingEstimates, capped at 60). This just
+                    // needs to stay above that cap so a legitimate request
+                    // never gets silently truncated back down.
+                    .slice(0, 75)
                     .filter(
                         (task): task is PlanningTask =>
                             typeof task === "object" &&

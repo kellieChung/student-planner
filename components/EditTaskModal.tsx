@@ -2,18 +2,29 @@
 
 import React, {useState, useEffect} from "react";
 import {Assignment} from "@/types/assignment";
+import {Course} from "@/types/course";
+import StartDateField from "./StartDateField";
+import CourseSelect from "./CourseSelect";
 
 type EditTaskModalProps = {
     task: Assignment | null;
     isOpen: boolean;
+    startDate: string;
+    notes: string;
+    courses: Course[];
+    onCourseCreated: (course: Course) => void;
     onClose: () => void;
-    onSaveTask: (updatedTask: Assignment) => void;
+    onSaveTask: (updatedTask: Assignment, startDate: string, notes: string) => void;
     onDeleteTask: (id:string) => void;
 };
 
 export default function EditTaskModal({
     task,
     isOpen,
+    startDate,
+    notes: initialNotes,
+    courses,
+    onCourseCreated,
     onClose,
     onSaveTask,
     onDeleteTask,
@@ -21,27 +32,34 @@ export default function EditTaskModal({
     const [name, setName] = useState("");
     const [course, setCourse] = useState("");
     const [due, setDue] = useState("");
+    const [start, setStart] = useState("");
+    const [notes, setNotes] = useState("");
 
     useEffect(() => {
         if (task) {
             setName(task.name || "");
             setCourse(task.course || "");
             setDue(task.due || "");
+            setStart(startDate || "");
+            setNotes(initialNotes || "");
         }
-    }, [task]);
+    }, [task, startDate, initialNotes]);
 
     if (!isOpen ||!task) return null;
+
+    const startAfterDue = Boolean(start && due && start > due);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if(!name) return;
+        if (startAfterDue) return;
 
         onSaveTask({
             ...task,
             name,
             course,
             due,
-        });
+        }, start, notes);
 
         onClose();
     };
@@ -80,18 +98,13 @@ export default function EditTaskModal({
                             className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
                         />
                     </div>
-                <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-                Course / Category
-              </label>
-              <input
-                type="text"
-                value={course}
-                onChange={(e) => setCourse(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-              />
-            </div>
+                <div className="grid grid-cols-3 gap-3">
+            <CourseSelect
+              courses={courses}
+              value={course}
+              onChange={setCourse}
+              onCourseCreated={onCourseCreated}
+            />
 
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
@@ -104,8 +117,29 @@ export default function EditTaskModal({
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 color-scheme-dark"
               />
             </div>
+
+            <StartDateField value={start} onChange={setStart} />
           </div>
-          
+
+          {startAfterDue && (
+            <p className="text-xs font-medium text-rose-400">
+              Start date can&apos;t be after the due date.
+            </p>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+              Notes
+            </label>
+            <textarea
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Add any notes about this task..."
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+            />
+          </div>
+
           <div className="flex justify-between items-center mt-4 pt-4 border-t border-slate-800">
             <button
               type="button"
@@ -128,7 +162,8 @@ export default function EditTaskModal({
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-950"
+                disabled={startAfterDue}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-950 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Save Changes
               </button>
