@@ -139,7 +139,10 @@ export default function AssignmentCard({
 
                 <div className="min-w-0">
 
-                    <span className={`inline-block max-w-[70px] truncate align-bottom text-[9px] font-bold uppercase tracking-wider px-1 py-0 rounded border text-[#fff] ${courseColor}`}>
+                    {/* Fixed size so every badge looks the same regardless
+                        of card width; max-w-full only lets it truncate on
+                        cards too narrow to fit the label at all. */}
+                    <span className={`inline-block max-w-full truncate align-bottom leading-none text-[10px] font-bold uppercase tracking-wider px-1.5 py-1 rounded border text-[#fff] ${courseColor}`}>
                         {course}
                     </span>
 
