@@ -5,8 +5,13 @@ import { analyzeAnnouncements } from "@/lib/ai/analyzeAnnouncement";
 import { findDuplicateTasks } from "@/lib/ai/findDuplicateTask";
 import { Announcement } from "@/types/announcement";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
+import { getStartOfWeek, parseLocalDate } from "@/lib/utils";
 
-const ANNOUNCEMENT_BUFFER_DAYS = 5;
+// Days before the (Sunday) start of the current week that the window
+// reaches back to — 4 days before a Sunday lands on the Wednesday of the
+// prior week, matching how far in advance courses typically post an
+// announcement about the coming week's work.
+const ANNOUNCEMENT_BUFFER_DAYS = 4;
 
 // Announcements analyzed per Ollama call. Each call resends the full
 // instructional rules regardless of batch size, so batching cuts that
@@ -15,59 +20,63 @@ const ANNOUNCEMENT_BATCH_SIZE = 5;
 const OLLAMA_CONCURRENCY = 2;
 
 /**
- * Returns the Monday at the beginning of the current
- * calendar week, using the user's local date.
- */
-function getStartOfCurrentWeek(): Date {
-    const now = new Date();
-
-    const start = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate()
-    );
-
-    const day = start.getDay();
-
-    // Sunday = 0, Monday = 1, ..., Saturday = 6
-    const daysSinceMonday =
-        day === 0 ? 6 : day - 1;
-
-    start.setDate(
-        start.getDate() - daysSinceMonday
-    );
-
-    start.setHours(0, 0, 0, 0);
-
-    return start;
-}
-
-/**
- * Automatic announcement window:
+ * Resolves the announcement date window. Given valid `from`/`to`
+ * (YYYY-MM-DD), uses that range verbatim (whole-day inclusive). Otherwise
+ * reproduces the default automatic window:
  *
- * 5 days before Monday
- * through the end of Sunday.
+ * 4 days before the (Sunday) start of the current week — i.e. the
+ * Wednesday of the prior week — through the end of Saturday.
  *
  * Example:
  *
- * Current week:
- * Monday Aug 24
+ * Current week (Sunday-start, matching WeeklyPlannerView's own
+ * "This week" — see lib/utils.ts's getStartOfWeek):
  * Sunday Aug 30
+ * Saturday Sep 5
  *
- * Analysis window:
- * Wednesday Aug 19
- * through Sunday Aug 30
+ * Default window:
+ * Wednesday Aug 26
+ * through Saturday Sep 5
+ *
+ * Previously anchored to a Monday-start week instead — silently
+ * disagreeing with the rest of the app (the planner grid itself is
+ * Sunday-start) about which week is "current." Worst case was exactly
+ * "today," a Sunday: a Monday-start week containing that Sunday is the
+ * week that had *just ended*, not the one the planner was showing as
+ * current, so the whole window pointed at the wrong 7-12 days. Fixed by
+ * sharing lib/utils.ts's getStartOfWeek() instead of re-deriving "start of
+ * week" a second, disagreeing way.
+ *
+ * `from`/`to` are parsed with lib/utils.ts's `parseLocalDate`, not
+ * `new Date(str)` — the latter is UTC-based and would shift the boundary
+ * by the server's local offset, silently mis-including/excluding
+ * announcements right at the edge of the range.
  */
-function isInAutomaticAnnouncementWindow(
-    postedAt: string
-): boolean {
-    const postedTime = new Date(postedAt).getTime();
+function resolveAnnouncementWindow(
+    from: string | null,
+    to: string | null
+): { windowStart: Date; windowEnd: Date; isDefaultRange: boolean } {
+    if (from && to) {
+        const windowStart = parseLocalDate(from);
+        windowStart.setHours(0, 0, 0, 0);
 
-    if (Number.isNaN(postedTime)) {
-        return false;
+        const windowEnd = parseLocalDate(to);
+        windowEnd.setHours(23, 59, 59, 999);
+
+        if (
+            !Number.isNaN(windowStart.getTime()) &&
+            !Number.isNaN(windowEnd.getTime()) &&
+            windowStart.getTime() <= windowEnd.getTime()
+        ) {
+            return { windowStart, windowEnd, isDefaultRange: false };
+        }
+
+        // Malformed/inverted range — fall through to the default rather
+        // than 400ing; the only caller is this app's own UI, so a bad
+        // value here is a defensive case, not a real input boundary.
     }
 
-    const weekStart = getStartOfCurrentWeek();
+    const weekStart = getStartOfWeek();
 
     const windowStart = new Date(weekStart);
 
@@ -78,22 +87,36 @@ function isInAutomaticAnnouncementWindow(
 
     windowStart.setHours(0, 0, 0, 0);
 
-    const weekEnd = new Date(weekStart);
+    const windowEnd = new Date(weekStart);
 
-    weekEnd.setDate(
-        weekEnd.getDate() + 6
+    windowEnd.setDate(
+        windowEnd.getDate() + 6
     );
 
-    weekEnd.setHours(
+    windowEnd.setHours(
         23,
         59,
         59,
         999
     );
 
+    return { windowStart, windowEnd, isDefaultRange: true };
+}
+
+function isWithinRange(
+    postedAt: string,
+    windowStart: Date,
+    windowEnd: Date
+): boolean {
+    const postedTime = new Date(postedAt).getTime();
+
+    if (Number.isNaN(postedTime)) {
+        return false;
+    }
+
     return (
         postedTime >= windowStart.getTime() &&
-        postedTime <= weekEnd.getTime()
+        postedTime <= windowEnd.getTime()
     );
 }
 
@@ -178,12 +201,16 @@ export async function POST(
         }
 
         // --------------------------------------------------
-        // 3. Read optional custom selection
+        // 3. Read optional custom selection / range / dry-run flag
         // --------------------------------------------------
 
         let selectedAnnouncementIds:
             | string[]
             | null = null;
+
+        let dryRun = false;
+        let rangeFrom: string | null = null;
+        let rangeTo: string | null = null;
 
         try {
             const body =
@@ -203,8 +230,20 @@ export async function POST(
                             "string"
                     );
             }
+
+            if (body?.dryRun === true) {
+                dryRun = true;
+            }
+
+            if (
+                typeof body?.from === "string" &&
+                typeof body?.to === "string"
+            ) {
+                rangeFrom = body.from;
+                rangeTo = body.to;
+            }
         } catch {
-            // No body = automatic mode.
+            // No body = automatic mode, default range.
         }
 
         const isCustomSelection =
@@ -241,6 +280,7 @@ export async function POST(
                             announcement.message ??
                             "",
                         course:
+                            course.displayName ??
                             course.name,
                         postedAt:
                             announcement.postedAt
@@ -255,6 +295,14 @@ export async function POST(
         // --------------------------------------------------
 
         let announcements: Announcement[];
+
+        // Populated in the automatic-mode branch below; stays null for
+        // custom selection (no date window applies there). Carried through
+        // to the dry-run short-circuit and the final response's `filtering`
+        // field.
+        let resolvedWindow:
+            | { windowStart: Date; windowEnd: Date; isDefaultRange: boolean }
+            | null = null;
 
         if (isCustomSelection) {
             // ----------------------------------------------
@@ -278,14 +326,19 @@ export async function POST(
             // ----------------------------------------------
             // AUTOMATIC MODE
             //
-            // Current week + 5-day early buffer.
+            // Defaults to the current week + 5-day early buffer; a
+            // caller-supplied from/to range (see step 3) overrides it.
             // ----------------------------------------------
+
+            resolvedWindow = resolveAnnouncementWindow(rangeFrom, rangeTo);
 
             announcements =
                 allAnnouncements.filter(
                     (announcement) =>
-                        isInAutomaticAnnouncementWindow(
-                            announcement.postedAt
+                        isWithinRange(
+                            announcement.postedAt,
+                            resolvedWindow!.windowStart,
+                            resolvedWindow!.windowEnd
                         )
                 );
 
@@ -293,23 +346,8 @@ export async function POST(
                 `🤖 Automatic announcement filter: ${announcements.length}/${allAnnouncements.length} selected`
             );
 
-            const weekStart =
-                getStartOfCurrentWeek();
-
-            const windowStart =
-                new Date(weekStart);
-
-            windowStart.setDate(
-                windowStart.getDate() -
-                    ANNOUNCEMENT_BUFFER_DAYS
-            );
-
             console.log(
-                `📅 Automatic window: ${windowStart.toLocaleDateString()} → ${new Date(
-                    weekStart.getFullYear(),
-                    weekStart.getMonth(),
-                    weekStart.getDate() + 6
-                ).toLocaleDateString()}`
+                `📅 Window (${resolvedWindow.isDefaultRange ? "default" : "custom"}): ${resolvedWindow.windowStart.toLocaleDateString()} → ${resolvedWindow.windowEnd.toLocaleDateString()}`
             );
         }
 
@@ -332,6 +370,41 @@ export async function POST(
         });
 
         // --------------------------------------------------
+        // 7b. Dry run — preview the count/list with zero AI cost
+        // --------------------------------------------------
+
+        if (dryRun) {
+            return NextResponse.json({
+                success: true,
+                dryRun: true,
+
+                announcementCount: announcements.length,
+                totalAnnouncementCount: allAnnouncements.length,
+
+                filtering: {
+                    mode: isCustomSelection ? "custom" : "automatic",
+                    bufferDays: ANNOUNCEMENT_BUFFER_DAYS,
+                    rangeStart: resolvedWindow?.windowStart.toISOString() ?? null,
+                    rangeEnd: resolvedWindow?.windowEnd.toISOString() ?? null,
+                    isDefaultRange: resolvedWindow?.isDefaultRange ?? null,
+                },
+
+                results: [],
+
+                // Slim on purpose — no `message` — a count/list preview
+                // doesn't need full announcement bodies, and shipping them
+                // on every preset change works against the point of a dry
+                // run (minimizing load, not just AI cost).
+                preview: announcements.map((announcement) => ({
+                    id: announcement.id,
+                    title: announcement.title,
+                    course: announcement.course,
+                    postedAt: announcement.postedAt,
+                })),
+            });
+        }
+
+        // --------------------------------------------------
         // 8. Analyze announcements
         // --------------------------------------------------
 
@@ -346,8 +419,12 @@ export async function POST(
         }
 
         function nearbyAssignmentsFor(announcement: Announcement) {
+            // announcement.course is the resolved display name (step 5
+            // above), not the raw Canvas name — join on the same
+            // resolution so this still finds the right course once a
+            // displayName override is set.
             const course = courses.find(
-                (course) => course.name === announcement.course
+                (course) => (course.displayName ?? course.name) === announcement.course
             );
 
             const courseAssignments = course?.assignments ?? [];
@@ -401,10 +478,58 @@ export async function POST(
                     }));
                 }
 
-                return Promise.all(
-                    batch.map(async (announcement, i) => {
-                        const proposedTasks =
-                            proposedTasksByAnnouncement[i];
+                // Suggestions already accepted/rejected shouldn't
+                // resurface on a later automatic-mode run. Custom mode
+                // (an explicit re-selection of these announcements)
+                // still shows them — the user asked to re-review.
+                // Skipped for the duplicate check too, saving that
+                // second Ollama call's cost.
+                let alreadyDecidedKeys = new Set<string>();
+
+                if (!isCustomSelection) {
+                    const reviews =
+                        await prisma.announcementSuggestionReview.findMany({
+                            where: {
+                                userId: user.id,
+                                sourceAnnouncementId: {
+                                    in: batch.map((a) => a.id),
+                                },
+                            },
+                            select: {
+                                sourceAnnouncementId: true,
+                                suggestionKey: true,
+                            },
+                        });
+
+                    alreadyDecidedKeys = new Set(
+                        reviews.map(
+                            (r) => `${r.sourceAnnouncementId}::${r.suggestionKey}`
+                        )
+                    );
+                }
+
+                // Bounded to 1: each batch worker's duplicate checks run
+                // strictly one-at-a-time, so combined with the outer
+                // mapWithConcurrency's OLLAMA_CONCURRENCY cap on concurrent
+                // batches, total concurrent local Ollama duplicate-check
+                // calls across the whole request stay at OLLAMA_CONCURRENCY
+                // — previously unbounded here (up to
+                // ANNOUNCEMENT_BATCH_SIZE per batch on top of
+                // OLLAMA_CONCURRENCY concurrent batches), which is what was
+                // overloading the local Ollama server and causing the
+                // duplicate-check timeouts.
+                return mapWithConcurrency(
+                    batch.map((announcement, i) => ({ announcement, i })),
+                    1,
+                    async ({ announcement, i }) => {
+                        const proposedTasks = proposedTasksByAnnouncement[
+                            i
+                        ].filter(
+                            (task) =>
+                                !alreadyDecidedKeys.has(
+                                    `${task.sourceAnnouncementId}::${task.suggestionKey}`
+                                )
+                        );
 
                         const nearbyAssignments =
                             nearbyAssignmentsFor(announcement);
@@ -441,14 +566,19 @@ export async function POST(
                                         duplicateCheck
                                     );
 
+                                    const status =
+                                        duplicateCheck.checkStatus === "degraded"
+                                            ? "unavailable"
+                                            : duplicateCheck.isDuplicate
+                                            ? duplicateCheck.confidence === "high"
+                                                ? "definite"
+                                                : "possible"
+                                            : "none";
+
                                     return {
                                         ...task,
                                         canvasMatch: {
-                                            status: duplicateCheck.isDuplicate
-                                                ? duplicateCheck.confidence === "high"
-                                                    ? "definite"
-                                                    : "possible"
-                                                : "none",
+                                            status,
                                             assignmentId:
                                                 duplicateCheck.matchingAssignmentId,
                                             reason: duplicateCheck.reason,
@@ -468,7 +598,7 @@ export async function POST(
                             tasksWithDuplicates = proposedTasks.map((task) => ({
                                 ...task,
                                 canvasMatch: {
-                                    status: "none",
+                                    status: "unavailable",
                                     assignmentId: null,
                                     reason: "Duplicate checking failed.",
                                     assignment: null,
@@ -480,7 +610,7 @@ export async function POST(
                             announcement: toAnnouncementSummary(announcement),
                             tasks: tasksWithDuplicates,
                         };
-                    })
+                    }
                 );
             }
         );
@@ -507,6 +637,10 @@ export async function POST(
 
                 bufferDays:
                     ANNOUNCEMENT_BUFFER_DAYS,
+
+                rangeStart: resolvedWindow?.windowStart.toISOString() ?? null,
+                rangeEnd: resolvedWindow?.windowEnd.toISOString() ?? null,
+                isDefaultRange: resolvedWindow?.isDefaultRange ?? null,
             },
 
             results,

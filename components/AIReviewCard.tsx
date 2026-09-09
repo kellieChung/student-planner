@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
+import { stripHtmlForDisplay } from "@/lib/htmlText";
+import { findEvidenceRange } from "@/lib/evidenceHighlight";
+import { resolveDueTextToDate } from "@/lib/dueText";
 
 type AIReviewCardProps = {
     task: ProposedTask;
@@ -16,19 +19,54 @@ export default function AIReviewCard({
     onReject,
     onEdit,
 }: AIReviewCardProps) {
-    const [dueDate, setDueDate] = useState(
-        task.due ?? ""
-    );
+    const [dueDate, setDueDate] = useState(() => {
+        if (task.due) {
+            return task.due;
+        }
 
-    const hasMatch =
-        task.canvasMatch.status !== "none" &&
-        task.canvasMatch.assignment !== null;
+        if (task.dueText && task.sourceAnnouncement?.postedAt) {
+            return (
+                resolveDueTextToDate(
+                    task.dueText,
+                    new Date(task.sourceAnnouncement.postedAt)
+                ) ?? ""
+            );
+        }
+
+        return "";
+    });
 
     const matchIsDefinite =
         task.canvasMatch.status === "definite";
 
     const matchIsPossible =
         task.canvasMatch.status === "possible";
+
+    // A duplicate can be flagged (isDuplicate: true) without a resolvable
+    // Canvas assignment to point at — e.g. the AI's matchingAssignmentId
+    // didn't resolve. That still needs to render as a flagged result, not
+    // silently fall through to the "no duplicate" clean state the badge
+    // above would then contradict.
+    const isFlagged = matchIsDefinite || matchIsPossible;
+
+    const hasMatch = isFlagged && task.canvasMatch.assignment !== null;
+
+    const isFlaggedWithoutMatch = isFlagged && task.canvasMatch.assignment === null;
+
+    const checkUnavailable =
+        task.canvasMatch.status === "unavailable";
+
+    const announcementText = task.sourceAnnouncement
+        ? stripHtmlForDisplay(task.sourceAnnouncement.message)
+        : "";
+
+    const evidenceRange = task.evidence
+        ? findEvidenceRange(announcementText, task.evidence)
+        : null;
+
+    const assignmentDescription = task.canvasMatch.assignment?.description
+        ? stripHtmlForDisplay(task.canvasMatch.assignment.description)
+        : null;
 
     function handleAccept() {
         onAccept({
@@ -155,13 +193,35 @@ export default function AIReviewCard({
                                     }
                                 </p>
 
+                                <p className="mt-1 text-sm text-[var(--muted)]">
+                                    {
+                                        task
+                                            .sourceAnnouncement
+                                            .course
+                                    }
+                                </p>
+
                                 <div className="mt-4 max-h-80 overflow-y-auto pr-2">
                                     <p className="whitespace-pre-wrap text-sm leading-7">
-                                        {
-                                            task
-                                                .sourceAnnouncement
-                                                .message
-                                        }
+                                        {evidenceRange ? (
+                                            <>
+                                                {announcementText.slice(
+                                                    0,
+                                                    evidenceRange.start
+                                                )}
+                                                <mark className="rounded bg-[var(--accent-soft)] px-0.5 text-inherit">
+                                                    {announcementText.slice(
+                                                        evidenceRange.start,
+                                                        evidenceRange.end
+                                                    )}
+                                                </mark>
+                                                {announcementText.slice(
+                                                    evidenceRange.end
+                                                )}
+                                            </>
+                                        ) : (
+                                            announcementText
+                                        )}
                                     </p>
                                 </div>
                             </>
@@ -234,15 +294,9 @@ export default function AIReviewCard({
                                 }
                             </h3>
 
-                            {task.canvasMatch
-                                .assignment
-                                ?.description && (
+                            {assignmentDescription && (
                                 <p className="mt-2 max-h-40 overflow-y-auto text-sm leading-6 text-[var(--muted)]">
-                                    {
-                                        task.canvasMatch
-                                            .assignment
-                                            .description
-                                    }
+                                    {assignmentDescription}
                                 </p>
                             )}
 
@@ -258,6 +312,59 @@ export default function AIReviewCard({
                                     }
                                 </p>
                             )}
+                        </div>
+                    </div>
+                ) : isFlaggedWithoutMatch ? (
+                    <div className="rounded-2xl border border-amber-500/40 p-6">
+                        <div className="flex items-start gap-4">
+                            <span className="text-2xl">
+                                ⚠️
+                            </span>
+
+                            <div>
+                                <p className="font-semibold">
+                                    Possible duplicate
+                                </p>
+
+                                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                                    The AI flagged this task as a
+                                    possible duplicate but
+                                    couldn&apos;t point to a
+                                    specific Canvas assignment.
+                                </p>
+
+                                {task.canvasMatch.reason && (
+                                    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+                                        {task.canvasMatch.reason}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ) : checkUnavailable ? (
+                    <div className="rounded-2xl border border-[var(--border)] bg-[var(--muted)]/10 p-6">
+                        <div className="flex items-start gap-4">
+                            <span className="text-2xl">
+                                ❓
+                            </span>
+
+                            <div>
+                                <p className="font-semibold">
+                                    Duplicate check unavailable
+                                </p>
+
+                                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                                    The AI couldn&apos;t verify
+                                    this task against your
+                                    Canvas assignments.
+                                </p>
+
+                                {task.canvasMatch.reason && (
+                                    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
+                                        {task.canvasMatch.reason}
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 ) : (

@@ -8,8 +8,19 @@ export type ProposedTask = {
     sourceAnnouncementId: string;
     confidence: "high" | "medium" | "low";
 
+    // Stable content-derived identity for this suggestion (hash of
+    // sourceAnnouncementId + normalized name) — used to persist an
+    // accept/reject decision (AnnouncementSuggestionReview) since a
+    // ProposedTask itself has no id and a positional index isn't stable
+    // across re-extraction.
+    suggestionKey: string;
+
     canvasMatch: {
-        status: "none" | "possible" | "definite";
+        // "unavailable" means the duplicate check itself failed/degraded
+        // (timeout, malformed response, no nearby assignments to compare
+        // against) — distinct from "none", which means the AI genuinely
+        // checked and found no match.
+        status: "none" | "possible" | "definite" | "unavailable";
         assignmentId: string | null;
         reason: string;
 
