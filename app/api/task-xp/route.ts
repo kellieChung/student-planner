@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Assignment } from "@/types/assignment";
 import { XpAward } from "@/types/gamification";
 import { daysBetween } from "@/lib/utils";
+import { OLLAMA_CHAT_URL, OLLAMA_MODEL, OLLAMA_NUM_CTX } from "@/lib/ollamaConfig";
 
 const XP_VALUES = [10, 20, 35, 50, 75, 100];
 
@@ -97,15 +98,15 @@ export async function POST(request: Request) {
     }
 
     try {
-        const response = await fetch(`${process.env.OLLAMA_URL ?? "http://127.0.0.1:11434"}/api/chat`, {
+        const response = await fetch(OLLAMA_CHAT_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: AbortSignal.timeout(12_000),
             body: JSON.stringify({
-                model: process.env.OLLAMA_MODEL ?? "qwen2.5:3b-instruct",
+                model: OLLAMA_MODEL,
                 stream: false,
                 format: "json",
-                options: { temperature: 0.2 },
+                options: { temperature: 0.2, num_ctx: OLLAMA_NUM_CTX },
                 messages: [
                     {
                         role: "system",

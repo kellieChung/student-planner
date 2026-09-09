@@ -26,7 +26,19 @@ export async function GET() {
 
         const customizations = await prisma.taskCustomization.findMany({
             where: { userId: user.id },
-            select: { taskId: true, startAt: true, course: true, notes: true },
+            select: {
+                taskId: true,
+                startAt: true,
+                course: true,
+                nameOverride: true,
+                typeOverride: true,
+                dueAtOverride: true,
+                notes: true,
+                completed: true,
+                completedAt: true,
+                inProgress: true,
+                deleted: true,
+            },
         });
 
         return NextResponse.json({
@@ -37,7 +49,24 @@ export async function GET() {
                     ? customization.startAt.toISOString().slice(0, 10)
                     : null,
                 course: customization.course,
+                nameOverride: customization.nameOverride,
+                typeOverride: customization.typeOverride,
+                dueAtOverride: customization.dueAtOverride
+                    ? customization.dueAtOverride.toISOString()
+                    : null,
                 notes: customization.notes,
+                completed: customization.completed,
+                // Date-only, matching startAt above — WeeklyPlannerView.tsx
+                // feeds this into lib/utils.ts's parseLocalDate (a plain
+                // "YYYY-MM-DD" parser) as a startDate fallback for
+                // calculateGridSpan; a full ISO instant here produced NaN
+                // grid columns for every completed task with no explicit
+                // Start Date override.
+                completedAt: customization.completedAt
+                    ? customization.completedAt.toISOString().slice(0, 10)
+                    : null,
+                inProgress: customization.inProgress,
+                deleted: customization.deleted,
             })),
         });
     } catch (error) {

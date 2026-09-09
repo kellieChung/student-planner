@@ -1,29 +1,35 @@
 import { GamificationState } from "@/types/gamification";
 
-const STORAGE_KEY = "gamification_state";
-
 const defaultState: GamificationState = {
     totalXp: 0,
     awardedTaskIds: [],
 };
 
-export function getGamificationState(): GamificationState {
-    const stored = localStorage.getItem(STORAGE_KEY);
-
-    if (!stored) return defaultState;
-
+export async function getGamificationState(): Promise<GamificationState> {
     try {
-        const parsed = JSON.parse(stored) as Partial<GamificationState>;
+        const response = await fetch("/api/gamification");
+
+        if (!response.ok) return defaultState;
+
+        const data = await response.json() as Partial<GamificationState>;
 
         return {
-            totalXp: typeof parsed.totalXp === "number" ? parsed.totalXp : 0,
-            awardedTaskIds: Array.isArray(parsed.awardedTaskIds) ? parsed.awardedTaskIds : [],
+            totalXp: typeof data.totalXp === "number" ? data.totalXp : 0,
+            awardedTaskIds: Array.isArray(data.awardedTaskIds) ? data.awardedTaskIds : [],
         };
     } catch {
         return defaultState;
     }
 }
 
-export function saveGamificationState(state: GamificationState) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+export async function saveGamificationState(state: GamificationState): Promise<void> {
+    try {
+        await fetch("/api/gamification", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(state),
+        });
+    } catch (error) {
+        console.error("Could not save gamification state", error);
+    }
 }

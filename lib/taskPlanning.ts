@@ -1,8 +1,6 @@
 import { Assignment } from "@/types/assignment";
-import { TaskPlanningEstimates, TaskPriority } from "@/types/taskPlanning";
+import { TaskPlanningEstimate, TaskPlanningEstimates, TaskPriority } from "@/types/taskPlanning";
 import { parseLocalDate, daysBetween } from "@/lib/utils";
-
-const STORAGE_KEY = "task_planning_estimates";
 
 // Local Ollama inference is CPU/GPU-heavy per call — auto-estimating a
 // whole backlog (150+ assignments) back-to-back visibly heats up the
@@ -43,20 +41,31 @@ export function selectTasksNeedingEstimates(
         .slice(0, ESTIMATION_CAP);
 }
 
-export function getTaskPlanningEstimates(): TaskPlanningEstimates {
-    const stored = localStorage.getItem(STORAGE_KEY);
-
-    if (!stored) return {};
-
+// Was localStorage-only ("task_planning_estimates") — moved server-side
+// (TaskPlanningEstimate) since these never carried over between browser
+// profiles for the same account. POST /api/task-planning now
+// computes-and-persists in one route, so there's no separate save
+// function — this is load-only.
+export async function getTaskPlanningEstimates(): Promise<TaskPlanningEstimates> {
     try {
-        return JSON.parse(stored) as TaskPlanningEstimates;
+        const response = await fetch("/api/task-planning");
+
+        if (!response.ok) return {};
+
+        const data = await response.json() as {
+            estimates?: Array<TaskPlanningEstimate & { id: string }>;
+        };
+
+        const estimates: TaskPlanningEstimates = {};
+
+        for (const { id, ...estimate } of data.estimates ?? []) {
+            estimates[id] = estimate;
+        }
+
+        return estimates;
     } catch {
         return {};
     }
-}
-
-export function saveTaskPlanningEstimates(estimates: TaskPlanningEstimates) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(estimates));
 }
 
 function importanceLevel(importance: number): "high" | "medium" | "low" {

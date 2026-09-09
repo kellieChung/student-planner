@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 import { analyzeAssignments, estimateMinutesByType, normalizeAssignmentType } from "@/lib/analyzeAssignment";
 import { calculatePriority } from "@/lib/prioritization";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
+import { getTaskSignature } from "@/lib/taskPlanning";
 
 type PlanningTask = {
     id: string;
@@ -11,6 +14,51 @@ type PlanningTask = {
     due?: string | null;
     pointsPossible?: number | null;
 };
+
+async function getAuthenticatedUser() {
+    const session = await auth();
+
+    if (!session?.user?.email) {
+        return null;
+    }
+
+    return prisma.user.findUnique({
+        where: { email: session.user.email },
+    });
+}
+
+export async function GET() {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
+        return NextResponse.json(
+            { success: false, error: "You must be logged in." },
+            { status: 401 }
+        );
+    }
+
+    const estimates = await prisma.taskPlanningEstimate.findMany({
+        where: { userId: user.id },
+    });
+
+    return NextResponse.json({
+        success: true,
+        estimates: estimates.map((estimate) => ({
+            id: estimate.taskId,
+            signature: estimate.signature,
+            estimatedMinutes: estimate.estimatedMinutes,
+            importance: estimate.importance,
+            difficulty: estimate.difficulty,
+            consequence: estimate.consequence,
+            reason: estimate.reason,
+            assignmentType: estimate.assignmentType,
+            priorityScore: estimate.priorityScore,
+            urgencyScore: estimate.urgencyScore,
+            frogScore: estimate.frogScore,
+            priorityReason: estimate.priorityReason,
+        })),
+    });
+}
 
 function normalizeAnalysis(analysis: {
     importance: unknown;
@@ -71,6 +119,15 @@ const OLLAMA_CONCURRENCY = 2;
 const ANALYSIS_BATCH_SIZE = 5;
 
 export async function POST(request: Request) {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
+        return NextResponse.json(
+            { success: false, error: "You must be logged in." },
+            { status: 401 }
+        );
+    }
+
     let tasks: PlanningTask[];
 
     try {
@@ -99,13 +156,14 @@ export async function POST(request: Request) {
                 : [];
     } catch {
         return NextResponse.json(
-            { error: "Invalid task data" },
+            { success: false, error: "Invalid task data" },
             { status: 400 }
         );
     }
 
     if (tasks.length === 0) {
         return NextResponse.json({
+            success: true,
             estimates: [],
         });
     }
@@ -148,6 +206,8 @@ export async function POST(request: Request) {
                 return {
                     id: task.id,
 
+                    signature: getTaskSignature(task),
+
                     estimatedMinutes,
 
                     importance:
@@ -181,7 +241,114 @@ export async function POST(request: Request) {
         }
     );
 
+    const estimates = estimatesByBatch.flat();
+
+    // Compute-and-persist in one route — the client no longer needs a
+    // separate round trip to save what it just received.
+    await mapWithConcurrency(estimates, 10, (estimate) => upsertEstimate(user.id, estimate));
+
     return NextResponse.json({
-        estimates: estimatesByBatch.flat(),
+        success: true,
+        estimates,
     });
+}
+
+type StoredEstimate = {
+    id: string;
+    signature: string;
+    estimatedMinutes: number;
+    importance: number;
+    difficulty: number;
+    consequence: number;
+    reason: string;
+    assignmentType: string | null;
+    priorityScore: number;
+    urgencyScore: number;
+    frogScore: number;
+    priorityReason: string;
+};
+
+function upsertEstimate(userId: string, estimate: StoredEstimate) {
+    const data = {
+        signature: estimate.signature,
+        estimatedMinutes: estimate.estimatedMinutes,
+        importance: estimate.importance,
+        difficulty: estimate.difficulty,
+        consequence: estimate.consequence,
+        reason: estimate.reason,
+        assignmentType: estimate.assignmentType,
+        priorityScore: estimate.priorityScore,
+        urgencyScore: estimate.urgencyScore,
+        frogScore: estimate.frogScore,
+        priorityReason: estimate.priorityReason,
+    };
+
+    return prisma.taskPlanningEstimate.upsert({
+        where: { userId_taskId: { userId, taskId: estimate.id } },
+        update: data,
+        create: { userId, taskId: estimate.id, ...data },
+    });
+}
+
+function isValidStoredEstimate(value: unknown): value is StoredEstimate {
+    if (typeof value !== "object" || value === null) return false;
+    const e = value as Record<string, unknown>;
+
+    return (
+        typeof e.id === "string" &&
+        typeof e.signature === "string" &&
+        typeof e.estimatedMinutes === "number" &&
+        typeof e.importance === "number" &&
+        typeof e.difficulty === "number" &&
+        typeof e.consequence === "number" &&
+        typeof e.reason === "string" &&
+        (e.assignmentType === null || e.assignmentType === undefined || typeof e.assignmentType === "string") &&
+        typeof e.priorityScore === "number" &&
+        typeof e.urgencyScore === "number" &&
+        typeof e.frogScore === "number" &&
+        typeof e.priorityReason === "string"
+    );
+}
+
+// Stores already-computed estimates directly (no Ollama call) — used only
+// by the one-time legacy-localStorage migration in WeeklyPlannerView.tsx,
+// so a browser with a large existing cache of estimates doesn't trigger a
+// bulk Ollama recompute burst just to move them server-side.
+export async function PUT(request: Request) {
+    const user = await getAuthenticatedUser();
+
+    if (!user) {
+        return NextResponse.json(
+            { success: false, error: "You must be logged in." },
+            { status: 401 }
+        );
+    }
+
+    let body: unknown;
+    try {
+        body = await request.json();
+    } catch {
+        return NextResponse.json(
+            { success: false, error: "Invalid JSON body." },
+            { status: 400 }
+        );
+    }
+
+    const rawEstimates = (body as { estimates?: unknown } | null)?.estimates;
+
+    if (!Array.isArray(rawEstimates)) {
+        return NextResponse.json(
+            { success: false, error: "'estimates' must be an array." },
+            { status: 400 }
+        );
+    }
+
+    // Degrade per-entry rather than all-or-nothing: a malformed/stale
+    // entry (e.g. from an older, incompatible localStorage cache shape)
+    // shouldn't block every other valid entry in the same batch.
+    const validEstimates = rawEstimates.filter(isValidStoredEstimate).slice(0, 1000);
+
+    await mapWithConcurrency(validEstimates, 10, (estimate) => upsertEstimate(user.id, estimate));
+
+    return NextResponse.json({ success: true, storedCount: validEstimates.length });
 }
