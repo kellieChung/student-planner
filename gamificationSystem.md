@@ -16,21 +16,24 @@ Two visually distinct modes:
 - Growth is **typed**, not generic — the *category* of task completed determines *which* building or town feature grows, not just an abstract point total.
 - The town's overall visual stage (village → town → kingdom) advances based on cumulative growth across all categories combined.
 
-### Task Type → Building Mapping (example set)
+### Task Type → Building Mapping
+
+Actual task-type taxonomy used by the app: **HW**, **R** (reading), **EXAM**.
 
 | Task Type | Building/Feature | Growth Flavor |
 |---|---|---|
-| Reading assignments | **Library** | Shelves fill in, new wings added, a reading nook appears |
-| Writing assignments (essays, papers) | **Scriptorium / Town Hall** | Scrolls and banners accumulate, a printing press or scribe's desk appears |
-| Problem sets / math & science homework | **Workshop / Forge** | Tools, gears, and machinery visibly upgrade |
-| Projects (multi-day, larger tasks) | **Castle / Keep** | Wings, towers, or fortifications added as big projects finish |
-| Exams / tests | **Training Grounds / Arena** | Banners of victories, trophy racks |
-| Presentations | **Amphitheater / Bard's Stage** | Seating expands, stage decorations added |
-| Group projects | **Guild Hall** | Multiple flags/crests representing collaborators |
-| On-time completion streak (personalized timing signal) | **Watchtower** | Height/detail increases with consistency |
-| General day-to-day activity / login consistency | **Market / Town Square** | Stalls, decorations, NPC villagers appear |
+| **R** (reading) | **Library** | Shelves fill in, new wings added, a reading nook appears |
+| **HW** (homework/problem sets) | **Workshop / Forge** | Tools, gears, and machinery visibly upgrade |
+| **EXAM** | **Training Grounds / Arena** | Banners of victories, trophy racks accumulate |
 
-*(This table is a starting point — exact categories should map to whatever task-type taxonomy the AI announcement-parser and Canvas sync already use.)*
+Behavior-based (not tied to a specific task type — these track *how* the student works rather than *what* they completed):
+
+| Signal | Building/Feature | Growth Flavor |
+|---|---|---|
+| On-time completion streak (personalized timing signal) | **Watchtower** | Height/detail increases with consistency |
+| General day-to-day activity / overall cumulative progress | **Market / Town Square** | Stalls, decorations, NPC villagers appear; also the anchor for overall stage progression (village → town → city → kingdom) |
+
+*(If more task types get added later — projects, presentations, group work — new buildings can slot in the same way: Castle/Keep, Amphitheater, Guild Hall are natural options already sketched out, just not needed for the current three-category taxonomy.)*
 
 ---
 
@@ -83,6 +86,63 @@ Two visually distinct modes:
 - Single currency earned through real productive behavior (task completion, on-time finishing per personalized timing signal, consistent usage) — not arbitrary login streaks disconnected from actual schoolwork.
 - Spendable on: town decorations, building cosmetic upgrades, laptop stickers/case cosmetics.
 - Avoid punishing streak mechanics — consider a limited number of "grace"/rest tokens that preserve a streak through a missed day rather than a hard reset to zero.
+
+---
+
+## Image Asset Specification
+
+**Style guide (apply to every asset):**
+- Pixel art, 16-bit/SNES-RPG era aesthetic (think Stardew Valley proportions, not 8-bit NES chunkiness).
+- Base tile/sprite unit: 32x32px (buildings and larger scenery can be multiples of this, e.g. 64x64 or 96x96).
+- Palette: limited, warm, muted medieval tones — parchment beige, forest green, brick red/terracotta, slate blue, weathered wood brown. Avoid saturated/neon colors. Reuse the same ~12-16 color palette across every asset for visual cohesion.
+- Outline style: consistent 1px dark outline on all sprites (matches typical pixel-art clarity conventions).
+- Transparent background (PNG) on all sprites/icons so they composite over the town background.
+
+**Asset list needed:**
+
+*Mascot (world form — robed reincarnated tech assistant):*
+- Idle pose (front-facing)
+- Talking/gesturing pose (for dialogue moments)
+- Celebrating pose (task completed)
+- Small "confused/glitching" pose (comedic beat)
+
+*Mascot (laptop/OS form):*
+- A simple icon/avatar version representing the assistant's "voice" inside the laptop UI (doesn't need to be a full sprite — can be a small stylized icon)
+
+*Town — per building type, 2-4 growth-stage variants each (empty plot → basic structure → upgraded):*
+- Library (R / reading tasks)
+- Workshop / Forge (HW tasks)
+- Training Grounds / Arena (EXAM tasks)
+- Watchtower (on-time completion streak — behavior-based)
+- Market / Town Square (general activity / overall stage anchor — behavior-based)
+
+*Terrain / environment:*
+- Base ground tile (grass)
+- Dirt path tile (connects buildings)
+- Stone/plaza tile (town square base)
+- A few decorative filler sprites (trees, fences, lanterns) for visual variety between buildings
+
+*The Laptop:*
+- Base laptop sprite, lid closed (scuffed/broken details: cracked corner, worn edge)
+- Base laptop sprite, lid open (transition into "OS" view)
+- 4-6 sticker designs (small, simple icons — e.g. a star, a small creature, a book, a musical note) as separate overlay assets that can be placed on the closed-lid sprite
+- 2-3 alternate case color variants (recolors of the same base sprite)
+
+*UI icons (small, ~16x16 or 24x24, simpler/flatter than the world sprites since these live inside the clean laptop OS interface):*
+- Clock (Pomodoro)
+- Lute/musical note (music player)
+- Scroll (task/assignment)
+- Coin or crown (currency)
+- Book (reading category)
+- Quill (writing category)
+- Hammer/gear (problem sets category)
+
+**Placeholder strategy for today's build:** for a same-day Claude Code build, treat the above as the target spec, but don't block development on final art. Use simple colored rectangles/circles with a label (rendered via code, no image files needed) as functional stand-ins for each building/sprite so the town-growth logic and layout can be built and tested immediately; swap in real art once produced.
+
+**Sourcing real pixel art faster than generating from scratch:**
+- Kenney.nl publishes large, free, CC0-licensed pixel art asset packs (including RPG town/building tiles, UI icons, and fantasy sprites) that can be used and modified with no attribution required — likely the fastest way to get a real, cohesive pixel-art style in place today rather than commissioning or hand-drawing everything.
+- itch.io has many free and low-cost pixel art asset packs specifically for "cozy" and "medieval town-builder" aesthetics if Kenney's style doesn't match the vibe you want.
+- The mascot itself will likely need a custom design regardless (it's your unique character), but the generic building/terrain/UI assets are exactly the kind of thing pre-made asset packs cover well.
 
 ---
 
