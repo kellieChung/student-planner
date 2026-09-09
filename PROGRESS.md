@@ -1020,661 +1020,279 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs (as of 2026-09-09)
 
-- **Not a bug, don't "fix" again**: after the skyline-packing rework
-  (see Architecture Decisions), Thursday's own column still shows two
-  small unfilled gaps in today's real data. This is expected — the packer
-  is greedy first-fit, not maximum-density, and every item that could
-  fill those specific gaps also touches Wednesday's column, which is
-  genuinely busy there. Confirmed correct via a hand-traced, `advisor`-
-  reviewed prediction table before implementing, not an oversight to chase.
-- ~~The FLIP-reorder slide's real-world smoothness hasn't been watched by
-  a human yet~~ — **moot as of 2026-09-09**: `useFlipReorder` was deleted
-  entirely that session (completing a task no longer moves it at all).
-- ~~New, from tonight's grid-stacking rework (2026-09-09): ... savings vary
-  row-to-row, since a shared row's height still follows its tallest
-  occupant~~ — **resolved later the same session**: the Fix 2
-  rearchitecture entry above replaced CSS Grid rows with independent
-  per-column pixel offsets specifically to eliminate this — verified live
-  as an exact, guaranteed 40px gap between stacked completed cards
-  regardless of what's tallest in another column.
-- Still worth watching: whether `opacity-55` reads as too dim/too visible
-  on the light theme ("Cozy Tavern") — every pass so far only had the dark
-  theme active to check against. One disclosed, low-stakes leftover from
-  an earlier session's live-testing: a single stray `ProcrastinationRecord`
-  (reading-type, completed that day) was not cleaned up — see that entry
-  for why.
-- **New, from tonight's browser-local-state migration**: `custom_tasks`,
-  `deleted_task_ids`, and `task_states` migrations were verified against
-  real production data in this session's own browser (see the Architecture
-  Decisions entry above) and confirmed live end-to-end. **Not yet clicked
-  through directly**: creating a brand-new custom task and confirming it
-  appears in a genuinely separate second browser profile without a manual
-  refresh trick (this session only had one controllable browser instance —
-  the cross-browser confirmation came from indirect DB row-count evidence,
-  not a side-by-side click-through); editing a custom task's due date/name
-  and confirming the edit round-trips through `PATCH /api/custom-tasks`;
-  deleting a Canvas-synced task and confirming a subsequent real Canvas
-  sync doesn't resurrect it. Also worth a quick pass confirming the
-  `task_planning_estimates` migration's per-entry filtering doesn't
-  silently drop *valid* current-shape estimates by mistake — only checked
-  against the one malformed sample this session happened to inspect, not
-  all 664.
-- **New, from tonight's stacking-order/override work**: only the
-  `typeOverride` path was clicked through live end-to-end (set via
-  dropdown → saved → reloaded → confirmed persisted). The `nameOverride`
-  and `dueAtOverride` paths for a Canvas-synced task were verified only via
-  `tsc`/lint/build, not by actually editing a real task's name or due
-  date/time and confirming persistence across reload, or confirming a
-  subsequent Canvas re-sync doesn't clobber them. Worth a follow-up pass:
-  edit a Canvas-synced task's name and due date/time, reload, confirm both
-  hold; then trigger a real "🔄 Sync Canvas" and confirm the overrides
-  survive it. Also worth clicking through a week with more multi-day
-  bars/overlapping due times than this session's data had, to double-check
-  `grid-flow-row` (no longer `dense`) doesn't leave notably worse gaps on a
-  busier week.
-- **New, from tonight's announcement-pipeline cost/reliability fixes**: none
-  of the changes above (RULES dedup, longer Anthropic timeout, bisection
-  retry, Ollama duplicate-check concurrency cap, number-based assignment
-  matching) have been exercised against a live Anthropic call or a running
-  Ollama server this session. Worth re-running the same kind of batch that
-  previously cost $0.11 and confirming: per-call `💰 Anthropic announcement
-  extraction` cost lines drop roughly a third for the same batch size; a
-  genuine batch failure now retries as two half-sized batches (visible in the
-  log) rather than N singles; no `Duplicate check failed ... TimeoutError`
-  under the same concurrent load that produced one before; and the
-  `⚠️ ... returned an out-of-range assignment number` warning is now rare
-  (it replaces the old "unknown assignment ID" warning, but should fire far
-  less often since the model copies a small visible integer instead of
-  retyping an opaque id).
-
-- **Still open from the prior time-range work**: preset switching without a
-  full reload/visible race, the custom-range date pickers, and the >15
-  soft-warning rendering haven't been separately clicked through (the live
-  session this turn focused on confirming the week-start fix specifically,
-  via the dry-run JSON response rather than the full UI). Worth a quick
-  pass next time there's browser access, though low-risk — the underlying
-  data (`announcementCount`, `filtering`) is now confirmed correct, so this
-  is purely about the preset UI's own behavior.
-- ~~BLOCKING: ANTHROPIC_API_KEY invalid~~ — **resolved 2026-09-06, same
-  session.** User regenerated the key in the Anthropic Console; re-verified
-  with a fresh raw `https` request (200, real completion back) and then the
-  full harness. **Everything in this pipeline is now verified end-to-end
-  with a live key**, not just via mocked/error-path tests:
-  - 4/4 deterministic `findDuplicateTask.ts` bug-fix tests still pass.
-  - 1 live Ollama duplicate-check call: `done_reason: "stop"` (no
-    truncation), schema-constrained JSON parsed cleanly, correctly flagged
-    both real duplicates (including the "proposed task is part of a larger
-    Canvas assignment" case) and correctly left a genuinely unrelated task
-    alone.
-  - **3/3 live Claude Haiku extraction calls succeeded with zero errors and
-    zero bisection fallback triggered** (previously 0/3 due to the bad
-    key). Quality was consistently good across all 3 runs against the same
-    4-fixture set (Chinese-language, table-based, no-work, and multi-task
-    announcements): correct zero-task result for the pure-reminder
-    announcement every time; `dueText` preserved verbatim including the
-    Chinese-wording case (`下周三`); and — notably better than the Ollama
-    fallback's earlier test run — **correctly split multi-part assignments
-    into separate tasks** per RULES section 4 (e.g. "read chapters 2-3 AND
-    complete the response questions" → 2 tasks, not 1 merged task, matching
-    the worked example already in the prompt). Cost: ~2305 input / ~325-364
-    output tokens per full 4-announcement batch call, **~$0.004/call**
-    (well in line with the pre-implementation estimate) — a full automatic
-    review run at this size costs well under a cent; the $10 credit covers
-    on the order of thousands of runs at this scale.
-  - This TODO is now fully closed; nothing about the announcement-analysis
-    pipeline fix remains unverified from this session's side. Real-world
-    judgment on Haiku's output against the user's actual messy Canvas
-    announcements (as opposed to this session's synthetic fixtures) is the
-    only thing left to see — normal "try it for real" territory, not a
-    known gap.
-- **New, from tonight's "restore a deleted course" work — needs real-world
-  verification**: no login/Canvas/extension-reload access this session, so
-  `LIST_CANVAS_COURSES`/`RESTORE_COURSE` were only verified via `node --check`
-  syntax validation, plus `tsc`/lint/build for the server side. Worth a full
-  manual pass once available: reload the unpacked extension, confirm
-  "Find Canvas Courses" lists both active and concluded courses, delete a
-  course in the web app then restore it from the popup, and confirm a normal
-  "🔄 Sync Canvas" still behaves identically post-refactor (real regression
-  risk — it now goes through the extracted `lib/canvasIngest.ts` helpers
-  instead of its own inlined logic).
-- **Known, unrelated limitation surfaced while building the above** (not
-  fixed — changes existing pruning semantics, needs its own review): a
-  **hidden** course is just as vulnerable as a deleted one to disappearing
-  for good — `app/api/canvas/sync/route.ts`'s pruning step deletes any
-  `CanvasCourse` missing from the latest active-course payload regardless of
-  its `hidden` flag, so a hidden course that later concludes in Canvas gets
-  hard-deleted on the next sync, not just filtered from the planner.
-
-- **The announcement-analysis polish pass above (HTML display, evidence
+- **Not a bug, don't "fix" again**: the skyline packer leaves two small
+  unfilled gaps in Thursday's column in today's real data — expected,
+  since it's greedy first-fit, not maximum-density, and everything that
+  could fill them also touches Wednesday's genuinely-busy column.
+  Confirmed via a hand-traced, `advisor`-reviewed prediction table before
+  implementing.
+- Untested: whether `opacity-55` (completed-card dimming) reads right on
+  the light theme — only checked against dark so far. One disclosed,
+  low-stakes leftover: a stray `ProcrastinationRecord` from live testing
+  was never cleaned up (no delete endpoint; risk of deleting real data by
+  guessing outweighs the benefit).
+- **Browser-local-state migration** (custom tasks, deleted-task
+  tombstones, task states, planning estimates, procrastination history):
+  verified against real production data and live end-to-end in-session,
+  but not yet click-tested: a new custom task syncing to a genuinely
+  separate second browser profile; a custom task's `PATCH
+  /api/custom-tasks` edit round-trip; a Canvas re-sync not resurrecting a
+  deleted task; whether the `task_planning_estimates` per-entry filter
+  drops any *valid* estimates beyond the one malformed sample inspected.
+- **Task-field overrides**: only `typeOverride` was clicked through
+  end-to-end. `nameOverride`/`dueAtOverride` on a Canvas-synced task are
+  verified only via `tsc`/lint/build — worth confirming they persist
+  across reload and survive a real Canvas re-sync.
+- **Announcement-pipeline reliability/cost changes made across several
+  sessions** (RULES-block dedup, Ollama duplicate-check concurrency cap,
+  bisection retry on batch failure, longer Anthropic timeout,
+  message-length cap, per-entry degradation, number-based assignment
+  matching, a more aggressive duplicate-detection bias) haven't all been
+  re-exercised together against a live Anthropic/Ollama run since
+  landing — worth confirming cost actually drops, no timeouts under load,
+  and the bias isn't over-flagging obviously unrelated tasks in practice.
+- Announcement time-range preset UI (preset switching, the custom-range
+  date pickers, the >15 soft-warning) hasn't been separately click-tested
+  — the underlying window-math data is confirmed correct, so this is
+  purely about the preset UI's own behavior.
+- **Restore-a-deleted-Canvas-course** flow (`LIST_CANVAS_COURSES`/
+  `RESTORE_COURSE`) is only verified via syntax check + `tsc`/lint/build,
+  not a real extension reload/click-through.
+- **Known, unfixed**: a **hidden** Canvas course is as vulnerable as a
+  deleted one to disappearing for good — sync pruning deletes any
+  `CanvasCourse` missing from the latest payload regardless of its
+  `hidden` flag, so a hidden-then-concluded course gets hard-deleted, not
+  just filtered.
+- Announcement-analysis polish (HTML-safe rendering, evidence
   highlighting, due-date resolution, persisted accept/reject state,
-  duplicate-check "unavailable" status) has not been tested against a live
-  Ollama server or a logged-in browser session** — no login/Ollama access
-  this session. Worth a full manual pass once available: confirm
-  announcement text and Canvas assignment descriptions render as readable
-  text (not raw tags); confirm evidence highlighting lands on the right
-  phrase for real announcements (and gracefully skips highlighting when
-  `evidence` is a paraphrase rather than verbatim); confirm a `dueText`
-  value pre-fills the due-date picker; reject a suggestion, re-run
-  analysis, confirm it doesn't reappear (same for accept); stop Ollama and
-  confirm the duplicate-check "unavailable" state renders distinctly from
-  a genuine no-match. `lib/dueText.ts` was spot-checked standalone via
-  `npx tsx` against synthetic inputs (weekday, "next `<weekday>`", explicit
-  date incl. year-rollover, "tomorrow", unparseable text) and all resolved
-  correctly, but hasn't seen real Ollama-extracted `dueText` values yet.
-- **New, from tonight's announcement-analysis fix — needs real-world
-  verification**: the message-length cap (1200 chars), per-entry
-  degradation, `num_ctx=8192`, and 35s timeout were all sized from
-  reasoning about the failure, not from re-running against the actual
-  Canvas courses that failed (no login this session). Worth confirming
-  with the user's real data that batches now complete cleanly. Also
-  worth watching whether the duplicate-detection false-positive bias
-  swings too far the other way in practice (flagging genuinely unrelated
-  tasks) — the prompt change was deliberately aggressive per explicit
-  direction, so some over-flagging is expected/accepted, but "clearly
-  different work" examples in the prompt should still hold the line on
-  obviously wrong matches.
-- **New, from tonight's loading-indicator sweep**: every spinner/progress
-  bar addition was verified only via `tsc`/build, not by actually
-  clicking through the app (no browser session). Worth a manual pass:
-  confirm each spinner appears during its wait and clears on both
-  success and failure paths, especially `MusicPlayer.tsx`'s new
-  `busyItemId` state (shared across 4 different actions — rename/delete
-  playlist/track — so a bug there could show the wrong row as busy).
-- Most of this session's UI/theming work (see log below) has **not been
-  clicked through in a real browser** — no Claude-in-Chrome access. Worth
-  a full manual pass, especially: the extension popup's live theme sync,
-  Music Player at real laptop widths, and the new due-time picker.
-- **New, from the 2026-09-06 cleanup pass — needs real-world verification:**
-  the `findDuplicateTasks` "occasionally misses an obvious duplicate" issue
-  was previously blamed on inherent 3B-model judgment variance; the actual
-  root cause (one malformed entry throwing and blanking every task in that
-  announcement) is now fixed (per-item fallback instead), but this hasn't
-  been re-tested against real announcements yet — worth confirming the
-  false-negative rate actually drops, in case there's a second contributing
-  cause. Same pass added `format: "json"` to 4 Ollama call sites that
-  didn't have it and consolidated `OLLAMA_URL`/model handling into
-  `lib/ollamaConfig.ts` (previously inconsistent across 5 files) —
-  neither re-tested against a live Ollama server this session.
-- Canvas sync reconciliation only prunes courses, not individual
-  assignments/discussions/announcements within a still-active course. The
-  pagination gap that made per-item pruning unsafe is now fixed
-  (`canvas-extension/background.js`'s `getCanvasData()` follows Canvas's
-  `Link`-header `rel="next"`, verified this session) — per-item pruning
-  itself is still not implemented, just no longer blocked on this.
-- **New, from the 2026-09-06 cleanup pass**: gamification state
-  (`totalXp`/`awardedTaskIds`) moved from `localStorage` to a per-user
-  `GamificationState` Prisma row (see Architecture Decisions) — not
-  tested against a real logged-in session this session (no login
-  available); worth confirming XP actually persists across a reload once
-  there's browser access, and that existing localStorage-only XP for
-  anyone who used the app before this migration isn't silently lost (no
-  backfill was written — there was no way to know who to backfill for
-  without a user session to read their old localStorage from).
-- ~~The `getTaskPriority`-based sort/labels in the weekly grid were
-  intentionally not unified with `calculatePriority`-based scoring~~ —
-  **resolved 2026-09-07**: the grid sort is no longer `getTaskPriority`-based
-  at all (see below), so this is moot; `calculatePriority` still stays
-  Up Next/Pomodoro-only, deliberately, per the entry below.
-- A task whose course was manually overridden to something other than its
-  natural Canvas course will go stale again if that *target* course is
-  later renamed (the override stores a name, not a course id). Narrow
-  edge case; would need a `courseId`-based override + migration to fix
-  properly.
-- **The AI-suggested-task course-matching fix below (2026-09-06) also
-  hasn't been clicked through live** — same no-login/no-Ollama constraint.
-  Worth confirming: set a `displayName` override on a course, accept a
-  suggestion for it, and check the resulting card's abbreviation/color
-  match that course's other (Canvas-synced) cards, and that
-  `EditTaskModal`'s course dropdown pre-selects the real course instead of
-  a synthesized one-off option.
+  duplicate-check "unavailable" status) hasn't been tested against a live
+  Ollama server/logged-in session — `lib/dueText.ts` itself was
+  spot-checked standalone against synthetic inputs only.
+- **Loading-indicator sweep** (Spinner on XP award, course create/save,
+  `MusicPlayer.tsx`'s shared `busyItemId`) was verified only via
+  `tsc`/build — never clicked through to confirm each spinner shows and
+  clears correctly.
+- Canvas sync reconciliation still only prunes whole courses, not
+  individual assignments/announcements within an active course (the
+  pagination gap that made this unsafe is fixed; the pruning itself isn't
+  built).
+- A task whose course was manually overridden to a non-Canvas course name
+  goes stale again if that *target* course is later renamed (the override
+  stores a name, not a course id) — narrow edge case, needs a
+  `courseId`-based override to fix properly.
+- AI-suggested-task course-matching (uses a course's `displayName`
+  override, correct abbreviation/color, correct `EditTaskModal` dropdown
+  pre-select) hasn't been clicked through live.
 
 ## Session log
 
 ### 2026-09-09 — fix weekly-grid stacking bugs, redesign completion animation and card sizing
 
-Direct continuation of the previous session's "In Progress" status work,
-which shipped a hold-then-slide completion animation and had never been
-tested against a real multi-day-bar-heavy week. User reported two bugs with
-a screenshot: a multi-day `startAt` bar breaking the stack for unrelated
-single-day tasks, and the new completion animation jumping badly (worst for
-the topmost card). Two Explore subagents traced both to the same root cause
-— no explicit `gridRow`, CSS Grid's non-dense auto-placement using one
-shared cursor for the whole week — confirmed with an advisor pass before
-writing the fix. Full design and rationale in the Architecture Decisions
-entry above ("Weekly grid stacking reworked...").
+Continuation of the "In Progress" status work, untested until now against
+a real multi-day-bar-heavy week. User reported a multi-day bar breaking
+the stack and a jumpy completion animation; root cause (no explicit
+`gridRow`, CSS Grid auto-placement sharing one cursor for the week)
+traced via two Explore agents + an advisor pass. Full design in
+Architecture Decisions ("Weekly grid stacking reworked..."). Iterated
+live from there: fixed the packing first, then per user feedback dropped
+the slide-to-bottom animation entirely ("completion never moves a task")
+and switched bar ordering, then shrank/dimmed completed cards on further
+feedback. Hit the same peer-session file-editing collision twice on
+`AssignmentCard.tsx` (see Architecture Decisions' "concurrent-session
+hazard" note, including a false alarm it caused).
 
-This ran through several live-tested iterations rather than one plan: the
-`gridRow`-packing fix alone was verified first (zero-overlap invariant,
-before/after diffs — not screenshot-guessing, per explicit advisor
-guidance after the previous session's screenshot-based checks turned out
-unreliable), then the user asked for two further changes after seeing it
-live: dropping the slide animation for "microsoft planner but flipped
-upside down" (completion never moves a task), and reordering bars by
-length instead of start date once the packing fix's actual result was
-visible. A last visual pass (completed cards shrinking/dimming, active
-cards gaining contrast) came from direct feedback that the frozen-in-place
-completed tasks were crowding out active ones.
-
-Hit the same concurrent-editing hazard **twice** this session, both times
-on `AssignmentCard.tsx` — see the "concurrent-session hazard hit twice"
-bullet in the Architecture Decisions entry for the full account, including
-a real false alarm it caused (a styling change that looked completely
-inert live for a few minutes, chased as a possible CSS bug, that was
-actually just a peer session's concurrent edit delaying Turbopack's CSS
-regeneration).
-
-Verified: `npx tsc --noEmit` clean, `npm run lint` unchanged from the
-15-problem baseline, `npm run build` clean — all three re-checked after
-the peer session's course-color changes merged in, not just before.
-Live-verified via the Chrome extension against the real logged-in
-account's real data throughout, including the exact scenario from the
-user's screenshot. Disposable custom test tasks (created via
-`POST /api/custom-tasks`, deleted after) were used for every completion
-click needed during verification; explicitly checked `GET /api/gamification`
-afterward and confirmed none of the test task ids were ever added to
-`awardedTaskIds` and `totalXp` matched pre-test real activity — so, unlike
-the previous session, no XP-revert dance was actually needed this time,
-but it's still worth checking every time rather than assuming a custom
-task can't trigger a real award (it can; `awardXpForTask` doesn't
-distinguish custom from real tasks).
+Verified: `tsc`/lint/build clean; live-verified via Chrome extension
+against real data, including disposable test tasks confirmed XP-neutral
+via `GET /api/gamification`.
 
 ### 2026-09-09 — fix bar ordering and rearchitect away the row-height gaps
 
-Direct continuation of the same day's grid-stacking session above, after
-a fresh screenshot from the user surfaced two more problems in what had
-just shipped: bars sorted by span-length looked chronologically wrong
-once bars had real varied start dates (Wed-due above Fri-due above
-Thu-due — "it doesn't even make sense lol"), and large, inconsistent gaps
-had appeared under some completed cards. Went through Plan Mode for this
-one (the previous round's fixes had been small enough to just do live);
-an `advisor` pass on the draft plan caught three real issues before any
-code was written: the planned flat-percentage `left`/`width` for cards
-would drift out of alignment with the divider grid's real `gap-2` math
-(worst at Fri/Sat — same class of bug as an earlier NaN-column
-misalignment issue), the planned fixed card-height constants hadn't
-actually been verified across more than one card, and dropping
-`GridSpan.gridColumn` needed a fresh repo-wide grep first since two other
-sessions had touched this exact area earlier the same day. All three were
-folded into the plan before implementing (see the Architecture Decisions
-entry above, "bar ordering fixed to due-date ascending... rearchitected
-away", for the full technical account) rather than discovered after the
-fact.
+Same-day continuation: bars sorted by length looked chronologically
+wrong once bars had varied start dates, and completed cards left
+inconsistent gaps. Went through Plan Mode this round; an advisor pass on
+the draft caught a divider-alignment math bug and an unverified
+card-height assumption before implementing (full account in Architecture
+Decisions). Verified live by pulling every card's
+`getBoundingClientRect()` via the Chrome extension and asserting zero
+overlaps, sub-pixel divider alignment, and exact 40px completed-card
+spacing — stronger than the prior screenshot-based checks.
 
-`ListAgents` showed the peer session (`student-planner-c0`) idle before
-starting, so no pause was needed this round. Live verification went
-beyond the previous rounds' spot-checks: rather than eyeballing a
-screenshot, pulled every real weekly-grid card's `getBoundingClientRect()`
-via the Chrome extension's JS execution tool and asserted the invariants
-directly — zero pairwise overlaps among cards sharing a column, every
-card's left/right within ~0.15px of its divider column's edges across
-all 7 columns (not just column 1), the tallest column's last card ending
-exactly at the container's rendered height (no clip/drift), and exactly
-40px between consecutive stacked completed cards. Caught one of my own
-mistakes mid-verification: two pixel-coordinate clicks aimed at a real
-production task's status toggle actually landed on the card body (just
-revealing hover-only buttons, confirmed via no visual/API state change),
-which was the reminder to stop guessing screen coordinates and instead
-query the toggle button's own `getBoundingClientRect()` (or call
-`.click()` on it directly) for anything that changes real state.
-
-Verified: `npx tsc --noEmit`, `npm run lint` (same pre-existing 15-problem
-baseline, 0 new), `npm run build` all clean. Used one disposable custom
-test task for the completion-click check, confirmed the expected +20
-XP/+1 awarded-id via `GET /api/gamification`, then reverted both via
-`PATCH /api/gamification` back to the exact pre-test baseline before
-deleting the test task — same discipline as every other round this
-session.
+Verified: `tsc`/lint/build clean; one disposable test-task completion,
+XP reverted via `GET`/`PATCH /api/gamification`.
 
 ### 2026-09-09 — replace the monotonic-cursor packer with real skyline packing
 
-Direct continuation of the same day's grid-stacking work, after yet
-another fresh screenshot: Thursday's column sat almost empty while its
-bars rendered far down the page, described as "not making use of as much
-space as possible." Diagnosed live (not assumed) via
-`getBoundingClientRect()`: three completed bars due Wednesday had a
-leftover `startAt` of Tuesday, so they span `[Tue, Wed]`; the packer's
-one-number-per-column cursor inherited Tuesday's 9-item congestion into
-column 3 and propagated it into every later bar sharing that column,
-even across a genuine ~200px gap in column 3 that nothing was using.
+Same-day continuation: Thursday's column sat nearly empty despite bars
+stacking far down the page. Root cause: the packer's per-column cursor
+inherited an unrelated column's congestion instead of tracking real
+gaps. A first fix (collapsing completed bars to single-day width) worked
+but was rejected by the user on sight — a completed bar's original span
+is real information. Real fix: a true skyline packer plus a
+status-group-scoped ordering rule, decided via `AskUserQuestion` after
+an advisor pass flagged the ordering tradeoff as the user's call, not an
+implementation detail (algorithm in Architecture Decisions). Hand-traced
+predicted numbers before implementing and confirmed the live DOM matched
+exactly.
 
-First implementation attempt collapsed completed bars to single-day
-width at their due column, removing the cross-column coupling outright.
-It worked and was live-verified, but the user rejected it on sight: a
-completed bar's original span is real information and must stay full
-width. Reverted completely, in-session, before any further work — worth
-noting as a real example of "verified working" not being the same bar as
-"what the user actually wants."
-
-The actual fix needed true gap-filling (a skyline packer: real occupied
-intervals per column, not a monotonic cursor), which immediately reopened
-the ordering question from the earlier bar-sort round: the only way to
-reach that Thursday gap is to let a bar render above an earlier-due bar
-sharing a column. An `advisor` pass caught this precisely — flagged it as
-a real fork requiring the user's call, not an implementation detail — so
-asked directly via `AskUserQuestion` instead of guessing a second time.
-The user's answer was sharper than either offered option: due-date order
-must hold *within* completed bars and *within* active bars separately,
-but not *between* the two groups. Implemented as a second, smaller
-monotonic floor keyed by status-group alongside the skyline (see the
-Architecture Decisions entry above for the algorithm and the proof that
-single-day items need no such floor at all).
-
-Before writing any code, hand-traced the algorithm against the real
-current data and got a `advisor`-reviewed prediction table (exact `top`
-values per card, and the task layer's `totalHeight` dropping from 888 to
-720) — then implemented and confirmed the live DOM matched every
-predicted number exactly, plus an explicit ordering-invariant assertion
-(same status + shared column ⇒ earlier due date ⇒ smaller `top`; zero
-violations) and the existing zero-overlap invariant (also zero). This is
-a stronger verification bar than previous rounds' "did it move in the
-right direction" checks, and worth repeating for future packing changes:
-predict the number before you run the check.
-
-Verified: `npx tsc --noEmit`, `npm run lint` (same 15-problem baseline, 0
-new), `npm run build` clean. No completion clicks were needed (pure
-layout change); `GET /api/gamification` was checked anyway as a cheap
-sanity pass and showed XP had moved (460→510, one awarded id) from real
-activity elsewhere during the session (the user's own account, actively
-in use) — correctly left untouched, since only test-task XP from this
-session's own disposable tasks is ever reverted, never real activity.
+Verified: `tsc`/lint/build clean; pure layout change, no completion
+testing needed.
 
 ### 2026-09-09 — user-customizable course badge color
 
-User asked to be able to customize the color of the class/course label
-shown on planner cards, persisted to the DB. Followed the exact same
-"user override on `CanvasCourse`, sync never touches it" pattern already
-proven for `abbreviation` (see the abbreviation entry above): new
-`CanvasCourse.color String?` column (migration `add_course_color`, hex
-string like `"#3b82f6"`, null = auto), threaded through
-`GET/POST /api/courses` and `PATCH /api/courses/[courseId]` (same
-empty-string-clears-the-override convention as `abbreviation`, plus a
-`/^#[0-9a-fA-F]{6}$/` validation on PATCH), `types/course.ts`'s `Course`.
-Extracted the existing hash-based default-color picker out of
-`AssignmentCard.tsx` into a new `lib/courseColor.ts` (`courseColorDefault`)
-so `ManageCoursesModal.tsx` could reuse the exact same default for its
-"no override yet" swatch preview, rather than duplicating the hash.
-`AssignmentCard.tsx`'s badge takes a new `courseColor` prop: renders via
-inline `style.backgroundColor` when set (arbitrary hex, not expressible as
-a Tailwind class) instead of the `courseColorDefault` Tailwind class.
-`ManageCoursesModal.tsx` adds a small circular swatch button next to each
-course's abbreviation editor (mirrors that editor's edit/Save/Cancel
-pattern) that opens a native `<input type="color">`, plus a "Reset" button
-(only shown once a course has a custom color) to clear back to the
-auto-derived default.
+Added `CanvasCourse.color`, following the same "user override, sync
+never touches it" pattern as `abbreviation`. Extracted the existing
+default-color hash into `lib/courseColor.ts` so `ManageCoursesModal.tsx`
+could reuse it for its swatch preview instead of duplicating it.
+`ManageCoursesModal.tsx` gained a color-swatch button (native color
+picker) plus Reset.
 
-Verified: `npx tsc --noEmit` clean (only after `npx prisma generate` —
-forgot it once, caught immediately by 6 "'color' does not exist" errors),
-`npm run lint` at the same pre-existing 15-problem baseline (0 new; the one
-touched-file hit, `ManageCoursesModal.tsx:33`, is a pre-existing unrelated
-`set-state-in-effect` warning), `npm run build` clean. Live-verified via
-the Chrome extension against the real logged-in account: set Biology's
-badge to blue in Manage Courses, confirmed the PATCH persisted (dot stayed
-blue after a full page reload), confirmed the real planner grid's BIOLOGY
-badges rendered blue, then clicked Reset and confirmed it reverted to the
-original auto-derived red — full round trip, not just a save.
+Verified: `tsc`/lint/build clean; live-verified via Chrome extension —
+set a course color, confirmed it persisted across reload and rendered on
+real cards, then confirmed Reset reverted to the auto-derived default.
 
 ### 2026-09-08 — add an "In Progress" task status
 
-User asked for a way to mark a task as started/paused without it counting as
-done. Full design and file-by-file changes in the Architecture Decisions
-entry above ("Added a third task status..."). Planned via `/plan` (see
-`~/.claude/plans/can-you-add-the-warm-cook.md`) with two Explore subagents
-mapping the existing completion data flow (DB → API → `WeeklyPlannerView`
-state → card) and the UI render sites first, then an advisor pass before
-writing the plan — settled the schema question (one `inProgress` boolean,
-no timestamp) and caught the four-not-three completion-toggle call sites
-(the "eat this frog" panel's "Mark done" button is easy to miss). User then
-asked for a circular tri-state control instead of a checkbox and a
-satisfying completion animation (pulse + hold + slide to the bottom) via
-follow-up `AskUserQuestion` rounds, and confirmed the "lightweight,
-transform-only, no new dependency" approach for the slide over a heavier
-animation-library option.
+User wanted to mark a task started/paused without counting it done.
+Planned via `/plan` with two Explore agents + an advisor pass, which
+settled the schema (one boolean, no timestamp) and caught a 4th
+completion-toggle call site that's easy to miss. Followed by
+user-requested UI iterations: a circular tri-state control and a
+completion animation (full design in Architecture Decisions, "Added a
+third task status..."). Hit a concurrent-editing collision with a peer
+session on the same files mid-session (paused until it went idle).
 
-Mid-session, an active peer session (`remove-short-title-feature`) was
-found editing the exact same files concurrently — paused all edits to the
-contested files until the user confirmed it had gone idle, then re-read
-everything fresh before continuing (see the Architecture Decisions entry's
-"Coordination note").
-
-Verified: `npx tsc --noEmit` clean, `npm run lint` (15 problems, all
-pre-existing/unrelated — the one new warning this work introduced was
-caught and fixed), `npm run build` clean, `npx prisma migrate dev` +
-`npx prisma generate` for the new column. Live-verified via the Chrome
-extension against the real logged-in account: full status-cycle
-click-through with `getComputedStyle`/aria-label checks at each step,
-confirmed both in-progress and completed states survive a page reload
-(real DB persistence), confirmed the `EditTaskModal` Status dropdown
-renders and pre-selects correctly. Live testing awarded real XP/a
-procrastination-history record on 3 real tasks; the XP was precisely
-reverted (exact before/after totals were known), the single stray
-procrastination record was not (no delete endpoint, low stakes, risk of
-deleting real data instead) — see Active TODOs.
+Verified: `tsc`/lint/build/migrate clean; live-verified via Chrome
+extension, including a full status-cycle click-through and
+reload-persistence check. Live testing awarded real XP/a procrastination
+record on 3 real tasks — XP was precisely reverted, one stray
+procrastination record was not (no delete endpoint, low stakes).
 
 ### 2026-09-07 — fix grid-wide card misalignment (regression from the DB-migration session, same day)
 
-User reported every card shifted right, misaligned from the day dividers, and
-correctly attributed it to the DB-migration session specifically rather than the
-earlier stacking-order one — right call. First hypothesis (a pre-existing
-`calculateGridSpan` "runway bar from today" default) was wrong and was corrected
-by the user before any code changed; re-diagnosed properly via live DOM
-inspection (`getComputedStyle`, inline `gridColumn` values, direct DB queries on
-the two broken tasks) rather than re-guessing. Full root cause and fix in the
-Architecture Decisions entry above ("Fixed a real grid-wide rendering
-regression..."): a `completedAt` date-serialization format mismatch between two
-API routes, introduced by this same day's earlier migration session, producing
-`NaN` grid columns for completed tasks.
+User reported cards misaligned from day dividers, correctly attributing
+it to that day's earlier DB-migration session. Re-diagnosed via live DOM
+inspection after an initial wrong hypothesis was corrected by the user.
+Root cause: a `completedAt` date-serialization mismatch between two API
+routes producing `NaN` grid columns (full account in Architecture
+Decisions).
 
-Verified: `npx tsc --noEmit` (clean), `npm run lint` (19-problem baseline, 0
-new), `npm run build` (clean), and live via the Chrome extension — confirmed the
-`gridTemplateColumns` blowout (9 tracks → 7) and visual alignment were both
-fixed against the exact same real data used to diagnose the bug.
+Verified: `tsc`/lint/build clean; live-verified via Chrome extension
+against the same real data used to diagnose the bug.
 
 ### 2026-09-07 — migrate remaining browser-local planner state to the database
 
-Same day, later session — different issue from the stacking-order/override
-work below. User reported the planner open in two Chrome profiles (same
-account, different OS-level Google logins) wasn't sharing custom tasks or
-"custom class abbreviations." Root cause and full design in the Architecture
-Decisions entry above ("All remaining browser-local planner state moved to
-the database"). Overwrote the prior plan file (different task) rather than
-extending it; a research subagent audited every `localStorage` key in the
-app first, then an advisor pass before writing the plan corrected the
-initial design (relational per-task state, not a `GamificationState`-style
-blob, given this user's literal two-windows-open setup) and caught a
-missing merge-safety rule.
+User reported the planner open in two Chrome profiles wasn't sharing
+custom tasks or course abbreviations. Root cause and full design in
+Architecture Decisions ("All remaining browser-local planner state moved
+to the database"). A research subagent audited every `localStorage` key
+first; an advisor pass corrected the initial design (relational per-task
+state, not a blob, given this user's literal two-windows-open setup) and
+caught a missing merge-safety rule.
 
-Verified: `npx tsc --noEmit` (clean), `npm run lint` (exact 19-problem
-baseline, 0 new — one new lint error was introduced mid-session, a real
-`useEffect`-closure-ordering issue, and fixed by reordering rather than
-suppressed), `npm run build` (clean, new routes present), `npx prisma
-migrate dev` + `npx prisma generate`. Live-verified via the Chrome
-extension against this session's own real logged-in data — not synthetic
-fixtures — which is what surfaced two real bugs (stale-shaped cached
-estimates, the effect-ordering lint error) that synthetic testing would
-likely have missed; full account in the Architecture Decisions entry.
-Deleted `lib/taskState.ts`/`types/taskState.ts` (confirmed fully unused
-after the rewire) rather than leaving them as dead code.
+Verified: `tsc`/lint/build/migrate clean; live-verified via Chrome
+extension against real (not synthetic) data, which surfaced two real
+bugs — stale-shaped cached estimates and an effect-ordering lint error —
+that synthetic testing likely would have missed. Deleted
+`lib/taskState.ts`/`types/taskState.ts` as confirmed-unused dead code.
 
 ### 2026-09-07 — fix weekly grid stacking order, let users override any task field
 
-Two user-reported issues, planned via `/plan` (see full plan/context in
-`~/.claude/plans/an-issue-im-seeing-lucky-kitten.md`) then implemented:
-stacking order in the weekly grid was "weird" (midday-due tasks weren't
-sorting above end-of-day ones), and AI-guessed fields other than
-`shortTitle`/`course` (specifically the HW/R/EXAM/TODO type badge, plus
-`name`/due-date edits on Canvas-synced tasks) couldn't be corrected — the
-edits were silently accepted by the form and then discarded. Full
-rationale and file-by-file changes in the two Architecture Decisions
-entries above ("Weekly grid stacking order..." and "Any task field is now
-user-overridable..."). Two Explore subagents mapped the existing sort
-logic and the existing `TaskCustomization.course` override pattern before
-any code was written; an advisor pass ahead of the plan file caught the
-DST-unsafe millisecond-sum idea, the `grid-flow-row-dense` interaction,
-the `tasksWithoutDueDate` scope gap, and the `name`/`due` persistence gap
-that hadn't been in the initial plan sketch.
+Two user-reported issues planned via `/plan`: grid stacking order
+ignored time-of-day, and AI-guessed fields other than course couldn't be
+corrected. Full rationale in the two Architecture Decisions entries
+above. Two Explore agents mapped the existing sort/override logic first;
+an advisor pass caught a DST-unsafe design idea and a missing
+`name`/`due` persistence gap before implementing.
 
-Verified: `npx tsc --noEmit` (clean), `npm run lint` (exact pre-existing
-19-problem baseline, 0 new), `npm run build` (clean, all routes
-generated), `npx prisma migrate dev` + `npx prisma generate` for the new
-`TaskCustomization` columns. Live-verified via the Chrome extension against
-the real logged-in account's real data (see the two Architecture Decisions
-entries for specifics) — the first time this session's stacking-order fix
-and the type-override path were confirmed against actual rendered cards
-rather than just reasoning about the code; `nameOverride`/`dueAtOverride`
-and a real Canvas re-sync are not yet live-verified (see Active TODOs).
+Verified: `tsc`/lint/build/migrate clean; live-verified via Chrome
+extension. `nameOverride`/`dueAtOverride` and a real Canvas re-sync are
+not yet live-verified (see Active TODOs).
 
-### 2026-09-06 — fix the announcement window's week-start mismatch (Chrome extension used to debug live)
+### 2026-09-06 — fix the announcement window's week-start mismatch
 
-Direct continuation of the time-range work below: user tested it and still
-saw 13 announcements when expecting ~6, and specifically suspected deleted
-courses leaking through or an unscoped bulk Canvas pull. Investigated both
-via code (an Explore agent traced every course-delete/hide/restore/sync
-code path with file:line citations) and **ruled both out**: "delete" is a
-real cascading Prisma row delete (`app/api/courses/[courseId]/route.ts`),
-and the announcement fetch is already correctly per-course
-(`canvas-extension/background.js`'s `fetchCourseData`, `context_codes[]=
-course_${course.id}`). Initially proposed a diagnostic-only follow-up
-(per-course breakdown in the preview) rather than a code fix, since nothing
-in the code read as wrong — user rejected that and asked for a more
-detailed look, explicitly offering the Chrome extension to click around
-live. That's what actually found it: opened the real app, read the
-planner's own displayed "This week" (Sep 6–Sep 12) against the dry-run
-API's actual `filtering.rangeStart/rangeEnd` (Aug 26–Sep 6) via the page's
-own `fetch(...)` in the JS console — a full week off. Root cause and fix
-in the Architecture Decisions entry above ("Real bug found and fixed via
-live testing"). This is the first session where live browser access
-(Chrome extension) was available and used for verification rather than
-flagged as an unavailable TODO — directly responsible for catching a bug
-that pure code-reading had already (wrongly) cleared twice.
+Continuation of the time-range work below: user still saw 13
+announcements when expecting ~6. Code-reading ruled out the two
+suspected causes (deleted-course leakage, an unscoped bulk pull) —
+wrongly, twice. User pushed back and offered live Chrome-extension
+access, which is what actually found it: the planner's displayed "This
+week" didn't match the dry-run API's actual date range, a full week off
+(root cause and fix in Architecture Decisions, "Real bug found and fixed
+via live testing"). First session where live browser access was
+available and used for verification rather than flagged as a TODO —
+directly responsible for catching what code-reading alone had missed
+twice.
 
-Verified live end-to-end: re-ran the same dry-run fetch post-fix,
-`announcementCount` 13 → 6, exactly one announcement per course for all 6
-active courses. Also `npx tsc --noEmit`, `npm run lint` (19-problem
-baseline, 0 new), `npm run build`, and an 11-check throwaway `npx tsx`
-script covering three different "today" values (Sunday, Wednesday,
-Saturday) so the fix isn't only verified for the one boundary case that
-exposed it.
+Verified live: re-ran the dry-run fetch post-fix, `announcementCount`
+13 → 6, exactly one per course for all 6 active courses. Also
+`tsc`/lint/build clean, plus an 11-check script covering three different
+"today" values.
 
-### 2026-09-06 — announcement analysis time-range control (same session, right after live-testing the Haiku migration)
+### 2026-09-06 — announcement analysis time-range control
 
-User tested the just-shipped Haiku extraction path live and had to abort —
-too many announcements were being analyzed at once in one run (slow, and
-now real per-call cost). Asked for a time filter, a menu to control it, and
-a default as small as possible without dropping real announcements —
-restating almost exactly the window already hardcoded in
-`app/api/ai/analyze-announcements/route.ts` ("most announcements come out
-by the Wednesday of the previous week"). Confirmed via code read that the
-default window was already correct; the actual gaps were invisibility (no
-preview before an expensive run) and no way to adjust it. Full design and
-file-by-file changes in the Architecture Decisions entry above ("Announcement
-analysis now has a user-visible..."). Used a Plan subagent to detail the
-route/component implementation before writing code, given the touched
-surface (an existing route's request/response shape, plus new client state)
-warranted a second look before committing to the diff.
+Same session, right after live-testing the Haiku migration: user had to
+abort a run because too many announcements were being analyzed at once.
+The existing default window was already correct (confirmed by reading
+the code) — the real gaps were no preview before an expensive run and no
+way to adjust it. Full design in Architecture Decisions ("Announcement
+analysis now has a user-visible..."). Used a Plan subagent given the
+touched surface (an existing route's shape plus new client state).
 
-Verified with `npx tsc --noEmit` (clean), `npm run lint` (exact pre-existing
-19-problem baseline, 0 new — one new `react-hooks/set-state-in-effect` was
-introduced and then removed by restructuring the effect's early-return guard
-to not need a synchronous `setState`, since the disabled/label logic already
-falls back to `rangeIsInvalid` independent of a possibly-stale
-`previewCount`), `npm run build` (clean), a logged-out `curl` smoke test
-(both the no-body and `dryRun:true` shapes still 401), and a throwaway `npx
-tsx` script duplicating the route's pure date-math helpers (can't import
-them directly — `route.ts` only permits recognized Next.js route-handler
-exports) — 22/22 checks passed, notably confirming the default window's
-Wed-of-prior-week/Sun-of-this-week boundaries are unchanged from before this
-session's edit. No login/browser session available to click through the new
-UI live this session — see Active TODOs.
+Verified: `tsc`/lint/build clean, a logged-out smoke test, and a
+22-check throwaway script duplicating the route's date-math (route files
+can't be imported directly). No login/browser session to click through
+the new UI live this session.
 
 ### 2026-09-06 — fix announcement AI reliability, move extraction to Claude Haiku
 
-User reported the announcement-extraction Ollama call still frequently
-returned invalid JSON or wrong answers despite the 2026-09-07 polish pass,
-and reiterated wanting the duplicate checker biased toward false positives.
-Two real problems found: (1) no visibility into *why* extraction failed
-(truncation vs. model capability) and a fragile `index`-based join between
-model output and request; (2) `findDuplicateTask.ts` had two code paths that
-silently discarded a genuine `isDuplicate: true` verdict and reported "not a
-duplicate" — the bias was already tuned in the prompt from a prior session,
-but violated in code. User separately added `ANTHROPIC_API_KEY` (~$10
-credit, explicitly cost-cautious) and asked to use Claude Haiku for
-"whatever needs more power" — decided (with the user, via AskUserQuestion)
-to move only announcement extraction to Haiku (forced tool use), keeping the
-duplicate checker on local Ollama since it runs ~5x more often per review
-and its prompt is already tuned. Full rationale and file-by-file changes in
-the Architecture Decisions entries above (search "Claude Haiku" and "false-
-negative bugs fixed").
+User reported the Ollama extraction call still frequently failed despite
+an earlier polish pass, and repeated wanting the duplicate checker
+biased toward false positives (already tuned in the prompt, but violated
+in code — two paths silently discarded a genuine duplicate verdict).
+User added `ANTHROPIC_API_KEY`, and via `AskUserQuestion` it was decided
+to move only announcement extraction to Haiku (forced tool use), keeping
+the duplicate checker on local Ollama (runs 5x more often, already
+tuned). Full rationale in Architecture Decisions ("Claude Haiku" and
+"false-negative bugs fixed").
 
-Verified: `npx tsc --noEmit` (clean) and `npm run lint` (baseline unchanged,
-0 new issues in any file this session touched). Built a throwaway `npx tsx`
-verification harness (deleted after, same precedent as
-`lib/prioritization.test.ts`) covering:
-- 4 deterministic mocked-fetch unit tests for the `findDuplicateTask.ts`
-  bug fixes (unresolvable-id-stays-flagged ×2, no-nearby-assignments-is-
-  checked-not-degraded, positional-index-fallback) — **all 4 passed**.
-- 1 live call against the real local Ollama server
-  (`qwen2.5:3b-instruct`) with a realistic 3-task/2-assignment fixture:
-  `done_reason: "stop"` (no truncation), valid schema-constrained JSON,
-  correctly flagged both real duplicates (including the "proposed task is
-  part of a larger Canvas assignment" case) and correctly did NOT flag an
-  unrelated task — the schema/logging hardening works as intended.
-- 2 live announcement-extraction calls intended to test Claude Haiku — but
-  a first attempt silently exercised the **Ollama fallback** instead,
-  because a bare `npx tsx` script doesn't auto-load `.env` (unlike `next
-  dev`/`next build`) so `ANTHROPIC_API_KEY` read as unset; that Ollama run
-  (fixed by adding `import "dotenv/config"`) actually produced a good
-  result — a Chinese-language announcement, a table-based announcement, a
-  no-actionable-work announcement, and a multi-task announcement were all
-  handled correctly (right dueText preserved verbatim including the
-  Chinese-wording case, correctly zero tasks for the pure-reminder case).
-  Once `.env` was actually loaded, the **real** Haiku calls all failed with
-  `401 authentication_error: "API key is invalid."` — a bad credential, not
-  a code bug (see the blocking Active TODO above); the failure path itself
-  (typed-error handling, bisect-once-to-singles retry, per-announcement
-  degrade) behaved exactly as designed with no crash. Real Haiku output
-  quality is therefore **not yet verified** — needs a valid key and a
-  re-run.
+Verified via a throwaway test harness: 4/4 deterministic
+`findDuplicateTask.ts` bug-fix tests passed; 1 live Ollama duplicate-check
+call correctly flagged both real duplicates and correctly cleared an
+unrelated task; the first live Haiku attempt silently fell back to
+Ollama (a bare script doesn't auto-load `.env`), but that fallback run
+still produced correct output across 4 varied fixtures. Once `.env`
+loaded, the real Haiku calls failed on an invalid API key — a bad
+credential, not a code bug; the failure path (typed errors, bisection
+retry, per-item degrade) worked exactly as designed. **Resolved same
+session**: the user regenerated the key, and a follow-up live run
+confirmed 3/3 Haiku extractions succeeded with correct output quality,
+including correctly splitting multi-part assignments into separate
+tasks.
 
 ### 2026-09-06 — restore a deleted Canvas course
 
-Added a way to bring back a Canvas course after using the (real, hard) course
-delete in `ManageCoursesModal.tsx` — previously the only way back was an
-automatic full sync, and only if Canvas still reported the course `active`
-(a concluded/past-term course could never come back). Since Canvas access is
-only possible from the extension (browser session cookies, no server-side
-token), the restore trigger lives in the extension popup, per explicit user
-direction, rather than building a new web-app↔extension messaging bridge.
+Added a way to bring back a Canvas course after a real (hard) delete in
+`ManageCoursesModal.tsx` — previously only a full sync could restore one,
+and only if Canvas still reported it `active` (a concluded course could
+never come back). Since Canvas access only works from the extension
+(session cookies, no server-side token), the restore trigger lives in the
+extension popup rather than a new web↔extension messaging bridge.
 
-- Extracted the course/assignment/discussion/announcement upsert logic and
-  the session/Bearer-token auth resolution out of
-  `app/api/canvas/sync/route.ts` into new `lib/canvasIngest.ts`
-  (`upsertCanvasCourses`, `getCanvasSyncUserId`) — pure refactor, sync route's
-  request/response shape and pruning behavior are unchanged.
-- New `POST /api/canvas/restore-course` route reuses those same helpers but
-  **never prunes** — safe to call for one course without risking any other
-  course's data, unlike `/api/canvas/sync`.
-- `canvas-extension/background.js`: extracted `fetchCourseData()` (shared by
-  the existing full-sync loop and the new flow), added `LIST_CANVAS_COURSES`
-  (fetches both `active` and `completed` Canvas courses — a deliberate
-  difference from the existing `active`-only `GET_COURSES`/`SYNC_CANVAS`
-  fetches, since a concluded course is exactly the case that needed fixing)
-  and `RESTORE_COURSE` (fetches one course's data and posts it to the new
-  route) message handlers.
+- Extracted course/assignment/discussion/announcement upsert + auth
+  resolution out of `app/api/canvas/sync/route.ts` into new
+  `lib/canvasIngest.ts` (pure refactor; sync route's own behavior
+  unchanged).
+- New `POST /api/canvas/restore-course` reuses those helpers but never
+  prunes — safe to call for one course without touching others.
+- `canvas-extension/background.js`: extracted shared `fetchCourseData()`,
+  added `LIST_CANVAS_COURSES` (active *and* completed courses, unlike the
+  existing active-only sync) and `RESTORE_COURSE` handlers.
 - `canvas-extension/popup.html`/`popup.js`: new "Find Canvas Courses" →
-  select → "Restore Course" flow, mirroring the existing Connect/Sync button
-  patterns (`setStatus`/`describeError`, disable-while-in-flight).
-- `ManageCoursesModal.tsx`: one added sentence pointing users at the
-  extension popup for restoring a deleted course.
+  select → "Restore Course" flow.
 
-Verified with `npx tsc --noEmit` (clean), `npm run lint` (same pre-existing
-baseline, 0 new issues in changed files), `npm run build` (confirms the new
-`/api/canvas/restore-course` route), and `node --check` on both edited
-extension JS files. No login, live Canvas account, or unpacked-extension
-reload available this session — see Active TODOs for the real-world
-verification this still needs. Also surfaced (not fixed) a related latent
-issue: the sync route's pruning deletes a **hidden** course too once it
-drops off Canvas's active list, not just a never-hidden one — see Active
-TODOs.
+Verified: `tsc`/lint/build clean, `node --check` on the extension JS. No
+login/live Canvas/extension-reload available this session — see Active
+TODOs. Also surfaced (not fixed): sync pruning also deletes a **hidden**
+course once it drops off Canvas's active list — see Active TODOs.
 
 ### 2026-09-06 — card course segment consistency fix
 
@@ -1699,79 +1317,37 @@ guard, are both moot now — that whole feature was removed 2026-09-09.)
 ### 2026-09-06 — fix AI-suggested tasks not matching their real course
 
 Same session as the card course segment fix above. User reported that
-AI-suggested (accepted-announcement) tasks don't get grouped under the same
-course as a real Canvas-synced task for that course — they render as if
-they belong to a different, unmapped course.
+AI-suggested (accepted-announcement) tasks didn't share a course with a
+real Canvas-synced task for the same course. Root cause: the
+announcement route built `Announcement.course` from the raw Canvas name
+instead of the override-aware `displayName ?? name` resolution used
+everywhere else, so a renamed course produced two different strings for
+the same course — breaking every downstream string-match (abbreviation,
+color, dropdown pre-select), since AI-suggested tasks are never
+persisted and can't be re-resolved later. Fix: resolve `displayName ??
+name` at the point `Announcement.course` is built, plus updating the
+internal duplicate-detection course lookup to match on the same resolved
+value. Confirmed `suggestionKey` hashes only announcement id + name (not
+course), so this doesn't invalidate any existing accept/reject decisions.
 
-Root cause: `app/api/ai/analyze-announcements/route.ts`'s "Convert
-announcements" step built each `Announcement.course` from the raw
-`course.name` Prisma field, while every other place in the app that turns a
-`CanvasCourse` row into a display-facing string already uses the
-override-aware `displayName ?? name` resolution (`lib/canvas.ts`'s
-`getAllAssignments`, `app/api/courses/route.ts`). So a user who renamed a course via
-Manage Courses saw the friendly name on Canvas-synced tasks but the raw
-Canvas name on AI-suggested tasks for the same course — two different
-strings for the same course, all the way through
-`ProposedTask.course`/`sourceAnnouncement.course`
-(`lib/ai/analyzeAnnouncement.ts`) to the accepted `plannerTask.course`
-(`AIReviewPanel.tsx`'s `handleAccept`), since these tasks are never
-persisted (no DB row to re-resolve against later — see the fix above).
-That mismatch broke every downstream string-match: `WeeklyPlannerView.tsx`'s
-`courses.find((c) => c.name === task.course)` (course abbreviation,
-`isCustomCourse`), `AssignmentCard.tsx`'s course-color hashing, and
-`CourseSelect.tsx`'s dropdown pre-selection (synthesized a fake one-off
-course option instead of finding the real one).
-
-Fix: `course: course.displayName ?? course.name` at the point
-`Announcement.course` is built, plus updating `nearbyAssignmentsFor`'s
-`courses.find((course) => course.name === announcement.course)` join to
-match on the same resolved value (`(course.displayName ?? course.name) ===
-announcement.course`) — otherwise that internal duplicate-detection lookup
-would've silently broken instead, once `announcement.course` no longer
-matched the raw name it used to compare against. Nothing else needed to
-change; every downstream consumer already just propagates this string
-unmodified. Confirmed `lib/suggestionKey.ts`'s `computeSuggestionKey`
-hashes only `sourceAnnouncementId + name` (not course), so this doesn't
-invalidate any already-accepted/rejected suggestion decisions.
-
-Verified with `npx tsc --noEmit` (clean) and `npm run lint` (0 new issues
-in the changed file). Not verified live — no login/Ollama this session,
-see Active TODOs.
+Verified: `tsc`/lint clean. Not verified live — see Active TODOs.
 
 ### 2026-09-07 — announcement analysis pipeline polish pass
 
 Full pass over the announcement→suggestion→duplicate-check→review flow
-per direct user feedback ("pretty trash," duplicate-check UI "really
-ugly," raw HTML shown, Ollama inconsistent, stale re-suggestions). Full
-rationale in the Architecture Decisions entry above; summary here.
+per direct user feedback ("pretty trash," raw HTML shown, stale
+re-suggestions). Full rationale in Architecture Decisions. Fixed:
+raw-HTML display + evidence highlighting in `AIReviewCard.tsx`, Ollama
+call consistency (`temperature: 0`, timeouts, per-task validation) in
+`analyzeAnnouncement.ts`/`findDuplicateTask.ts`, a deterministic
+`dueText`→date parser (`lib/dueText.ts`), persisted accept/reject state
+(`AnnouncementSuggestionReview` + `lib/suggestionKey.ts`), and a distinct
+"duplicate check unavailable" status separate from a genuine no-match.
+Deleted dead-code `lib/ai/selectRelevantAnnouncements.ts`.
 
-Fixed: raw-HTML display (new `stripHtmlForDisplay` in `lib/htmlText.ts`)
-plus new evidence highlighting (`lib/evidenceHighlight.ts`) in
-`AIReviewCard.tsx`; `lib/ai/analyzeAnnouncement.ts` consistency
-(`temperature: 0`, `AbortSignal.timeout`, system message, per-task field
-validation) — same `AbortSignal.timeout` fix also applied to
-`lib/ai/findDuplicateTask.ts`; new `lib/dueText.ts` deterministic
-`dueText`→date parser, resolved client-side in `AIReviewCard.tsx`; new
-`AnnouncementSuggestionReview` Prisma model + `lib/suggestionKey.ts` +
-`POST /api/ai/suggestion-review` persisting accept/reject decisions,
-wired into `AIReviewPanel.tsx` and filtered in
-`app/api/ai/analyze-announcements/route.ts` (automatic mode only); new
-`canvasMatch.status: "unavailable"` (via `findDuplicateTask.ts`'s new
-`checkStatus` field) distinguishing a degraded/failed duplicate check from
-a genuine no-match, rendered as a distinct grey box in `AIReviewCard.tsx`.
-Deleted dead-code `lib/ai/selectRelevantAnnouncements.ts` (never wired in;
-superseded by the persisted-review-state fix). Also fixed a latent
-`AIReviewCard` bug the due-date work exposed (state not resetting between
-suggestions) by keying it on `suggestionKey` in `AIReviewPanel.tsx`.
-
-Verified with `npx tsc --noEmit` (clean), `npm run lint` (same pre-existing
-baseline, 0 new issues in changed files), `npm run build` (confirms the
-new `/api/ai/suggestion-review` route), `npx prisma migrate dev` +
-`npx prisma generate` (migration `20260907004906_add_announcement_suggestion_review`
-applied), and a standalone `npx tsx` spot-check of `lib/dueText.ts` against
-synthetic inputs. No Ollama server or logged-in browser session available
-this session — see Active TODOs for the real-world verification this
-still needs.
+Verified: `tsc`/lint/build/migrate clean, plus a standalone spot-check of
+`lib/dueText.ts` against synthetic inputs. No Ollama/logged-in session
+available this session — see Active TODOs.
 
 ### 2026-09-06 — remove redundant AnalyzeAnnouncementsButton
 
@@ -1786,116 +1362,46 @@ announcement-analysis entry point.
 ### 2026-09-06 — fix broken announcement analysis, bias duplicate detection, loading indicators
 
 User tried announcement analysis for real and got zero results — every
-batch either timed out after 25s or came back malformed, across all 13
-selected announcements (real logs pasted, including Chinese-titled
-announcements like "第三周与第四周之计划" — a real class). Root cause:
-`announcement.message` is Canvas's raw, unbounded HTML, passed straight
-into the Ollama prompt with zero stripping or length cap (unlike
-`lib/ai/findDuplicateTask.ts`, which already caps assignment descriptions
-at 500 chars for the identical reason) — a batch of 5 real announcements
-could blow past Ollama's context window, which was never set explicitly
-anywhere in this codebase.
+batch timed out or came back malformed. Root cause: `announcement.message`
+is raw, unbounded Canvas HTML passed straight into the Ollama prompt with
+no stripping or length cap (unlike `findDuplicateTask.ts`'s existing
+500-char cap) — a batch could blow past Ollama's context window, which
+was never set explicitly anywhere in the codebase.
 
-Fixed:
-- New `lib/htmlText.ts` (`stripHtml`, `truncateText`) extracted from
-  `findDuplicateTask.ts`'s previously-private HTML stripper, now shared.
-- `lib/ai/analyzeAnnouncement.ts`: caps each announcement's message to
-  1200 chars (stripped of HTML) before it enters the prompt; the
-  per-entry validation that used to `throw` on one malformed entry and
-  fail the **whole batch** now degrades just that entry to "no
-  extractable tasks" (same per-item-degradation fix as
-  `findDuplicateTask.ts` from the previous session — this file had the
-  identical bug, just missed in that audit since it required looking at
-  message *content size*, not just error-handling structure); timeout
-  bumped 25s → 35s as a safety margin on top of the real fix.
-- `lib/ollamaConfig.ts`: added `OLLAMA_NUM_CTX = 8192`, now set on all 5
-  Ollama call sites — nothing set this before, so every request silently
-  relied on whatever the pulled model's Modelfile defaulted to.
-- **Duplicate detection now skews hard toward false positives**, per
-  explicit direction: a wrongly-flagged duplicate costs one click to
-  reject (confirmed by reading `AIReviewCard.tsx` — a flagged duplicate
-  shows a clear amber banner + reasoning right next to Accept/Reject); a
-  missed real duplicate shows nothing and silently clutters the planner.
-  Rewrote `findDuplicateTask.ts`'s DECISION section: NOT DUPLICATE is now
-  reserved for *clearly* different work; any plausible overlap, even
-  weak, routes to DUPLICATE at LOW confidence instead. No route/status-
-  mapping change needed — `isDuplicate:true` + `confidence:"low"` already
-  rendered as "possible duplicate" in the UI.
-- **Loading indicators added across every identified gap** (full survey
-  done via fresh code audit this session, not guessed): new
-  `components/Spinner.tsx` (indeterminate), applied to: `awardXpForTask`'s
-  XP calculation (new `awardingXp` state), `MusicPlayer.tsx`'s
-  rename/delete playlist/track (previously no busy state at all — new
-  shared `busyItemId`), and consistency upgrades to `CourseSelect.tsx`'s
-  create button and `ManageCoursesModal.tsx`'s per-row Save buttons
-  (labels didn't change while busy before). Existing good indicators
-  (`AIReviewPanel.tsx`, `ManageCoursesModal.tsx`'s course list load,
-  `MusicPlayer.tsx`'s playlist load/import) got the spinner added
-  alongside their existing text for a stronger visual cue.
+Fixed: new shared `lib/htmlText.ts` (`stripHtml`/`truncateText`);
+`analyzeAnnouncement.ts` caps each message to 1200 chars and degrades
+per-entry instead of failing the whole batch on one malformed item (same
+bug class as `findDuplicateTask.ts`); `OLLAMA_NUM_CTX = 8192` added and
+set on all 5 call sites (previously unset everywhere); duplicate
+detection rewritten to skew hard toward false positives per explicit
+direction (a wrong flag costs one click; a missed duplicate silently
+clutters the planner); loading indicators (new `Spinner.tsx`) added
+across every identified gap (XP award, MusicPlayer busy states, course
+create/save).
 
-Verified with `npx tsc --noEmit`, `npm run lint` (18 → 19 problems — the
-one new one is a state setter called directly in an effect
-body, the exact same already-accepted `set-state-in-effect` pattern as
-the pre-existing, adjacent `setEstimatingCount` call — not a new class of
-issue), `npm run build`, and a synthetic `npx tsx` script (deleted after)
-confirming `stripHtml`/`truncateText` actually bound a 6000+ char
-HTML string down to ~1200 chars. Could not reproduce the original
-failure end-to-end (no login, no real Canvas data) — see Active TODOs.
+Verified: `tsc`/lint/build clean, plus a synthetic script confirming HTML
+truncation actually worked. Could not reproduce the original failure
+end-to-end (no login/real Canvas data) — see Active TODOs.
 
 ### 2026-09-06 — pre-gamification cleanup pass
 
-Before starting `gamificationSystem.md`, did a readiness audit (3 parallel
-code-quality passes over the AI pipeline, priority/XP scoring, and general
-code health) rather than assuming the codebase was ready. Verdict: not
-broken, but a handful of concrete gaps worth closing first — not a full
-rewrite. Not yet committed.
+Readiness audit (3 parallel code-quality passes) before starting
+`gamificationSystem.md`. Fixed: `findDuplicateTask.ts`'s real
+"occasionally misses a duplicate" cause (one malformed entry throwing
+blanked the whole announcement's results — changed to per-entry
+fallback); consolidated 5 different, inconsistent `OLLAMA_URL`/model
+configs (previously masked by everyone defaulting to the same address)
+into `lib/ollamaConfig.ts`; moved gamification state to a DB-backed
+`GamificationState` model (see Architecture Decisions); fixed
+`getCanvasData()` to follow Canvas's pagination `Link` header (was
+silently losing everything past page 1 for any course with 100+ items).
 
-Fixed:
-- `lib/ai/findDuplicateTask.ts` — the real explanation for "findDuplicateTasks
-  occasionally misses an obvious duplicate" (previously blamed on "3B
-  model variance") is that its per-entry validation `throw`n on ANY
-  malformed/inconsistent entry, and the caller
-  (`app/api/ai/analyze-announcements/route.ts`) responded to that throw
-  by blanking out `canvasMatch.status: "none"` for **every** task in that
-  announcement — including tasks whose own entry was correct. Changed
-  the per-entry checks to `return fallbackResult(...)` for just that
-  entry instead of throwing; function-level failures (timeout, non-2xx,
-  unparseable JSON, missing `results` array) still throw. Caller needed
-  no change — its catch-all is still the correct last resort for those.
-- New `lib/ollamaConfig.ts` (`OLLAMA_CHAT_URL`, `OLLAMA_MODEL`) — was
-  duplicated 5 ways with real inconsistencies (3 call sites hardcoded the
-  URL, ignoring `OLLAMA_URL`; the 2 that read it disagreed on whether it
-  already included `/api/chat`), currently masked only because everyone
-  defaulted to the same address. All 5 Ollama call sites now import this;
-  the 4 missing `format: "json"` on their request now set it (only
-  `task-xp` had it before) — malformed JSON was one of the triggers for
-  the `findDuplicateTask.ts` bug above, so this closes off that failure
-  mode more broadly, not just there.
-- Gamification state moved from `localStorage` to a new `GamificationState`
-  Prisma model/`app/api/gamification` route (full rationale in
-  Architecture Decisions above) — your call, given gamification is about
-  to make this state matter far more than it used to.
-- `canvas-extension/background.js`'s `getCanvasData()` now follows
-  Canvas's `Link`-header pagination (`rel="next"`) instead of only ever
-  fetching page 1 — confirmed real: every one of its 8 call sites
-  requests `per_page=100` with no follow-up, so a course with more than
-  100 assignments/discussions/announcements was silently losing
-  everything past page 1. Fixed in one place (the shared helper); no
-  call site needed to change since all of them already just await a flat
-  array.
+Deferred, not fixed (flagged as known/lower-severity):
+`WeeklyPlannerView.tsx`'s size, the `getTaskPriority`/`calculatePriority`
+divergence (deliberate), no automated tests, some lint warnings.
 
-Explicitly deferred (real, but lower-severity or already-deliberate —
-see the plan file / ask before assuming these are next):
-`WeeklyPlannerView.tsx`'s size (1332 lines), the `getTaskPriority` vs
-`calculatePriority` divergence (already known/deliberate), no automated
-regression tests for `calculatePriority`, `react-hooks/exhaustive-deps`
-warnings in `MusicPlayer.tsx`/`PomodoroTimer.tsx`, leftover debug
-`console.log`s, a stale CLAUDE.md claim about `analyzeAssignment.ts`.
-
-Verified with `npx tsc --noEmit`, `npm run lint` (identical 18-problem
-baseline, 0 new), `npm run build`, and a logged-out dev-server smoke test
-(`/api/gamification` correctly 401s). No login/Ollama-in-the-loop testing
-this session — see Active TODOs.
+Verified: `tsc`/lint/build clean, a logged-out smoke test. No
+login/Ollama-in-the-loop testing this session.
 
 ### 2026-09-06 — task name normalization (compact card labels)
 
@@ -1912,43 +1418,27 @@ fully removed 2026-09-09 — none of that code exists anymore.
 
 ### 2026-09-05/06 — theming pass, extension theme sync, card compaction, due-time editing
 
-Large multi-round session: a full app-wide audit and fix pass (bugs +
-theming normalization across the web app and the Chrome extension), then
-several rounds of user feedback tightening the weekly-grid assignment
-cards and the Pomodoro/Music Player layout. Committed as `7f981d3`
-("housekeeping, and dark/light mode carryover into extension") and
-`39d1fc1` ("refined assignment cards").
+Large multi-round session: an app-wide audit/fix pass (bugs + theming
+normalization across the web app and extension), then several rounds of
+user feedback tightening the assignment cards and Pomodoro/Music Player
+layout. Committed as `7f981d3` and `39d1fc1`.
 
-Highlights still relevant to future work (see Architecture Decisions above
-for the parts that are now just "how it works"):
-- Fixed real bugs found during the audit: a theme-flash race in
-  `WeeklyPlannerView.tsx` (three competing sources of truth for
-  `data-theme`), DST-unsafe day-diff math (new shared `daysBetween()` in
-  `lib/utils.ts`), a mismatched frog-score threshold in
-  `lib/prioritization.ts`, an unused `estimatedMinutes` input to the
-  priority formula (now folded in as a small tie-breaker), a
-  `localhost:300` typo in `canvas-extension/manifest.json`, and
-  `lib/analyzeAssignment.ts` not following this repo's own
-  Ollama-fallback convention (fixed to match `task-xp`'s pattern).
-- `MusicPlayer.tsx`'s internal layout was keyed to viewport breakpoints
-  even though it only ever renders at half the window width (inside
-  `WeeklyPlannerView`'s Pomodoro/Music Player grid) — switched to Tailwind
-  v4 container queries (`@container`/`@lg:`/`@xl:`) so it actually
-  responds to its own rendered width; also uses `minmax(0, 1fr)` instead
-  of bare `1fr` in its grid templates (bare `1fr` doesn't shrink below its
-  content's intrinsic width, which is what caused a visible page-overflow
-  bug earlier in this same session).
-- Assignment cards went through several compaction rounds per direct user
-  feedback: removed the due-date text (date is redundant with grid
-  position), the "✓ Completed late" badge (color-coding already conveys
-  it), and the priority-label badge entirely (redundant with bar length);
-  moved the focus/delete icon buttons to a hover-only absolute overlay so
-  they stop reserving layout width; tightened padding repeatedly to match
-  "still too much padding" feedback.
-- Added the due-*time* picker that was missing from task creation/editing
-  (`components/DueTimeField.tsx`, an Auto/Custom toggle mirroring
-  `StartDateField.tsx`) — see Architecture Decisions' "Due date/time"
-  bullet for how it flows through.
+- Real bugs fixed: a theme-flash race in `WeeklyPlannerView.tsx` (three
+  competing sources of truth for `data-theme`), DST-unsafe day-diff math
+  (new shared `daysBetween()`), a mismatched frog-score threshold, an
+  unused `estimatedMinutes` priority input (now a tie-breaker), a
+  `localhost:300` typo in the extension manifest, and
+  `analyzeAssignment.ts` not following the repo's Ollama-fallback
+  convention.
+- `MusicPlayer.tsx` switched from viewport breakpoints to Tailwind v4
+  container queries (it only ever renders at half window width) and
+  `minmax(0, 1fr)` grid templates (bare `1fr` was causing page overflow).
+- Assignment cards went through several compaction rounds per user
+  feedback: dropped the due-date text, the "Completed late" badge, and
+  the priority-label badge; moved focus/delete buttons to a hover-only
+  overlay; tightened padding repeatedly.
+- Added the due-*time* picker (`DueTimeField.tsx`) — see Architecture
+  Decisions' "Due date/time" bullet.
 
 ### Earlier sessions (2026-09-04 – 2026-09-06), condensed
 
