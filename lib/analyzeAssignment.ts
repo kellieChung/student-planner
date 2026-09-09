@@ -1,3 +1,5 @@
+import { OLLAMA_CHAT_URL, OLLAMA_MODEL, OLLAMA_NUM_CTX } from "@/lib/ollamaConfig";
+
 export const ASSIGNMENT_TYPES = [
     "homework", "reading", "reflection", "discussion", "quiz", "test", "exam",
     "essay", "project", "presentation", "lab", "problem_set", "practice", "other",
@@ -59,8 +61,6 @@ type AssignmentInput = {
     pointsPossible?: number | null;
 };
 
-const OLLAMA_URL = "http://localhost:11434/api/chat";
-const MODEL = "qwen2.5:3b-instruct";
 const OLLAMA_TIMEOUT_MS = 25_000;
 
 // Tokens budgeted per assignment in the batch response, plus a fixed
@@ -98,6 +98,10 @@ export function classifyAssignmentType(text: {
     if (/\b(homework|hw)\b/.test(haystack)) return "homework";
     if (/\b(practice|drills?|worksheets?)\b/.test(haystack)) return "practice";
     if (/\b(readings?|chapter\s*\d|pp?\.\s*\d)/.test(haystack)) return "reading";
+    // Imperative "read"/"watch"/"video" without the noun "reading" (e.g.
+    // "Read Ch. 3", "Watch Lecture 4", "Video: Cell Division") — folded
+    // into the same "reading" bucket rather than a new type/label.
+    if (/\b(read|watch(?:ing)?|videos?)\b/.test(haystack)) return "reading";
 
     return "other";
 }
@@ -244,14 +248,14 @@ Rules:
 - Do not include markdown or any text outside the JSON.
 `;
 
-    const response = await fetch(OLLAMA_URL, {
+    const response = await fetch(OLLAMA_CHAT_URL, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
         },
         signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
         body: JSON.stringify({
-            model: MODEL,
+            model: OLLAMA_MODEL,
             messages: [
                 {
                     role: "user",
@@ -259,7 +263,9 @@ Rules:
                 },
             ],
             stream: false,
+            format: "json",
             options: {
+                num_ctx: OLLAMA_NUM_CTX,
                 num_predict:
                     PREDICT_TOKENS_BASE +
                     PREDICT_TOKENS_PER_ASSIGNMENT * assignments.length,

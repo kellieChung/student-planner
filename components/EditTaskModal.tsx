@@ -7,23 +7,21 @@ import StartDateField from "./StartDateField";
 import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import {resolveDueTime, formatTimeInputValue, formatEstimatedMinutes} from "@/lib/utils";
-import {classifyLabelType, courseAbbreviationDefault, deterministicShortTitle, formatTaskLabel} from "@/lib/taskLabel";
+import {classifyLabelType, courseAbbreviationDefault, formatTaskLabel, LabelType} from "@/lib/taskLabel";
+import {TaskStatus} from "@/lib/taskStatus";
 
 type EditTaskModalProps = {
     task: Assignment | null;
     isOpen: boolean;
     startDate: string;
     notes: string;
+    status: TaskStatus;
     courses: Course[];
     estimatedMinutes?: number;
     onCourseCreated: (course: Course) => void;
     onClose: () => void;
-    onSaveTask: (updatedTask: Assignment, startDate: string, notes: string) => void;
+    onSaveTask: (updatedTask: Assignment, startDate: string, notes: string, status: TaskStatus) => void;
     onDeleteTask: (id:string) => void;
-    // Forces a fresh Ollama-backed short title for a Canvas-synced task,
-    // bypassing "never recompute once set" — persists server-side and
-    // resolves with the new value (or null on failure).
-    onRegenerateShortTitle: (taskId: string) => Promise<string | null>;
 };
 
 export default function EditTaskModal({
@@ -31,13 +29,13 @@ export default function EditTaskModal({
     isOpen,
     startDate,
     notes: initialNotes,
+    status: initialStatus,
     courses,
     estimatedMinutes,
     onCourseCreated,
     onClose,
     onSaveTask,
     onDeleteTask,
-    onRegenerateShortTitle,
 }: EditTaskModalProps) {
     const [name, setName] = useState("");
     const [course, setCourse] = useState("");
@@ -45,9 +43,9 @@ export default function EditTaskModal({
     const [dueTime, setDueTime] = useState("");
     const [start, setStart] = useState("");
     const [notes, setNotes] = useState("");
-    const [shortTitle, setShortTitle] = useState("");
-    const [regenerating, setRegenerating] = useState(false);
-    const [regenerateError, setRegenerateError] = useState<string | null>(null);
+    const [status, setStatus] = useState<TaskStatus>("not_started");
+    const [typeOverride, setTypeOverride] = useState("");
+    const [editingClassification, setEditingClassification] = useState(false);
 
     useEffect(() => {
         if (task) {
@@ -57,47 +55,30 @@ export default function EditTaskModal({
             setDueTime(formatTimeInputValue(task.dueAt));
             setStart(startDate || "");
             setNotes(initialNotes || "");
-            setShortTitle(task.shortTitle ?? "");
-            setRegenerateError(null);
+            setStatus(initialStatus);
+            setTypeOverride(task.typeOverride ?? "");
+            setEditingClassification(false);
         }
-    }, [task, startDate, initialNotes]);
+    }, [task, startDate, initialNotes, initialStatus]);
 
     if (!isOpen ||!task) return null;
 
     const startAfterDue = Boolean(start && due && start > due);
-    const isCustomTask = task.id.startsWith("custom-");
 
-    const typeCode = classifyLabelType({
+    const autoTypeCode = classifyLabelType({
         name,
         course,
         isCustomCourse: courses.find((c) => c.name === course)?.isCustom,
     });
+    const effectiveTypeCode = (typeOverride || autoTypeCode) as LabelType;
     const courseAbbreviation =
         courses.find((c) => c.name === course)?.abbreviation || courseAbbreviationDefault(course || "General");
-    const deterministicTitle = deterministicShortTitle({ name, course, typeCode });
     const cardLabel = formatTaskLabel({
         courseAbbreviation,
-        typeCode,
+        typeCode: effectiveTypeCode,
         dueDateKey: due,
-        shortTitle: shortTitle || null,
         name,
-        course,
     });
-
-    const handleRegenerate = async () => {
-        setRegenerating(true);
-        setRegenerateError(null);
-
-        const result = await onRegenerateShortTitle(task.id);
-
-        if (result === null) {
-            setRegenerateError("Couldn't regenerate right now. Try again in a moment.");
-        } else {
-            setShortTitle(result);
-        }
-
-        setRegenerating(false);
-    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -109,9 +90,9 @@ export default function EditTaskModal({
             name,
             course,
             due,
-            shortTitle: shortTitle.trim() || null,
+            typeOverride: (typeOverride || null) as Assignment["typeOverride"],
             ...resolveDueTime(due, dueTime),
-        }, start, notes);
+        }, start, notes, status);
 
         onClose();
     };
@@ -149,15 +130,55 @@ export default function EditTaskModal({
                             onChange = {(e) => setName(e.target.value)}
                             className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
                         />
+                        <p className="mt-1.5 text-xs text-slate-500 font-mono">{cardLabel}</p>
                     </div>
-                <div className="grid grid-cols-2 gap-3">
-            <CourseSelect
-              courses={courses}
-              value={course}
-              onChange={setCourse}
-              onCourseCreated={onCourseCreated}
-            />
 
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+              Course &amp; Type
+            </label>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800/60 p-2.5">
+              {editingClassification ? (
+                <div className="grid grid-cols-2 gap-3 flex-1">
+                  <CourseSelect
+                    courses={courses}
+                    value={course}
+                    onChange={setCourse}
+                    onCourseCreated={onCourseCreated}
+                  />
+                  <div>
+                    <select
+                      value={typeOverride}
+                      onChange={(e) => setTypeOverride(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    >
+                      <option value="">Auto ({autoTypeCode})</option>
+                      <option value="HW">HW</option>
+                      <option value="R">R (Reading)</option>
+                      <option value="EXAM">EXAM</option>
+                      <option value="TODO">TODO</option>
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <p className="flex-1 text-sm text-slate-300">
+                  <span className="font-semibold">{course || "General"}</span>
+                  <span className="text-slate-500"> · </span>
+                  {effectiveTypeCode}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setEditingClassification((editing) => !editing)}
+                title={editingClassification ? "Done editing course/type" : "Change course or type"}
+                className="shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"
+              >
+                {editingClassification ? "Done" : "✎ Edit"}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
                 Due Date
@@ -173,42 +194,21 @@ export default function EditTaskModal({
             <DueTimeField value={dueTime} onChange={setDueTime} />
 
             <StartDateField value={start} onChange={setStart} />
-          </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
-              Card Label
-            </label>
-            <p className="text-xs text-slate-500 mb-1.5 font-mono">{cardLabel}</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={shortTitle}
-                onChange={(e) => setShortTitle(e.target.value)}
-                placeholder={deterministicTitle}
-                maxLength={40}
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as TaskStatus)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-              />
-              {!isCustomTask && (
-                <button
-                  type="button"
-                  disabled={regenerating}
-                  onClick={handleRegenerate}
-                  title="Regenerate the short title using AI"
-                  className="shrink-0 rounded-xl bg-slate-800 border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {regenerating ? "Regenerating..." : "↻ Regenerate"}
-                </button>
-              )}
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Done</option>
+              </select>
             </div>
-            {isCustomTask && (
-              <p className="mt-1 text-[11px] text-slate-500">
-                Custom tasks can&apos;t be regenerated with AI — type a short title directly.
-              </p>
-            )}
-            {regenerateError && (
-              <p className="mt-1 text-[11px] text-rose-400">{regenerateError}</p>
-            )}
           </div>
 
           {typeof estimatedMinutes === "number" && (

@@ -62,11 +62,11 @@ export async function PATCH(
         );
     }
 
-    const { hidden, name, abbreviation } = body as { hidden?: unknown; name?: unknown; abbreviation?: unknown };
+    const { hidden, name, abbreviation, color } = body as { hidden?: unknown; name?: unknown; abbreviation?: unknown; color?: unknown };
 
-    if (hidden === undefined && name === undefined && abbreviation === undefined) {
+    if (hidden === undefined && name === undefined && abbreviation === undefined && color === undefined) {
         return NextResponse.json(
-            { error: "Provide 'hidden', 'name', and/or 'abbreviation' to update." },
+            { error: "Provide 'hidden', 'name', 'abbreviation', and/or 'color' to update." },
             { status: 400 }
         );
     }
@@ -92,7 +92,21 @@ export async function PATCH(
         );
     }
 
-    const data: { hidden?: boolean; displayName?: string; abbreviation?: string | null } = {};
+    if (color !== undefined && typeof color !== "string") {
+        return NextResponse.json(
+            { error: "'color' must be a string." },
+            { status: 400 }
+        );
+    }
+
+    if (color !== undefined && color.trim() && !/^#[0-9a-fA-F]{6}$/.test(color.trim())) {
+        return NextResponse.json(
+            { error: "'color' must be a hex color like '#3b82f6'." },
+            { status: 400 }
+        );
+    }
+
+    const data: { hidden?: boolean; displayName?: string; abbreviation?: string | null; color?: string | null } = {};
     if (hidden !== undefined) data.hidden = hidden as boolean;
     // Rename only ever touches displayName — the canonical `name` column
     // is owned by Canvas sync and would revert this on the next sync.
@@ -102,6 +116,12 @@ export async function PATCH(
     if (abbreviation !== undefined) {
         const trimmed = (abbreviation as string).trim();
         data.abbreviation = trimmed ? trimmed : null;
+    }
+    // An empty string clears the override, reverting to the auto-derived
+    // default (AssignmentCard.tsx's courseColorFor hash).
+    if (color !== undefined) {
+        const trimmed = color.trim();
+        data.color = trimmed ? trimmed : null;
     }
 
     const course = await prisma.canvasCourse.update({
@@ -114,6 +134,7 @@ export async function PATCH(
             hidden: true,
             canvasOrigin: true,
             abbreviation: true,
+            color: true,
         },
     });
 
@@ -124,6 +145,7 @@ export async function PATCH(
             hidden: course.hidden,
             isCustom: course.canvasOrigin === CUSTOM_COURSE_ORIGIN,
             abbreviation: course.abbreviation,
+            color: course.color,
         },
     });
 }

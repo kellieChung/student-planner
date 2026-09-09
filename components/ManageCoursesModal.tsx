@@ -3,6 +3,8 @@
 import React, {useEffect, useState} from "react";
 import {Course} from "@/types/course";
 import {courseAbbreviationDefault} from "@/lib/taskLabel";
+import {courseColorDefault} from "@/lib/courseColor";
+import Spinner from "@/components/Spinner";
 
 type ManageCoursesModalProps = {
     isOpen: boolean;
@@ -22,6 +24,8 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
     const [renameValue, setRenameValue] = useState("");
     const [editingAbbrId, setEditingAbbrId] = useState<string | null>(null);
     const [abbrValue, setAbbrValue] = useState("");
+    const [editingColorId, setEditingColorId] = useState<string | null>(null);
+    const [colorValue, setColorValue] = useState("#3b82f6");
 
     useEffect(() => {
         if (!isOpen) return;
@@ -127,6 +131,43 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
         setAbbrValue(course.abbreviation ?? "");
     };
 
+    const startEditColor = (course: Course) => {
+        setEditingColorId(course.id);
+        setColorValue(course.color ?? "#3b82f6");
+    };
+
+    const saveColor = async (course: Course, nextColor: string | null) => {
+        if (nextColor === course.color) {
+            setEditingColorId(null);
+            return;
+        }
+
+        setBusyCourseId(course.id);
+
+        try {
+            const response = await fetch(`/api/courses/${course.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ color: nextColor ?? "" }),
+            });
+
+            if (!response.ok) throw new Error("Failed to update color.");
+
+            const { course: updated } = await response.json() as { course: Course };
+
+            setCourses((current) =>
+                current.map((c) => (c.id === updated.id ? updated : c))
+            );
+            setEditingColorId(null);
+
+            onChanged();
+        } catch {
+            setError("Couldn't update that course's color. Try again.");
+        } finally {
+            setBusyCourseId(null);
+        }
+    };
+
     const saveAbbr = async (course: Course) => {
         const trimmed = abbrValue.trim();
 
@@ -204,6 +245,9 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
                         Deleting a synced course removes it for good, but it&apos;ll come
                         back on your next sync if Canvas still calls it active. Courses
                         you add yourself aren&apos;t synced, so deleting one is permanent.
+                        Deleted a Canvas course by mistake (or need one back from a past
+                        term)? Open the Student Planner extension popup and use
+                        &quot;Find Canvas Courses&quot; to restore it.
                     </p>
                 </div>
 
@@ -220,14 +264,18 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
                         type="button"
                         disabled={adding || !newCourseName.trim()}
                         onClick={addCourse}
-                        className="shrink-0 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        + Add Course
+                        {adding && <Spinner className="h-3.5 w-3.5" />}
+                        {adding ? "Adding..." : "+ Add Course"}
                     </button>
                 </div>
 
                 {loading && (
-                    <p className="text-sm text-slate-400">Loading courses...</p>
+                    <p className="flex items-center gap-2 text-sm text-slate-400">
+                        <Spinner className="h-3.5 w-3.5" />
+                        Loading courses...
+                    </p>
                 )}
 
                 {error && (
@@ -259,9 +307,10 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
                                             type="button"
                                             disabled={busyCourseId === course.id}
                                             onClick={() => saveRename(course)}
-                                            className="shrink-0 rounded bg-indigo-600 px-2 py-1 text-xs font-semibold hover:bg-indigo-500"
+                                            className="shrink-0 flex items-center gap-1 rounded bg-indigo-600 px-2 py-1 text-xs font-semibold hover:bg-indigo-500"
                                         >
-                                            Save
+                                            {busyCourseId === course.id && <Spinner className="h-3 w-3" />}
+                                            {busyCourseId === course.id ? "Saving..." : "Save"}
                                         </button>
                                         <button
                                             type="button"
@@ -318,9 +367,10 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
                                                     type="button"
                                                     disabled={busyCourseId === course.id}
                                                     onClick={() => saveAbbr(course)}
-                                                    className="shrink-0 rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-indigo-500"
+                                                    className="shrink-0 flex items-center gap-1 rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-indigo-500"
                                                 >
-                                                    Save
+                                                    {busyCourseId === course.id && <Spinner className="h-2.5 w-2.5" />}
+                                                    {busyCourseId === course.id ? "Saving..." : "Save"}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -342,6 +392,60 @@ export default function ManageCoursesModal({isOpen, onClose, onChanged}: ManageC
                                             >
                                                 {course.abbreviation ?? courseAbbreviationDefault(course.name)}
                                             </button>
+                                        )}
+
+                                        {editingColorId === course.id ? (
+                                            <div
+                                                className="flex shrink-0 items-center gap-1"
+                                                onClick={(e) => e.preventDefault()}
+                                            >
+                                                <input
+                                                    type="color"
+                                                    autoFocus
+                                                    value={colorValue}
+                                                    onChange={(e) => setColorValue(e.target.value)}
+                                                    className="h-6 w-6 shrink-0 cursor-pointer rounded border border-slate-600 bg-slate-900 p-0"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    disabled={busyCourseId === course.id}
+                                                    onClick={() => saveColor(course, colorValue)}
+                                                    className="shrink-0 flex items-center gap-1 rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-semibold hover:bg-indigo-500"
+                                                >
+                                                    {busyCourseId === course.id && <Spinner className="h-2.5 w-2.5" />}
+                                                    {busyCourseId === course.id ? "Saving..." : "Save"}
+                                                </button>
+                                                {course.color && (
+                                                    <button
+                                                        type="button"
+                                                        disabled={busyCourseId === course.id}
+                                                        onClick={() => saveColor(course, null)}
+                                                        className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px]"
+                                                        title="Reset to the auto-assigned color"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingColorId(null)}
+                                                    className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px]"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    startEditColor(course);
+                                                }}
+                                                style={course.color ? { backgroundColor: course.color } : undefined}
+                                                className={`h-4 w-4 shrink-0 rounded-full border border-slate-500 ${course.color ? "" : courseColorDefault(course.name)}`}
+                                                aria-label={`Edit ${course.name}'s badge color`}
+                                                title="Edit the badge color shown on planner cards"
+                                            />
                                         )}
                                     </label>
                                 )}

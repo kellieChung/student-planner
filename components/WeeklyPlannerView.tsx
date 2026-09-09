@@ -1,25 +1,27 @@
 "use client";
 
-import React, {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useRouter} from "next/navigation";
-import {calculateGridSpan, getTodayString, parseLocalDate} from "@/lib/utils";
+import {CARD_HEIGHT_PX, calculateGridSpan, getStartOfWeek, getTodayString, packColumnOffsets, parseLocalDate} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
 import ManageCoursesModal from "./ManageCoursesModal";
-import {getTaskStates, saveTaskState} from "@/lib/taskState";
-import {TaskState} from "@/types/taskState";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
-import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, saveTaskPlanningEstimates, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
+import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
-import {classifyLabelType, courseAbbreviationDefault, dayCode, deterministicShortTitle, selectTasksNeedingShortTitles} from "@/lib/taskLabel";
-import {getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
+import {classifyLabelType, courseAbbreviationDefault, dayCode} from "@/lib/taskLabel";
+import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
+import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
+import {ProcrastinationHistory} from "@/types/procrastination";
 import PomodoroTimer from "./PomodoroTimer";
 import MusicPlayer from "./MusicPlayer";
+import Spinner from "./Spinner";
+import TaskStatusToggle from "./TaskStatusToggle";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -51,20 +53,76 @@ type WeeklyPlannerProps = {
     weekStartDate: Date;
 }
 
+// One row per (userId, taskId) in TaskCustomization — course/name/type/due
+// overrides plus completion + deletion state for ANY task, custom or
+// Canvas-synced. "" / false are the "unset" sentinels persistCustomization
+// already used for the override fields; completed/deleted follow the same
+// convention for consistency even though they're real booleans.
+type TaskCustomizationState = {
+    startAt: string;
+    course: string;
+    nameOverride: string;
+    typeOverride: string;
+    dueAtOverride: string;
+    notes: string;
+    completed: boolean;
+    completedAt: string;
+    inProgress: boolean;
+    deleted: boolean;
+};
+
+const EMPTY_CUSTOMIZATION: TaskCustomizationState = {
+    startAt: "",
+    course: "",
+    nameOverride: "",
+    typeOverride: "",
+    dueAtOverride: "",
+    notes: "",
+    completed: false,
+    completedAt: "",
+    inProgress: false,
+    deleted: false,
+};
+
+function toCustomizationPatchBody(updates: TaskCustomizationState) {
+    return {
+        startAt: updates.startAt || null,
+        course: updates.course || null,
+        nameOverride: updates.nameOverride || null,
+        typeOverride: updates.typeOverride || null,
+        dueAtOverride: updates.dueAtOverride || null,
+        notes: updates.notes || null,
+        completed: updates.completed,
+        completedAt: updates.completedAt || null,
+        inProgress: updates.inProgress,
+        deleted: updates.deleted,
+    };
+}
+
 export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyPlannerProps) {
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [quickAddDueDate, setQuickAddDueDate] = useState<string | undefined>(undefined);
     const [isCourseManagerOpen, setIsCourseManagerOpen] = useState(false);
-    const [taskStates, setTaskStates] = useState<Record<string, TaskState>>({});
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
-    const [taskCustomizations, setTaskCustomizations] = useState<Record<string, { startAt: string; course: string; notes: string }>>({});
+    const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
+    const [taskCustomizations, setTaskCustomizations] = useState<Record<string, TaskCustomizationState>>({});
+    // Task ids currently playing the green completion pulse (app/globals.css's
+    // task-complete-pulse) — purely a visual flash, cleared ~550ms after it's
+    // triggered. Completing a task never moves it (see sortedTasks below), so
+    // this has no effect on sort/layout, unlike the hold-then-slide mechanism
+    // it replaced.
+    const [pulsingIds, setPulsingIds] = useState<Set<string>>(new Set());
+    const [customTasksLoaded, setCustomTasksLoaded] = useState(false);
+    const [customizationsLoaded, setCustomizationsLoaded] = useState(false);
+    const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
     const [courses, setCourses] = useState<Course[]>([]);
     const [estimatingCount, setEstimatingCount] = useState(0);
+    const [awardingXp, setAwardingXp] = useState(false);
     const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
     const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
     const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
@@ -74,10 +132,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         return domTheme === "light" ? "light" : "dark";
     });
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [bulkRegenerateConfirming, setBulkRegenerateConfirming] = useState(false);
-    const [bulkRegenerating, setBulkRegenerating] = useState(false);
-    const [bulkRegenerateProgress, setBulkRegenerateProgress] = useState<{ done: number; total: number } | null>(null);
-    const [bulkRegenerateResult, setBulkRegenerateResult] = useState<string | null>(null);
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
         start.setHours(0, 0, 0, 0);
@@ -103,30 +157,74 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     });
 
     const effectiveTasks = useMemo(
-        () => tasks.map((task) => {
-            const courseOverride = taskCustomizations[task.id]?.course;
-            return courseOverride ? { ...task, course: courseOverride } : task;
-        }),
+        () => tasks
+            .filter((task) => !taskCustomizations[task.id]?.deleted)
+            .map((task) => {
+                const customization = taskCustomizations[task.id];
+                if (!customization) return task;
+
+                let next = task;
+
+                if (customization.course) {
+                    next = { ...next, course: customization.course };
+                }
+
+                if (customization.nameOverride) {
+                    next = { ...next, name: customization.nameOverride };
+                }
+
+                if (customization.typeOverride) {
+                    next = { ...next, typeOverride: customization.typeOverride as Assignment["typeOverride"] };
+                }
+
+                if (customization.dueAtOverride) {
+                    const local = new Date(customization.dueAtOverride);
+
+                    next = {
+                        ...next,
+                        dueAt: customization.dueAtOverride,
+                        due: toDateKey(local),
+                        dueFraction: (local.getHours() * 60 + local.getMinutes()) / (24 * 60),
+                    };
+                }
+
+                return next;
+            }),
         [tasks, taskCustomizations]
     );
 
+    const courseAbbreviationByName = useMemo(
+        () => new Map(courses.map((c) => [c.name, c.abbreviation || courseAbbreviationDefault(c.name)])),
+        [courses]
+    );
+
+    // Chronological: due date, then time-of-day (dueFraction, absent = end
+    // of day, same convention as calculateGridSpan), then course label —
+    // deliberately independent of getTaskPriority/calculatePriority (see
+    // computeTaskPriority below), so a low-importance task due earlier
+    // still stacks above a high-importance task due later. Deliberately does
+    // NOT consider completion status — completing a task never moves it
+    // (Microsoft-Planner-style: soonest-due stays at the top regardless of
+    // done/not-done), it only changes the card's styling.
     const sortedTasks = [...effectiveTasks].sort((a,b) => {
-        const aCompleted = taskStates[a.id]?.completed ?? false;
-        const bCompleted = taskStates[b.id]?.completed ?? false;
+        const aDue = a.due ?? "9999-12-31";
+        const bDue = b.due ?? "9999-12-31";
 
-        if (aCompleted !== bCompleted) {
-            return aCompleted ? 1 : -1;
+        if (aDue !== bDue) {
+            return aDue < bDue ? -1 : 1;
         }
 
-        const aPriority = getTaskPriority(a, taskPlanning[a.id]?.importance);
-        const bPriority = getTaskPriority(b, taskPlanning[b.id]?.importance);
+        const aFraction = a.dueFraction ?? 1;
+        const bFraction = b.dueFraction ?? 1;
 
-        if (aPriority.rank !== bPriority.rank) {
-            return aPriority.rank - bPriority.rank;
+        if (aFraction !== bFraction) {
+            return aFraction - bFraction;
         }
 
-        return parseLocalDate(a.due ?? "9999-12-31").getTime()
-        - parseLocalDate(b.due ?? "9999-12-31").getTime();
+        const aCourseLabel = courseAbbreviationByName.get(a.course) ?? a.course;
+        const bCourseLabel = courseAbbreviationByName.get(b.course) ?? b.course;
+
+        return aCourseLabel.localeCompare(bCourseLabel);
     });
 
     const activeWeekEnd = new Date(activeWeekStart);
@@ -139,11 +237,88 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         return dueDate >= activeWeekStart && dueDate < activeWeekEnd;
     });
 
-    const tasksWithoutDueDate = sortedTasks.filter((task) => !task.due);
+    // Explicit per-task placement for the weekly grid below: computed once
+    // here (rather than per-card at render time) so packColumnOffsets can
+    // see every task's column span before deciding vertical offsets.
+    // Replaces CSS Grid's own row mechanic entirely — a grid row's height
+    // is shared across all 7 day columns (set by whichever column's item
+    // is tallest that row), which produced large dead space under short
+    // (completed) cards sharing a row with a tall (active) bar elsewhere.
+    // Packing by independent per-column pixel cursors avoids that
+    // cross-column coupling — see lib/utils.ts's packColumnOffsets comment.
+    const weekTaskLayouts = tasksForActiveWeek.map((task) => ({
+        task,
+        span: calculateGridSpan(
+            {
+                dueDate: task.due,
+                startDate: taskCustomizations[task.id]?.startAt || taskCustomizations[task.id]?.completedAt || undefined,
+                dueFraction: task.dueFraction,
+            },
+            activeWeekStart
+        ),
+    }));
+
+    // Single-day tasks are packed first (in their existing chronological
+    // order) — they need no orderGroup floor at all, since a bar's last
+    // occupied column is always its own due column, so single-day-first
+    // processing order alone already guarantees no bar can land above a
+    // single-day task sharing its column (see packColumnOffsets's
+    // comment for the proof). Bars are packed afterward, sorted by due
+    // date ascending (`columnEnd` is due-date-derived and unaffected by
+    // startAt in calculateGridSpan's normal branch — this does NOT hold
+    // for the overdue branch, but overdue tasks are always single-day and
+    // never reach this comparator).
+    //
+    // Bars are tagged with an `orderGroup` split by completed/active
+    // status: within either group, due-date order is still strictly
+    // enforced (a later-due bar can never render above an earlier-due one
+    // sharing a column) — but a completed bar and an active bar are free
+    // to interleave via packColumnOffsets's skyline packing regardless of
+    // due date, since the two statuses convey unrelated information and
+    // the user explicitly asked for gap-filling between them rather than
+    // a single global ordering (which cannot both fill every reachable
+    // gap and keep one global due-date order — see the plan file for why).
+    const singleDayLayouts = weekTaskLayouts.filter(({ span }) => span.columnEnd - span.columnStart === 1);
+    const barLayouts = weekTaskLayouts
+        .filter(({ span }) => span.columnEnd - span.columnStart > 1)
+        .sort((a, b) => a.span.columnEnd - b.span.columnEnd);
+
+    const { offsets: weekTaskOffsets, totalHeight: weekTaskLayerHeight } = packColumnOffsets([
+        ...singleDayLayouts.map(({ task, span }) => ({
+            id: task.id,
+            columnStart: span.columnStart,
+            columnEnd: span.columnEnd,
+            heightPx: taskCustomizations[task.id]?.completed ? CARD_HEIGHT_PX.completed : CARD_HEIGHT_PX.active,
+        })),
+        ...barLayouts.map(({ task, span }) => ({
+            id: task.id,
+            columnStart: span.columnStart,
+            columnEnd: span.columnEnd,
+            heightPx: taskCustomizations[task.id]?.completed ? CARD_HEIGHT_PX.completed : CARD_HEIGHT_PX.active,
+            orderGroup: taskCustomizations[task.id]?.completed ? "completed-bar" : "active-bar",
+        })),
+    ]);
+
+    // Not derived from sortedTasks: a "due date" order is meaningless once
+    // every task shares the same due-less sentinel, so this list keeps the
+    // old priority-based order (matching the getTaskPriority label it still
+    // renders below) instead of silently becoming course-alphabetical.
+    // Same as sortedTasks above, completion status isn't a sort key.
+    const tasksWithoutDueDate = useMemo(
+        () => effectiveTasks
+            .filter((task) => !task.due)
+            .sort((a, b) => {
+                const aPriority = getTaskPriority(a, taskPlanning[a.id]?.importance);
+                const bPriority = getTaskPriority(b, taskPlanning[b.id]?.importance);
+
+                return aPriority.rank - bPriority.rank;
+            }),
+        [effectiveTasks, taskPlanning]
+    );
 
     const openTasks = useMemo(
-        () => effectiveTasks.filter((task) => !(taskStates[task.id]?.completed ?? false)),
-        [effectiveTasks, taskStates]
+        () => effectiveTasks.filter((task) => !(taskCustomizations[task.id]?.completed ?? false)),
+        [effectiveTasks, taskCustomizations]
     );
 
     /*
@@ -151,8 +326,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
      * same AI-informed scoring as the API (lib/prioritization.ts) plus
      * this student's per-task-type procrastination history — see
      * prioritizationModule.md and lib/procrastinationHistory.ts. This is
-     * intentionally independent of the getTaskPriority-based sort used for
-     * the grid below, which stays deadline/importance-only.
+     * intentionally independent of the chronological (due date/time, then
+     * course) sort used for the grid below.
      */
     const computeTaskPriority = (task: Assignment): PriorityResult => {
         const estimate = taskPlanning[task.id];
@@ -190,11 +365,56 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         if (!activeFocusTaskId) return null;
 
         const task = effectiveTasks.find((t) => t.id === activeFocusTaskId);
-        if (!task || taskStates[task.id]?.completed) return null;
+        if (!task || taskCustomizations[task.id]?.completed) return null;
 
         return { task, priority: computeTaskPriority(task) };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeFocusTaskId, effectiveTasks, taskStates, taskPlanning, procrastinationIndexByType]);
+    }, [activeFocusTaskId, effectiveTasks, taskCustomizations, taskPlanning, procrastinationIndexByType]);
+
+    // Declared before any effect (several below reference it) rather than
+    // near the other task handlers — a forward reference from inside a
+    // useEffect callback to a const declared later in the component body.
+    const persistCustomization = (
+        taskId: string,
+        updates: TaskCustomizationState
+    ) => {
+        setTaskCustomizations((current) => ({
+            ...current,
+            [taskId]: updates,
+        }));
+
+        fetch(`/api/task-customizations/${taskId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(toCustomizationPatchBody(updates)),
+        }).catch((error) => {
+            console.error("Could not save task customization", error);
+        });
+    };
+
+    // Awaited variant used only by the one-time legacy-localStorage
+    // migration effects below, which need to know whether a write
+    // succeeded before deciding it's safe to clear the old key.
+    const patchCustomizationAwaited = async (
+        taskId: string,
+        updates: TaskCustomizationState
+    ): Promise<boolean> => {
+        try {
+            const response = await fetch(`/api/task-customizations/${taskId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(toCustomizationPatchBody(updates)),
+            });
+
+            if (response.ok) {
+                setTaskCustomizations((current) => ({ ...current, [taskId]: updates }));
+            }
+
+            return response.ok;
+        } catch {
+            return false;
+        }
+    };
 
     useEffect(() => {
         if (activeFocusTaskId && !activeFocusTask) {
@@ -244,11 +464,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     };
 
     const returnToCurrentWeek = () => {
-        const today = new Date();
-        const sunday = new Date(today);
-        sunday.setDate(today.getDate() - today.getDay());
-        sunday.setHours(0, 0, 0, 0);
-        setActiveWeekStart(sunday);
+        setActiveWeekStart(getStartOfWeek());
     };
 
     const changeMonth = (numberOfMonths: number) => {
@@ -281,24 +497,23 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     };
 
     useEffect(() => {
-        const storedTasks = localStorage.getItem("custom_tasks");
-        const savedStates = getTaskStates();
-        const savedGamification = getGamificationState();
-        const savedTaskPlanning = getTaskPlanningEstimates();
+        // Server-persisted (app/api/gamification/route.ts), unlike the
+        // rest of this effect's plain localStorage reads — kept in its
+        // own effect since it's async.
+        let cancelled = false;
+
+        void getGamificationState().then((savedGamification) => {
+            if (!cancelled) setGamification(savedGamification);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    useEffect(() => {
         const savedFocusTaskId = localStorage.getItem(FOCUS_TASK_STORAGE_KEY);
-
-        setTaskStates(savedStates);
-        setGamification(savedGamification);
-        setTaskPlanning(savedTaskPlanning);
         setActiveFocusTaskId(savedFocusTaskId);
-
-        const customTasks = storedTasks
-            ? JSON.parse(storedTasks)
-            : [];
-
-        const deletedIds = JSON.parse(
-            localStorage.getItem("deleted_task_ids") || "[]"
-        );
 
         // Resolve each Canvas-synced task's real due date/time from its
         // raw UTC instant using the browser's own local timezone (plain
@@ -317,16 +532,23 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             };
         });
 
-        const allTasks = [
-            ...resolvedAssignments,
-            ...customTasks
-        ];
+        // Custom (manually-added/AI-accepted) tasks are DB-backed
+        // (CustomTask) — was localStorage ("custom_tasks"), which never
+        // carried over between browser profiles for the same account.
+        const loadCustomTasks = async () => {
+            try {
+                const response = await fetch("/api/custom-tasks");
+                if (!response.ok) return;
 
-        const visibleTasks = allTasks.filter(
-            task => !deletedIds.includes(task.id)
-        );
+                const data = await response.json() as { customTasks?: Assignment[] };
 
-        setTasks(visibleTasks);
+                setTasks([...resolvedAssignments, ...(data.customTasks ?? [])]);
+            } catch (error) {
+                console.error("Could not load custom tasks", error);
+            } finally {
+                setCustomTasksLoaded(true);
+            }
+        };
 
         const loadCustomizations = async () => {
             try {
@@ -338,28 +560,357 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                         taskId: string;
                         startAt: string | null;
                         course: string | null;
+                        nameOverride: string | null;
+                        typeOverride: string | null;
+                        dueAtOverride: string | null;
                         notes: string | null;
+                        completed: boolean;
+                        completedAt: string | null;
+                        inProgress: boolean;
+                        deleted: boolean;
                     }>;
                 };
 
-                const next: Record<string, { startAt: string; course: string; notes: string }> = {};
+                const next: Record<string, TaskCustomizationState> = {};
                 for (const customization of data.customizations) {
                     next[customization.taskId] = {
                         startAt: customization.startAt ?? "",
                         course: customization.course ?? "",
+                        nameOverride: customization.nameOverride ?? "",
+                        typeOverride: customization.typeOverride ?? "",
+                        dueAtOverride: customization.dueAtOverride ?? "",
                         notes: customization.notes ?? "",
+                        completed: customization.completed,
+                        completedAt: customization.completedAt ?? "",
+                        inProgress: customization.inProgress,
+                        deleted: customization.deleted,
                     };
                 }
 
                 setTaskCustomizations(next);
             } catch (error) {
                 console.error("Could not load task customizations", error);
+            } finally {
+                setCustomizationsLoaded(true);
             }
         };
 
+        void loadCustomTasks();
         void loadCustomizations();
         void refetchCourses();
     }, [assignments]);
+
+    useEffect(() => {
+        void getTaskPlanningEstimates().then((estimates) => {
+            setTaskPlanning(estimates);
+            setTaskPlanningLoaded(true);
+        });
+    }, []);
+
+    useEffect(() => {
+        void getProcrastinationHistory().then(setProcrastinationHistory);
+    }, []);
+
+    // One-time replay of any pre-existing localStorage data from before
+    // custom tasks/deletions moved server-side, so a browser that already
+    // had them doesn't silently lose them on upgrade. Only uploads a local
+    // task the DB doesn't already have (never overwrites a DB row with a
+    // possibly-stale local copy — the exact risk with two browser windows
+    // open on the same account) and only clears the legacy keys once every
+    // upload has actually succeeded, so a partial failure retries next load.
+    const hasMigratedCustomTasks = useRef(false);
+
+    useEffect(() => {
+        if (hasMigratedCustomTasks.current || !customTasksLoaded) return;
+        hasMigratedCustomTasks.current = true;
+
+        const raw = localStorage.getItem("custom_tasks");
+        if (!raw) return;
+
+        const migrate = async () => {
+            let localCustomTasks: Assignment[] = [];
+            try {
+                localCustomTasks = JSON.parse(raw);
+            } catch {
+                localStorage.removeItem("custom_tasks");
+                return;
+            }
+
+            const deletedIds: string[] = (() => {
+                try {
+                    return JSON.parse(localStorage.getItem("deleted_task_ids") || "[]");
+                } catch {
+                    return [];
+                }
+            })();
+            const deletedSet = new Set(deletedIds);
+            const existingIds = new Set(tasks.map((task) => task.id));
+
+            const uploaded: Assignment[] = [];
+            let allOk = true;
+
+            for (const task of localCustomTasks) {
+                if (existingIds.has(task.id) || deletedSet.has(task.id)) continue;
+
+                try {
+                    const response = await fetch("/api/custom-tasks", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            id: task.id,
+                            name: task.name,
+                            course: task.course,
+                            due: task.due ?? null,
+                            dueAt: task.dueAt ?? null,
+                            dueFraction: task.dueFraction ?? null,
+                            sourceAnnouncementId: task.sourceAnnouncementId ?? null,
+                        }),
+                    });
+
+                    if (response.ok) {
+                        uploaded.push(task);
+                    } else {
+                        allOk = false;
+                    }
+                } catch {
+                    allOk = false;
+                }
+            }
+
+            if (uploaded.length > 0) {
+                setTasks((current) => [...current, ...uploaded]);
+            }
+
+            if (allOk) {
+                localStorage.removeItem("custom_tasks");
+            }
+        };
+
+        void migrate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customTasksLoaded]);
+
+    const hasMigratedDeletedIds = useRef(false);
+
+    useEffect(() => {
+        if (hasMigratedDeletedIds.current || !customizationsLoaded) return;
+        hasMigratedDeletedIds.current = true;
+
+        const raw = localStorage.getItem("deleted_task_ids");
+        if (!raw) return;
+
+        const migrate = async () => {
+            let deletedIds: string[] = [];
+            try {
+                deletedIds = JSON.parse(raw);
+            } catch {
+                localStorage.removeItem("deleted_task_ids");
+                return;
+            }
+
+            // A custom-task id needs no tombstone — it's simply never
+            // (re-)uploaded by the migration above.
+            const canvasIds = deletedIds.filter((id) => !id.startsWith("custom-"));
+            let allOk = true;
+
+            for (const id of canvasIds) {
+                if (taskCustomizations[id]?.deleted) continue;
+
+                const ok = await patchCustomizationAwaited(id, {
+                    ...(taskCustomizations[id] ?? EMPTY_CUSTOMIZATION),
+                    deleted: true,
+                });
+
+                if (!ok) allOk = false;
+            }
+
+            if (allOk) {
+                localStorage.removeItem("deleted_task_ids");
+            }
+        };
+
+        void migrate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customizationsLoaded]);
+
+    // Task completion status ("task_states") was also localStorage-only
+    // before this session, same cross-device-loss reasoning as the two
+    // migrations above — a real backlog of completed tasks (with their
+    // original completedAt dates) would otherwise silently vanish the
+    // first time this browser loads the DB-backed version.
+    const hasMigratedTaskStates = useRef(false);
+
+    useEffect(() => {
+        if (hasMigratedTaskStates.current || !customizationsLoaded) return;
+        hasMigratedTaskStates.current = true;
+
+        const raw = localStorage.getItem("task_states");
+        if (!raw) return;
+
+        const migrate = async () => {
+            let states: Record<string, { completed: boolean; completedAt: string | null }> = {};
+            try {
+                states = JSON.parse(raw);
+            } catch {
+                localStorage.removeItem("task_states");
+                return;
+            }
+
+            let allOk = true;
+
+            for (const [id, state] of Object.entries(states)) {
+                if (!state?.completed) continue;
+                if (taskCustomizations[id]?.completed) continue;
+
+                const ok = await patchCustomizationAwaited(id, {
+                    ...(taskCustomizations[id] ?? EMPTY_CUSTOMIZATION),
+                    completed: true,
+                    completedAt: state.completedAt ?? "",
+                });
+
+                if (!ok) allOk = false;
+            }
+
+            if (allOk) {
+                localStorage.removeItem("task_states");
+            }
+        };
+
+        void migrate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [customizationsLoaded]);
+
+    // AI planning estimates ("task_planning_estimates") were also
+    // localStorage-only. Unlike a missing estimate (which just self-heals
+    // via a recompute), a real existing cache here can be large — sending
+    // it through POST /api/task-planning would mean re-running every one
+    // of those through local Ollama just to move them server-side, which
+    // this repo's own comments repeatedly flag as expensive GPU load to
+    // avoid. PUT /api/task-planning stores already-computed values
+    // directly, no Ollama call.
+    const hasMigratedTaskPlanning = useRef(false);
+
+    useEffect(() => {
+        if (hasMigratedTaskPlanning.current || !taskPlanningLoaded) return;
+        hasMigratedTaskPlanning.current = true;
+
+        const raw = localStorage.getItem("task_planning_estimates");
+        if (!raw) return;
+
+        const migrate = async () => {
+            let local: TaskPlanningEstimates = {};
+            try {
+                local = JSON.parse(raw);
+            } catch {
+                localStorage.removeItem("task_planning_estimates");
+                return;
+            }
+
+            // Some cached entries predate the current TaskPlanningEstimate
+            // shape entirely (e.g. a string "low"/"medium"/"high"
+            // importance instead of a 1-10 number, missing
+            // priorityScore/urgencyScore/frogScore) — real data found in
+            // this app's own localStorage during this migration's own
+            // testing. Those can't be migrated (nothing to coerce them
+            // into); silently drop them rather than blocking on them
+            // forever, since the live app already ignores/recomputes over
+            // them today regardless.
+            const isCurrentShape = (e: TaskPlanningEstimate) =>
+                typeof e.importance === "number" &&
+                typeof e.difficulty === "number" &&
+                typeof e.consequence === "number" &&
+                typeof e.estimatedMinutes === "number" &&
+                typeof e.reason === "string" &&
+                typeof e.priorityScore === "number" &&
+                typeof e.urgencyScore === "number" &&
+                typeof e.frogScore === "number" &&
+                typeof e.priorityReason === "string" &&
+                typeof e.signature === "string";
+
+            const missing = Object.entries(local)
+                .filter(([id, estimate]) => !taskPlanning[id] && isCurrentShape(estimate))
+                .map(([id, estimate]) => ({ id, ...estimate }));
+
+            if (missing.length === 0) {
+                localStorage.removeItem("task_planning_estimates");
+                return;
+            }
+
+            try {
+                const response = await fetch("/api/task-planning", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ estimates: missing }),
+                });
+
+                if (response.ok) {
+                    setTaskPlanning((current) => {
+                        const next = { ...current };
+                        for (const { id, ...estimate } of missing) {
+                            next[id] = estimate;
+                        }
+                        return next;
+                    });
+                    localStorage.removeItem("task_planning_estimates");
+                }
+            } catch (error) {
+                console.error("Could not migrate cached task planning estimates", error);
+            }
+        };
+
+        void migrate();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [taskPlanningLoaded]);
+
+    // Procrastination-index history ("procrastination_history") was also
+    // localStorage-only — losing it doesn't error anywhere, it just
+    // silently degrades the priority formula's procrastination-index
+    // input back to "no history," which the user would never see as a
+    // bug report despite it being one.
+    const hasMigratedProcrastinationHistory = useRef(false);
+
+    useEffect(() => {
+        if (hasMigratedProcrastinationHistory.current) return;
+        hasMigratedProcrastinationHistory.current = true;
+
+        const raw = localStorage.getItem("procrastination_history");
+        if (!raw) return;
+
+        const migrate = async () => {
+            let local: ProcrastinationHistory = {};
+            try {
+                local = JSON.parse(raw);
+            } catch {
+                localStorage.removeItem("procrastination_history");
+                return;
+            }
+
+            let allOk = true;
+
+            for (const records of Object.values(local)) {
+                for (const record of records) {
+                    try {
+                        const response = await fetch("/api/procrastination-history", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(record),
+                        });
+
+                        if (!response.ok) allOk = false;
+                    } catch {
+                        allOk = false;
+                    }
+                }
+            }
+
+            if (allOk) {
+                localStorage.removeItem("procrastination_history");
+                void getProcrastinationHistory().then(setProcrastinationHistory);
+            }
+        };
+
+        void migrate();
+    }, []);
 
     const updateTheme = (nextTheme: "dark" | "light") => {
         setTheme(nextTheme);
@@ -387,6 +938,12 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     }, [isSettingsOpen]);
 
     useEffect(() => {
+        // Wait for the persisted estimates to load first — otherwise every
+        // page load would briefly see an empty taskPlanning map and kick
+        // off a wasted Ollama recompute for every task before the real
+        // (already-computed) values arrive a moment later.
+        if (!taskPlanningLoaded) return;
+
         const tasksNeedingEstimates = selectTasksNeedingEstimates(tasks, taskPlanning);
 
         if (tasksNeedingEstimates.length === 0) return;
@@ -425,7 +982,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                         };
                     }
 
-                    saveTaskPlanningEstimates(next);
+                    // POST /api/task-planning already persists server-side
+                    // (compute-and-persist in one route) — no separate save.
                     return next;
                 });
             } catch (error) {
@@ -442,49 +1000,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         void estimateTasks();
 
         return () => controller.abort();
-    }, [tasks, taskPlanning]);
-
-    useEffect(() => {
-        const tasksNeedingShortTitles = selectTasksNeedingShortTitles(tasks);
-
-        if (tasksNeedingShortTitles.length === 0) return;
-
-        const controller = new AbortController();
-
-        const fetchShortTitles = async () => {
-            try {
-                const response = await fetch("/api/task-short-titles", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    signal: controller.signal,
-                    body: JSON.stringify({
-                        taskIds: tasksNeedingShortTitles.map(({ id }) => id),
-                    }),
-                });
-
-                if (!response.ok) return;
-
-                const data = await response.json() as {
-                    shortTitles: Array<{ id: string; shortTitle: string }>;
-                };
-
-                setTasks((current) =>
-                    current.map((task) => {
-                        const match = data.shortTitles.find(({ id }) => id === task.id);
-                        return match ? { ...task, shortTitle: match.shortTitle } : task;
-                    })
-                );
-            } catch (error) {
-                if ((error as Error).name !== "AbortError") {
-                    console.error("Could not generate short titles", error);
-                }
-            }
-        };
-
-        void fetchShortTitles();
-
-        return () => controller.abort();
-    }, [tasks]);
+    }, [tasks, taskPlanning, taskPlanningLoaded]);
 
     useEffect(() => {
         const types = new Set(
@@ -496,7 +1012,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setProcrastinationIndexByType((current) => {
             const next: Record<string, number | null> = {};
             for (const type of types) {
-                next[type] = getProcrastinationIndexHours(type);
+                next[type] = getProcrastinationIndexHours(procrastinationHistory, type);
             }
 
             const changed =
@@ -505,7 +1021,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
             return changed ? next : current;
         });
-    }, [taskPlanning]);
+    }, [taskPlanning, procrastinationHistory]);
 
     useEffect(() => {
         const handleAIPlannerTask = (
@@ -533,26 +1049,28 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                     return currentTasks;
                 }
 
-                const updatedTasks = [
+                return [
                     ...currentTasks,
                     newTask,
                 ];
+            });
 
-                /*
-                * Keep AI-created tasks in the exact same
-                * localStorage collection as manually-created tasks.
-                */
-                const customTasks =
-                    updatedTasks.filter((task) =>
-                        task.id.startsWith("custom-")
-                    );
-
-                localStorage.setItem(
-                    "custom_tasks",
-                    JSON.stringify(customTasks)
-                );
-
-                return updatedTasks;
+            // Keep AI-created tasks in the exact same DB-backed collection
+            // (CustomTask) as manually-created tasks.
+            fetch("/api/custom-tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: newTask.id,
+                    name: newTask.name,
+                    course: newTask.course,
+                    due: newTask.due ?? null,
+                    dueAt: newTask.dueAt ?? null,
+                    dueFraction: newTask.dueFraction ?? null,
+                    sourceAnnouncementId: newTask.sourceAnnouncementId ?? null,
+                }),
+            }).catch((error) => {
+                console.error("Could not save custom task", error);
             });
         };
 
@@ -574,6 +1092,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         let award: XpAward = { xp: 20, source: "fallback" };
 
+        setAwardingXp(true);
+
         try {
             const response = await fetch("/api/task-xp", {
                 method: "POST",
@@ -586,6 +1106,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             }
         } catch {
             // The fallback award keeps completion usable if the API is unavailable.
+        } finally {
+            setAwardingXp(false);
         }
 
         setGamification((current) => {
@@ -602,91 +1124,94 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setLatestXpAward(award);
     };
 
-    const handleToggleComplete = (task: Assignment, estimatedMinutes?: number) => {
-        const { id } = task;
-        const currentState = taskStates[id] ?? {
-            completed: false,
-            completedAt: null
-        };
+    // Plays the green completion pulse (app/globals.css's task-complete-
+    // pulse, ~550ms) in place — the card never moves, so this is a pure
+    // visual flash with no sort/layout interaction.
+    const COMPLETION_PULSE_MS = 550;
 
-        const newCompleted = !currentState.completed;
+    const triggerCompletionPulse = (id: string) => {
+        setPulsingIds((current) => new Set(current).add(id));
 
-        const newState: TaskState = {
-            completed: newCompleted,
-            completedAt: newCompleted
-                ? getTodayString()
-                : null
-        };
-
-        setTaskStates((prev) => ({
-            ...prev,
-            [id]: newState
-        }));
-
-        saveTaskState(id, newState);
-
-        if (newCompleted) {
-            const assignmentType = taskPlanning[id]?.assignmentType;
-            const addedAt = deriveAddedAt(task);
-
-            if (task.due && addedAt && assignmentType) {
-                recordTaskCompletion({
-                    taskType: assignmentType,
-                    addedAt,
-                    dueAt: `${task.due}T23:59:59`,
-                    completedAt: new Date().toISOString(),
-                });
-
-                setProcrastinationIndexByType((current) => ({
-                    ...current,
-                    [assignmentType]: getProcrastinationIndexHours(assignmentType),
-                }));
-            }
-
-            void awardXpForTask(task, newState.completedAt, estimatedMinutes);
-        }
-
-    }
-    const persistCustomization = (
-        taskId: string,
-        updates: { startAt: string; course: string; notes: string }
-    ) => {
-        setTaskCustomizations((current) => ({
-            ...current,
-            [taskId]: updates,
-        }));
-
-        fetch(`/api/task-customizations/${taskId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                startAt: updates.startAt || null,
-                course: updates.course || null,
-                notes: updates.notes || null,
-            }),
-        }).catch((error) => {
-            console.error("Could not save task customization", error);
-        });
+        setTimeout(() => {
+            setPulsingIds((current) => {
+                if (!current.has(id)) return current;
+                const next = new Set(current);
+                next.delete(id);
+                return next;
+            });
+        }, COMPLETION_PULSE_MS);
     };
 
+    // XP award + procrastination-history recording for a fresh completion.
+    // Extracted so both the card's status control and EditTaskModal's Status
+    // dropdown trigger the same side effects instead of risking drift.
+    const awardCompletionSideEffects = (task: Assignment, estimatedMinutes?: number) => {
+        const assignmentType = taskPlanning[task.id]?.assignmentType;
+        const addedAt = deriveAddedAt(task);
+
+        if (task.due && addedAt && assignmentType) {
+            const record = {
+                taskType: assignmentType,
+                addedAt,
+                dueAt: `${task.due}T23:59:59`,
+                completedAt: new Date().toISOString(),
+            };
+
+            recordTaskCompletion(record);
+
+            setProcrastinationHistory((currentHistory) => {
+                const next = appendProcrastinationRecord(currentHistory, record);
+
+                setProcrastinationIndexByType((currentIndex) => ({
+                    ...currentIndex,
+                    [assignmentType]: getProcrastinationIndexHours(next, assignmentType),
+                }));
+
+                return next;
+            });
+        }
+
+        void awardXpForTask(task, getTodayString(), estimatedMinutes);
+    };
+
+    const handleSetStatus = (task: Assignment, newStatus: TaskStatus, estimatedMinutes?: number) => {
+        const { id } = task;
+        const current = taskCustomizations[id] ?? EMPTY_CUSTOMIZATION;
+        const wasCompleted = current.completed;
+
+        persistCustomization(id, {
+            ...current,
+            completed: newStatus === "completed",
+            completedAt: newStatus === "completed" ? getTodayString() : "",
+            inProgress: newStatus === "in_progress",
+        });
+
+        if (newStatus === "completed" && !wasCompleted) {
+            triggerCompletionPulse(id);
+            awardCompletionSideEffects(task, estimatedMinutes);
+        }
+    }
     const handleAddTask = (newTask: Assignment, startDate: string, notes: string) => {
-        const updatedTasks = [
-            ...tasks,
-            newTask
-        ];
+        setTasks((current) => [...current, newTask]);
 
-        setTasks(updatedTasks);
-        const customTasks = updatedTasks.filter(
-            task => task.id.startsWith("custom-")
-        );
-
-        localStorage.setItem(
-            "custom_tasks",
-            JSON.stringify(customTasks)
-        )
+        fetch("/api/custom-tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id: newTask.id,
+                name: newTask.name,
+                course: newTask.course,
+                due: newTask.due ?? null,
+                dueAt: newTask.dueAt ?? null,
+                dueFraction: newTask.dueFraction ?? null,
+                sourceAnnouncementId: newTask.sourceAnnouncementId ?? null,
+            }),
+        }).catch((error) => {
+            console.error("Could not save custom task", error);
+        });
 
         if (startDate || notes) {
-            persistCustomization(newTask.id, { startAt: startDate, course: "", notes });
+            persistCustomization(newTask.id, { ...EMPTY_CUSTOMIZATION, startAt: startDate, notes });
         }
     }
 
@@ -701,41 +1226,47 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     };
 
     const handleDelete = (id:string) => {
-        const updatedTasks = tasks.filter(
-            task => task.id !== id
-        );
+        setTasks((current) => current.filter((task) => task.id !== id));
 
-        setTasks(updatedTasks);
+        if (id.startsWith("custom-")) {
+            // Real row delete — a custom task needs no tombstone, unlike
+            // a Canvas-synced one (which would just reappear on resync).
+            fetch(`/api/custom-tasks/${id}`, { method: "DELETE" }).catch((error) => {
+                console.error("Could not delete custom task", error);
+            });
+            return;
+        }
 
-        const deleted = JSON.parse(
-            localStorage.getItem("deleted_task_ids") || "[]"
-        );
-
-        localStorage.setItem(
-            "deleted_task_ids",
-            JSON.stringify([
-                ...deleted,
-                id
-            ])
-        )
+        persistCustomization(id, {
+            ...(taskCustomizations[id] ?? EMPTY_CUSTOMIZATION),
+            deleted: true,
+        });
     }
 
-    const handleSaveTask = (updatedTask: Assignment, startDate: string, notes: string) => {
-        const updatedTasks = tasks.map((task) =>
-            task.id === updatedTask.id ? updatedTask : task
+    const handleSaveTask = (updatedTask: Assignment, startDate: string, notes: string, status: TaskStatus) => {
+        setTasks((current) =>
+            current.map((task) => (task.id === updatedTask.id ? updatedTask : task))
         );
 
-        setTasks(updatedTasks);
-
-        const customTasks = updatedTasks.filter((task) =>
-            task.id.startsWith("custom-")
-        );
-
-        localStorage.setItem("custom_tasks", JSON.stringify(customTasks));
-
-        // Custom tasks already keep their edited course on the localStorage
-        // object above; only Canvas-synced tasks need a course override.
+        // Custom tasks already keep their edited course on the DB row
+        // above; only Canvas-synced tasks need a course override.
         const isCustomTask = updatedTask.id.startsWith("custom-");
+
+        if (isCustomTask) {
+            fetch(`/api/custom-tasks/${updatedTask.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: updatedTask.name,
+                    course: updatedTask.course,
+                    due: updatedTask.due ?? null,
+                    dueAt: updatedTask.dueAt ?? null,
+                    dueFraction: updatedTask.dueFraction ?? null,
+                }),
+            }).catch((error) => {
+                console.error("Could not save custom task", error);
+            });
+        }
         const current = taskCustomizations[updatedTask.id];
         const rawTask = tasks.find((task) => task.id === updatedTask.id);
 
@@ -751,120 +1282,67 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 ? updatedTask.course
                 : (current?.course ?? "");
 
+        // Same "only pin when this save actually changed it" reasoning as
+        // courseOverride above, applied to name and due date/time — a
+        // plain notes-only save shouldn't silently freeze either one.
+        const previousEffectiveName = current?.nameOverride || rawTask?.name || "";
+        const nameOverride = isCustomTask
+            ? ""
+            : updatedTask.name !== previousEffectiveName
+                ? updatedTask.name
+                : (current?.nameOverride ?? "");
+
+        const previousEffectiveDueAt = current?.dueAtOverride || rawTask?.dueAt || "";
+        const dueAtOverride = isCustomTask
+            ? ""
+            : (updatedTask.dueAt ?? "") !== previousEffectiveDueAt
+                ? (updatedTask.dueAt ?? "")
+                : (current?.dueAtOverride ?? "");
+
+        // EditTaskModal offers an explicit "Auto" option for type, so no
+        // diffing heuristic is needed here — trust it directly.
+        const typeOverride = isCustomTask ? "" : (updatedTask.typeOverride ?? "");
+
+        // Status dropdown offers an explicit choice, same reasoning as
+        // typeOverride above — trust it directly rather than diffing.
+        const currentStatus = getTaskStatus(current?.completed ?? false, current?.inProgress ?? false);
+        const statusChanged = status !== currentStatus;
+
         const changed =
             (current?.startAt ?? "") !== startDate ||
             (current?.notes ?? "") !== notes ||
-            (current?.course ?? "") !== courseOverride;
+            (current?.course ?? "") !== courseOverride ||
+            (current?.nameOverride ?? "") !== nameOverride ||
+            (current?.dueAtOverride ?? "") !== dueAtOverride ||
+            (current?.typeOverride ?? "") !== typeOverride ||
+            statusChanged;
 
         if (changed) {
             persistCustomization(updatedTask.id, {
                 startAt: startDate,
                 course: courseOverride,
+                nameOverride,
+                typeOverride,
+                dueAtOverride,
                 notes,
-            });
-        }
-
-        // shortTitle is a field this app owns (unlike name/due, which
-        // Canvas sync would just overwrite again) — a manual edit from
-        // EditTaskModal's "Short title" field is persisted directly here.
-        // Custom tasks have no DB row; their shortTitle already persisted
-        // to localStorage via the custom_tasks write above.
-        if (!isCustomTask && (updatedTask.shortTitle ?? "") !== (rawTask?.shortTitle ?? "")) {
-            fetch("/api/task-short-titles", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    taskId: updatedTask.id,
-                    shortTitle: updatedTask.shortTitle ?? "",
-                }),
-            }).catch((error) => {
-                console.error("Could not save short title", error);
-            });
-        }
-    }
-
-    const handleRegenerateShortTitle = async (taskId: string): Promise<string | null> => {
-        try {
-            const response = await fetch("/api/task-short-titles", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ taskIds: [taskId], force: true }),
+                // Carry forward — persistCustomization replaces the whole
+                // row, so omitting these would silently un-complete/
+                // un-delete the task on every unrelated detail save.
+                completed: status === "completed",
+                completedAt: status === "completed"
+                    ? (current?.completed ? (current?.completedAt ?? "") : getTodayString())
+                    : "",
+                inProgress: status === "in_progress",
+                deleted: current?.deleted ?? false,
             });
 
-            if (!response.ok) return null;
-
-            const data = await response.json() as {
-                shortTitles: Array<{ id: string; shortTitle: string }>;
-            };
-
-            const match = data.shortTitles.find(({ id }) => id === taskId);
-            if (!match) return null;
-
-            setTasks((current) =>
-                current.map((task) => (task.id === taskId ? { ...task, shortTitle: match.shortTitle } : task))
-            );
-
-            return match.shortTitle;
-        } catch (error) {
-            console.error("Could not regenerate short title", error);
-            return null;
-        }
-    }
-
-    // Matches the server's own defensive per-request cap
-    // (app/api/task-short-titles/route.ts's `.slice(0, 75)`).
-    const REGENERATE_ALL_BATCH_SIZE = 75;
-
-    const handleRegenerateAllShortTitles = async () => {
-        const eligibleIds = tasks
-            .filter((task) => !task.id.startsWith("custom-"))
-            .map((task) => task.id);
-
-        if (eligibleIds.length === 0) {
-            setBulkRegenerateConfirming(false);
-            return;
-        }
-
-        setBulkRegenerating(true);
-        setBulkRegenerateResult(null);
-        setBulkRegenerateProgress({ done: 0, total: eligibleIds.length });
-
-        let completed = 0;
-
-        for (let i = 0; i < eligibleIds.length; i += REGENERATE_ALL_BATCH_SIZE) {
-            const batch = eligibleIds.slice(i, i + REGENERATE_ALL_BATCH_SIZE);
-
-            try {
-                const response = await fetch("/api/task-short-titles", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ taskIds: batch, force: true }),
-                });
-
-                if (response.ok) {
-                    const data = await response.json() as {
-                        shortTitles: Array<{ id: string; shortTitle: string }>;
-                    };
-
-                    setTasks((current) =>
-                        current.map((task) => {
-                            const match = data.shortTitles.find(({ id }) => id === task.id);
-                            return match ? { ...task, shortTitle: match.shortTitle } : task;
-                        })
-                    );
-                }
-            } catch (error) {
-                console.error("Could not regenerate a batch of short titles", error);
+            if (statusChanged && status === "completed") {
+                triggerCompletionPulse(updatedTask.id);
+                awardCompletionSideEffects(updatedTask, taskPlanning[updatedTask.id]?.estimatedMinutes);
             }
-
-            completed += batch.length;
-            setBulkRegenerateProgress({ done: completed, total: eligibleIds.length });
         }
 
-        setBulkRegenerating(false);
-        setBulkRegenerateConfirming(false);
-        setBulkRegenerateResult(`Re-analyzed ${eligibleIds.length} task${eligibleIds.length === 1 ? "" : "s"}.`);
-    };
+    }
 
     return (
         <div className = "theme-surface planner-shell w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
@@ -912,55 +1390,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         🍺 Tavern
                                     </button>
                                 </div>
-
-                                <div className="mt-3 border-t border-slate-800 pt-3">
-                                    <p className="mb-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
-                                        ⚠ Testing Tools
-                                    </p>
-
-                                    {!bulkRegenerateConfirming ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setBulkRegenerateResult(null);
-                                                setBulkRegenerateConfirming(true);
-                                            }}
-                                            className="w-full rounded-lg border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-left text-xs font-semibold text-amber-300 hover:bg-amber-900/40"
-                                        >
-                                            🔄 Re-analyze All Task Labels
-                                        </button>
-                                    ) : (
-                                        <div className="rounded-lg border border-amber-700/60 bg-amber-950/40 p-2">
-                                            <p className="mb-2 text-[11px] text-amber-200">
-                                                Re-run AI shortening for every task&apos;s card label? This calls the local AI model once per task and can take a while.
-                                            </p>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    type="button"
-                                                    disabled={bulkRegenerating}
-                                                    onClick={handleRegenerateAllShortTitles}
-                                                    className="flex-1 rounded-md bg-amber-600 px-2 py-1.5 text-xs font-bold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    {bulkRegenerating
-                                                        ? `Working... ${bulkRegenerateProgress?.done ?? 0}/${bulkRegenerateProgress?.total ?? 0}`
-                                                        : "Confirm re-analyze all"}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    disabled={bulkRegenerating}
-                                                    onClick={() => setBulkRegenerateConfirming(false)}
-                                                    className="rounded-md bg-slate-700 px-2 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {bulkRegenerateResult && !bulkRegenerating && (
-                                        <p className="mt-1.5 text-[11px] text-emerald-400">{bulkRegenerateResult}</p>
-                                    )}
-                                </div>
                             </div>
                         )}
                     </div>
@@ -974,8 +1403,13 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                     <div className="xp-track mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
                         <div className="xp-fill h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${xpTowardsNextLevel}%` }} />
                     </div>
-                    <p className="mt-1 text-[11px] text-slate-400">
-                        {latestXpAward ? `+${latestXpAward.xp} XP earned` : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
+                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
+                        {awardingXp && <Spinner className="h-3 w-3" />}
+                        {awardingXp
+                            ? "Calculating XP..."
+                            : latestXpAward
+                                ? `+${latestXpAward.xp} XP earned`
+                                : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
                     </p>
                 </div>
 
@@ -983,7 +1417,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
             {estimatingCount > 0 && (
                 <p className="mb-4 flex items-center gap-2 text-xs font-medium text-slate-400">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-400" />
+                    <Spinner className="h-3.5 w-3.5" />
                     🧠 Estimating priority for {estimatingCount} task{estimatingCount === 1 ? "" : "s"} in the background...
                 </p>
             )}
@@ -1002,7 +1436,14 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                             </p>
                             <p className="mt-1 text-sm text-amber-200">{upNext.priority.reason}</p>
                         </div>
-                        <div className="flex shrink-0 gap-2">
+                        <div className="flex shrink-0 items-center gap-2">
+                            <TaskStatusToggle
+                                status={getTaskStatus(
+                                    taskCustomizations[upNext.task.id]?.completed ?? false,
+                                    taskCustomizations[upNext.task.id]?.inProgress ?? false
+                                )}
+                                onChange={(next) => handleSetStatus(upNext.task, next, taskPlanning[upNext.task.id]?.estimatedMinutes)}
+                            />
                             <button
                                 type="button"
                                 onClick={() => setFocusTask(upNext.task.id)}
@@ -1013,7 +1454,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                             </button>
                             <button
                                 type="button"
-                                onClick={() => handleToggleComplete(upNext.task, taskPlanning[upNext.task.id]?.estimatedMinutes)}
+                                onClick={() => handleSetStatus(upNext.task, "completed", taskPlanning[upNext.task.id]?.estimatedMinutes)}
                                 className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400"
                             >
                                 Mark done
@@ -1064,13 +1505,16 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 isOpen = {selectedTask !== null}
                 startDate = {taskCustomizations[selectedTask?.id ?? ""]?.startAt ?? ""}
                 notes = {taskCustomizations[selectedTask?.id ?? ""]?.notes ?? ""}
+                status = {getTaskStatus(
+                    taskCustomizations[selectedTask?.id ?? ""]?.completed ?? false,
+                    taskCustomizations[selectedTask?.id ?? ""]?.inProgress ?? false
+                )}
                 estimatedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
                 courses = {courses}
                 onCourseCreated = {handleCourseCreated}
                 onClose = {() => setSelectedTask(null)}
                 onSaveTask = {handleSaveTask}
                 onDeleteTask = {handleDelete}
-                onRegenerateShortTitle = {handleRegenerateShortTitle}
             />
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1155,32 +1599,20 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                             ))}
                         </div>
 
-                        <div className="grid grid-cols-7 grid-flow-row-dense gap-y-3 gap-x-2 relative z-10 py-2">
-                            {tasksForActiveWeek.map((task) => {
-                                const taskState = taskStates[task.id];
+                        <div className="relative z-10 py-2" style={{ height: weekTaskLayerHeight }}>
+                            {weekTaskLayouts.map(({ task, span }) => {
+                                const taskCustomization = taskCustomizations[task.id];
                                 const estimate = taskPlanning[task.id];
-                                const { gridColumn, endInsetPercent } = calculateGridSpan(
-                                    {
-                                        dueDate: task.due,
-                                        startDate: taskCustomizations[task.id]?.startAt || taskState?.completedAt || undefined,
-                                        dueFraction: task.dueFraction,
-                                    },
-                                    activeWeekStart
-                                );
+                                const { columnStart, columnEnd, endInsetPercent } = span;
 
                                 const taskCourse = courses.find((c) => c.name === task.course);
                                 const taskCourseAbbreviation = taskCourse?.abbreviation || courseAbbreviationDefault(task.course);
-                                const taskTypeCode = classifyLabelType({
+                                const taskTypeCode = task.typeOverride || classifyLabelType({
                                     name: task.name,
                                     course: task.course,
                                     isCustomCourse: taskCourse?.isCustom,
                                 });
                                 const taskDayCode = dayCode(task.due) ?? "—";
-                                const taskShortTitle = task.shortTitle ?? deterministicShortTitle({
-                                    name: task.name,
-                                    course: task.course,
-                                    typeCode: taskTypeCode,
-                                });
 
                                 return (
                                     <AssignmentCard
@@ -1190,17 +1622,20 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                         courseAbbreviation = {taskCourseAbbreviation}
                                         typeCode = {taskTypeCode}
                                         dayCode = {taskDayCode}
-                                        shortTitle = {taskShortTitle}
                                         due = {task.due}
                                         dueAt = {task.dueAt}
                                         course = {task.course}
-                                        gridSpan = {gridColumn}
+                                        courseColor = {taskCourse?.color}
+                                        columnStart = {columnStart}
+                                        columnEnd = {columnEnd}
+                                        topPx = {weekTaskOffsets.get(task.id) ?? 0}
                                         dueEndInsetPercent = {endInsetPercent}
-                                        completed = {taskStates[task.id]?.completed ?? false}
-                                        completedAt = {taskStates[task.id]?.completedAt ?? null}
+                                        status = {getTaskStatus(taskCustomization?.completed ?? false, taskCustomization?.inProgress ?? false)}
+                                        completedAt = {taskCustomization?.completedAt || null}
+                                        isCompleting = {pulsingIds.has(task.id)}
                                         estimatedMinutes = {estimate?.estimatedMinutes}
                                         isFocused={task.id === activeFocusTaskId}
-                                        onToggleComplete = {() => handleToggleComplete(task, estimate?.estimatedMinutes)}
+                                        onSetStatus = {(newStatus) => handleSetStatus(task, newStatus, estimate?.estimatedMinutes)}
                                         onDelete = {handleDelete}
                                         onFocus={(id) => setFocusTask(id === activeFocusTaskId ? null : id)}
                                         onOpen={() => setSelectedTask(task)}
@@ -1240,7 +1675,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                     </div>
                                     <div className="space-y-1">
                                         {dayTasks.slice(0, 3).map((task) => {
-                                            const completed = taskStates[task.id]?.completed ?? false;
+                                            const completed = taskCustomizations[task.id]?.completed ?? false;
+                                            const status = getTaskStatus(completed, taskCustomizations[task.id]?.inProgress ?? false);
                                             const estimate = taskPlanning[task.id];
                                             const isOverdue = task.due < getTodayString() && !completed;
 
@@ -1248,15 +1684,12 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                                 <div
                                                     key={task.id}
                                                     onClick={() => setSelectedTask(task)}
-                                                    className={`group flex cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight ${completed ? "bg-green-950/40 text-slate-500" : isOverdue ? "bg-rose-950/80 text-rose-100" : "bg-slate-800 text-slate-200"}`}
+                                                    className={`group flex cursor-pointer items-center gap-1 rounded px-1 text-[10px] leading-tight transition-opacity ${completed ? "py-0 opacity-55 hover:opacity-90" : "py-0.5"} ${pulsingIds.has(task.id) ? "task-card--completing" : ""} ${completed ? "bg-green-950/40 text-slate-500" : status === "in_progress" ? "bg-indigo-950/40 text-slate-200" : isOverdue ? "bg-rose-950/80 text-rose-100" : "bg-slate-800 text-slate-200"}`}
                                                 >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={completed}
-                                                        onClick={(event) => event.stopPropagation()}
-                                                        onChange={() => handleToggleComplete(task, estimate?.estimatedMinutes)}
-                                                        aria-label={`Mark ${task.name} as complete`}
-                                                        className="h-3 w-3 shrink-0 cursor-pointer rounded border-slate-600 bg-slate-900 text-indigo-500 focus:ring-0"
+                                                    <TaskStatusToggle
+                                                        size="sm"
+                                                        status={status}
+                                                        onChange={(next) => handleSetStatus(task, next, estimate?.estimatedMinutes)}
                                                     />
                                                     <span className={`min-w-0 truncate ${completed ? "line-through" : ""}`}>{task.name}</span>
                                                 </div>
@@ -1286,7 +1719,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                 ) : (
                     <div className="space-y-2">
                         {tasksWithoutDueDate.map((task) => {
-                            const completed = taskStates[task.id]?.completed ?? false;
+                            const completed = taskCustomizations[task.id]?.completed ?? false;
+                            const status = getTaskStatus(completed, taskCustomizations[task.id]?.inProgress ?? false);
                             const estimate = taskPlanning[task.id];
                             const priority = getTaskPriority(task, estimate?.importance);
 
@@ -1294,15 +1728,11 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                 <div
                                     key={task.id}
                                     onClick={() => setSelectedTask(task)}
-                                    className={`group flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${completed ? "border-slate-800 bg-slate-900/50 text-slate-500" : "border-slate-700 bg-slate-900 hover:border-slate-600"}`}
+                                    className={`group flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${pulsingIds.has(task.id) ? "task-card--completing" : ""} ${completed ? "border-slate-800 bg-slate-900/50 text-slate-500" : status === "in_progress" ? "border-indigo-500/60 bg-indigo-950/20" : "border-slate-700 bg-slate-900 hover:border-slate-600"}`}
                                 >
-                                    <input
-                                        type="checkbox"
-                                        checked={completed}
-                                        onClick={(event) => event.stopPropagation()}
-                                        onChange={() => handleToggleComplete(task, estimate?.estimatedMinutes)}
-                                        aria-label={`Mark ${task.name} as complete`}
-                                        className="h-4 w-4 cursor-pointer rounded border-slate-700 bg-slate-800 text-indigo-500 focus:ring-0"
+                                    <TaskStatusToggle
+                                        status={status}
+                                        onChange={(next) => handleSetStatus(task, next, estimate?.estimatedMinutes)}
                                     />
                                     <div className="min-w-0 flex-1">
                                         <p className={`truncate font-medium ${completed ? "line-through" : "text-slate-100"}`}>{task.name}</p>

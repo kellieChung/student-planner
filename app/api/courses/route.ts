@@ -35,6 +35,7 @@ export async function GET() {
             hidden: true,
             canvasOrigin: true,
             abbreviation: true,
+            color: true,
         },
         orderBy: { name: "asc" },
     });
@@ -46,6 +47,7 @@ export async function GET() {
             hidden: course.hidden,
             isCustom: course.canvasOrigin === CUSTOM_COURSE_ORIGIN,
             abbreviation: course.abbreviation,
+            color: course.color,
         })),
     });
 }
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
             hidden: true,
             canvasOrigin: true,
             abbreviation: true,
+            color: true,
         },
     });
 
@@ -103,6 +106,7 @@ export async function POST(request: Request) {
             hidden: course.hidden,
             isCustom: course.canvasOrigin === CUSTOM_COURSE_ORIGIN,
             abbreviation: course.abbreviation,
+            color: course.color,
         },
     });
 }

@@ -2,6 +2,7 @@
 
 import React, {useState} from "react";
 import {Course} from "@/types/course";
+import Spinner from "@/components/Spinner";
 
 const ADD_NEW_VALUE = "__add_new__";
 
@@ -80,9 +81,10 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
                         type="button"
                         disabled={creating || !newName.trim()}
                         onClick={handleCreate}
-                        className="shrink-0 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="shrink-0 flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        Create
+                        {creating && <Spinner className="h-3.5 w-3.5" />}
+                        {creating ? "Creating..." : "Create"}
                     </button>
                     <button
                         type="button"

@@ -5,9 +5,9 @@ import SignInButton from "@/components/SignInButton";
 import {auth} from "@/auth"
 import UserMenu from "@/components/UserMenu";
 import {redirect} from "next/navigation";
-import AnalyzeAnnouncementsButton from "@/components/AnalyzeAnnouncementsButton";
 import AIReviewPanel from "@/components/AIReviewPanel";
 import {prisma} from "@/lib/prisma";
+import { getStartOfWeek } from "@/lib/utils";
 
 
 export default async function TestPage() {
@@ -30,10 +30,7 @@ export default async function TestPage() {
         due: assignment.due ?? "",
     }));
 
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - dayOfWeek);
+    const sunday = getStartOfWeek();
 
     return (
         <main className="min-h-screen p-8">
@@ -49,7 +46,6 @@ export default async function TestPage() {
                 <h1 className="mb-2 text-4xl font-bold tracking-tight">ATLAS Planner</h1>
                 <p className="mb-8 text-[var(--muted)]">Weekly calendar overview</p>
 
-                <AnalyzeAnnouncementsButton />
                 <WeeklyPlannerView assignments={assignments} weekStartDate={sunday} />
                 <AIReviewPanel />
             </div>

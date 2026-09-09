@@ -365,3 +365,26 @@ html[data-theme="dark"] .theme-surface [class*="text-amber-2"],
 html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
   color: var(--accent-hover) !important;
 }
+
+/* Completion pulse: transform/opacity/background only, so it stays
+   compositor-only (no layout/paint per frame) alongside the FLIP-style
+   reorder transform WeeklyPlannerView.tsx applies on the same card. */
+@keyframes task-complete-pulse {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.03); background-color: rgb(34 197 94 / 0.35); }
+  100% { transform: scale(1); }
+}
+
+.task-card--completing {
+  animation: task-complete-pulse 550ms ease-out;
+}
+
+@keyframes task-status-pop {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.task-status-toggle--pop {
+  animation: task-status-pop 400ms ease-out;
+}

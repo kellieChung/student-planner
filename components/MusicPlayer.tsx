@@ -6,6 +6,7 @@ import {
     useRef,
     useState,
 } from "react";
+import Spinner from "@/components/Spinner";
 
 type MusicTrack = {
     id: string;
@@ -173,6 +174,12 @@ export default function MusicPlayer() {
 
     const [isSubmitting, setIsSubmitting] =
         useState(false);
+
+    // Tracks which single playlist/track a rename/delete is currently in
+    // flight for, so only that row's button shows busy (mirrors
+    // ManageCoursesModal.tsx's busyCourseId pattern).
+    const [busyItemId, setBusyItemId] =
+        useState<string | null>(null);
 
     const [editingPlaylistId, setEditingPlaylistId] =
         useState<string | null>(null);
@@ -843,6 +850,7 @@ export default function MusicPlayer() {
 
         try {
             setError("");
+            setBusyItemId(playlistId);
 
             const response =
                 await fetch(
@@ -886,6 +894,8 @@ export default function MusicPlayer() {
                     ? err.message
                     : "Failed to rename playlist."
             );
+        } finally {
+            setBusyItemId(null);
         }
     }
 
@@ -902,6 +912,7 @@ export default function MusicPlayer() {
 
         try {
             setError("");
+            setBusyItemId(trackId);
 
             const response =
                 await fetch(
@@ -956,6 +967,8 @@ export default function MusicPlayer() {
                     ? err.message
                     : "Failed to rename track."
             );
+        } finally {
+            setBusyItemId(null);
         }
     }
 
@@ -976,6 +989,7 @@ export default function MusicPlayer() {
 
         try {
             setError("");
+            setBusyItemId(playlistId);
 
             const response =
                 await fetch(
@@ -1023,6 +1037,8 @@ export default function MusicPlayer() {
                     ? err.message
                     : "Failed to delete playlist."
             );
+        } finally {
+            setBusyItemId(null);
         }
     }
 
@@ -1035,6 +1051,7 @@ export default function MusicPlayer() {
     ) {
         try {
             setError("");
+            setBusyItemId(trackId);
 
             const playlist =
                 playlists.find(
@@ -1134,6 +1151,8 @@ export default function MusicPlayer() {
                     ? err.message
                     : "Failed to delete track."
             );
+        } finally {
+            setBusyItemId(null);
         }
     }
 
@@ -1319,7 +1338,7 @@ export default function MusicPlayer() {
     if (loading) {
         return (
             <div className="theme-surface flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)]">
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--accent)]" />
+                <Spinner className="h-4 w-4" />
                 Loading Tavern Radio...
             </div>
         );
@@ -1460,13 +1479,15 @@ export default function MusicPlayer() {
 
                                                 <button
                                                     type="button"
+                                                    disabled={busyItemId === playlist.id}
                                                     onClick={() =>
                                                         renamePlaylist(
                                                             playlist.id
                                                         )
                                                     }
-                                                    className="text-sm"
+                                                    className="flex items-center gap-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
+                                                    {busyItemId === playlist.id && <Spinner className="h-3 w-3" />}
                                                     Save
                                                 </button>
                                             </div>
@@ -1520,13 +1541,15 @@ export default function MusicPlayer() {
 
                                                 <button
                                                     type="button"
+                                                    disabled={busyItemId === playlist.id}
                                                     onClick={() =>
                                                         deletePlaylist(
                                                             playlist.id
                                                         )
                                                     }
-                                                    className="px-2 text-xs text-red-500"
+                                                    className="flex items-center gap-1 px-2 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
+                                                    {busyItemId === playlist.id && <Spinner className="h-3 w-3" />}
                                                     Delete
                                                 </button>
                                             </div>
@@ -1776,14 +1799,16 @@ export default function MusicPlayer() {
 
                                                                     <button
                                                                         type="button"
+                                                                        disabled={busyItemId === track.id}
                                                                         onClick={() =>
                                                                             renameTrack(
                                                                                 selectedPlaylist.id,
                                                                                 track.id
                                                                             )
                                                                         }
-                                                                        className="text-sm"
+                                                                        className="flex items-center gap-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                                                                     >
+                                                                        {busyItemId === track.id && <Spinner className="h-3 w-3" />}
                                                                         Save
                                                                     </button>
                                                                 </div>
@@ -1824,14 +1849,16 @@ export default function MusicPlayer() {
 
                                                                     <button
                                                                         type="button"
+                                                                        disabled={busyItemId === track.id}
                                                                         onClick={() =>
                                                                             deleteTrack(
                                                                                 selectedPlaylist.id,
                                                                                 track.id
                                                                             )
                                                                         }
-                                                                        className="text-xs text-red-500"
+                                                                        className="flex items-center gap-1 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                                                                     >
+                                                                        {busyItemId === track.id && <Spinner className="h-3 w-3" />}
                                                                         Delete
                                                                     </button>
                                                                 </div>
@@ -2131,8 +2158,9 @@ export default function MusicPlayer() {
                                     (!importTargetId &&
                                         !newImportPlaylistName.trim())
                                 }
-                                className="rounded-lg bg-[var(--accent)] px-4 py-2 text-white disabled:opacity-40"
+                                className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-white disabled:opacity-40"
                             >
+                                {isSubmitting && <Spinner className="h-4 w-4" />}
                                 {isSubmitting
                                     ? "Importing..."
                                     : "Import Playlist"}
