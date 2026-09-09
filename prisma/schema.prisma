@@ -22,6 +22,11 @@ model User {
   announcements     Announcement[]
   musicPlaylists MusicPlaylist[]
   taskCustomizations TaskCustomization[]
+  gamificationState  GamificationState?
+  announcementSuggestionReviews AnnouncementSuggestionReview[]
+  customTasks            CustomTask[]
+  taskPlanningEstimates  TaskPlanningEstimate[]
+  procrastinationRecords ProcrastinationRecord[]
 }
 
 model Account {
@@ -79,6 +84,10 @@ model CanvasCourse {
   // course named "Calculus BC") — unset means "use the auto-derived
   // default" (lib/taskLabel.ts's courseAbbreviationDefault).
   abbreviation    String?
+  // User-editable hex color (e.g. "#3b82f6") for the course badge shown on
+  // planner cards — unset means "use the auto-derived default"
+  // (components/AssignmentCard.tsx's courseColorFor hash).
+  color           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -100,11 +109,6 @@ model Assignment {
   description     String?
   dueAt           DateTime?
   htmlUrl         String?
-  // LLM-assisted (with a deterministic fallback/pre-pass) short version
-  // of `name` for the weekly planner card label (lib/taskLabel.ts). Null
-  // means "not yet computed" — computed once by a windowed background
-  // pass, never recomputed once set.
-  shortTitle      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -159,6 +163,29 @@ model Announcement {
   @@index([userId])
 }
 
+// Persists an accept/reject decision on an AI-proposed announcement task
+// so it isn't re-suggested identically on every future analysis run. Not
+// a foreign key to Announcement (same free-form-id precedent as
+// TaskCustomization below) — a review decision shouldn't evaporate if an
+// announcement row is ever deleted by some future cleanup feature, even
+// though sync currently only upserts and never deletes.
+model AnnouncementSuggestionReview {
+  id                   String   @id @default(cuid())
+  sourceAnnouncementId String
+  // Content-derived hash (lib/suggestionKey.ts) — a ProposedTask has no
+  // id of its own, and a positional index isn't stable across re-runs of
+  // the extraction prompt.
+  suggestionKey        String
+  status               String   // "accepted" | "rejected"
+  createdAt            DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceAnnouncementId, suggestionKey])
+  @@index([userId])
+}
+
 model TaskCustomization {
   id        String    @id @default(cuid())
   // Free-form task id: either a Canvas-synced Assignment.id or a client-
@@ -170,7 +197,32 @@ model TaskCustomization {
   // Only meaningfully set for Canvas-synced tasks — custom tasks already
   // store their own course directly on their localStorage object.
   course    String?
+  // Full task-name override — Canvas sync (lib/canvasIngest.ts) would
+  // otherwise overwrite Assignment.name on every resync. Also only
+  // meaningfully set for Canvas-synced tasks, same reasoning as `course`.
+  nameOverride  String?
+  // Overrides the card's classified type code (HW/R/EXAM/TODO,
+  // lib/taskLabel.ts's LabelType) when classifyLabelType guesses wrong.
+  typeOverride  String?
+  // Overrides the resolved due instant (UTC) — Canvas sync would
+  // otherwise overwrite Assignment.dueAt on every resync.
+  dueAtOverride DateTime?
   notes     String?
+  // Completion + deletion state, for ANY task (Canvas-synced or custom) —
+  // was localStorage-only (task_states/deleted_task_ids), which is why it
+  // never carried over between browser profiles for the same account.
+  // `deleted` is only meaningful for a Canvas-synced task (a hidden-from-
+  // planner tombstone); a deleted custom task is a real CustomTask row
+  // delete instead, no tombstone needed.
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  // Set while a task has been started but not finished — cleared whenever
+  // `completed` becomes true. No timestamp: nothing downstream needs
+  // "when did I start it," and adding one to the startAt/completedAt
+  // fallback chain in WeeklyPlannerView.tsx's grid-span calculation would
+  // reopen the exact date-serialization NaN-column bug fixed there before.
+  inProgress  Boolean   @default(false)
+  deleted     Boolean   @default(false)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -179,6 +231,94 @@ model TaskCustomization {
 
   @@unique([userId, taskId])
   @@index([userId])
+}
+
+// The core identity of a manually-added/AI-accepted task — was 100%
+// client-side (localStorage "custom_tasks"), which is why it never
+// carried over between browser profiles for the same account. `id` is
+// client-supplied (not @default(cuid())), not auto-generated: dozens of
+// call sites test id.startsWith("custom-") (isCustomTask checks
+// throughout WeeklyPlannerView.tsx/EditTaskModal.tsx), and
+// TaskCustomization.taskId's comment already documents accepting exactly
+// this id shape — keeping it preserves that convention.
+model CustomTask {
+  id                   String    @id
+  name                 String
+  course               String
+  due                  String?
+  dueAt                DateTime?
+  dueFraction          Float?
+  sourceAnnouncementId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// AI importance/difficulty/time estimates — was localStorage-only
+// (task_planning_estimates), same cross-device-loss reasoning as
+// CustomTask above. `signature` (lib/taskPlanning.ts's getTaskSignature)
+// detects when a task's name/course changed enough to need re-estimating.
+model TaskPlanningEstimate {
+  id               String   @id @default(cuid())
+  taskId           String
+  signature        String
+  estimatedMinutes Int
+  importance       Int
+  difficulty       Int
+  consequence      Int
+  reason           String
+  assignmentType   String?
+  priorityScore    Float
+  urgencyScore     Float
+  frogScore        Float
+  priorityReason   String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, taskId])
+  @@index([userId])
+}
+
+// One row per completion record (not one row per task type) — was
+// localStorage-only (procrastination_history). The rolling 12-per-type
+// cap (lib/procrastinationHistory.ts's MAX_RECORDS_PER_TYPE) is enforced
+// server-side on insert instead of client-side array slicing.
+model ProcrastinationRecord {
+  id          String   @id @default(cuid())
+  taskType    String
+  addedAt     DateTime
+  dueAt       DateTime
+  completedAt DateTime
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, taskType])
+}
+
+// One row per user (not one per task, unlike TaskCustomization) — was
+// plain localStorage (lib/gamification.ts), unscoped to the logged-in
+// user; moved here since gamification is becoming the centerpiece of the
+// app and losing/mixing a semester of earned progress on a shared
+// browser or account switch is no longer acceptable.
+model GamificationState {
+  id             String   @id @default(cuid())
+  totalXp        Int      @default(0)
+  // Assignment.id (Canvas-synced) or a client-generated "custom-<timestamp>"
+  // id, same free-form convention as TaskCustomization.taskId.
+  awardedTaskIds String[]
+  updatedAt      DateTime @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MusicPlaylist {
