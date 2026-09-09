@@ -3,6 +3,9 @@ const connectButton = document.getElementById("connectButton");
 const syncButton = document.getElementById("syncButton");
 const status = document.getElementById("status");
 const loginButton = document.getElementById("loginButton");
+const loadCoursesButton = document.getElementById("loadCoursesButton");
+const restoreCourseSelect = document.getElementById("restoreCourseSelect");
+const restoreCourseButton = document.getElementById("restoreCourseButton");
 
 // Longest error string shown directly to the user — anything past this is
 // logged in full to the console instead, so a verbose backend/stack-trace
@@ -279,6 +282,137 @@ async function syncCanvas() {
 
 
 // ============================================================
+// RESTORE A COURSE
+// ============================================================
+
+// Populated by loadCourseOptions() below, and read back by index (not by
+// Canvas's numeric id, which isn't a safe/stable <option value>) when the
+// user picks one to restore.
+let restorableCourses = [];
+
+async function loadCourseOptions() {
+
+    const result =
+        await chrome.storage.local.get(
+            "canvasOrigin"
+        );
+
+    if (!result.canvasOrigin) {
+
+        setStatus("❌ Connect Canvas first.", "error");
+
+        return;
+    }
+
+    loadCoursesButton.disabled = true;
+    setStatus("🔎 Looking up your Canvas courses...");
+
+    chrome.runtime.sendMessage(
+        {
+            type: "LIST_CANVAS_COURSES",
+            canvasOrigin:
+                result.canvasOrigin,
+        },
+        (response) => {
+
+            loadCoursesButton.disabled = false;
+
+            if (!response) {
+
+                setStatus("❌ No response from extension.", "error");
+
+                return;
+            }
+
+            if (!response.success) {
+
+                setStatus(describeError("❌ Couldn't load courses", response.error), "error");
+
+                return;
+            }
+
+            restorableCourses = response.courses ?? [];
+
+            restoreCourseSelect.innerHTML = "";
+
+            restorableCourses.forEach((course, index) => {
+                const option = document.createElement("option");
+                option.value = String(index);
+                option.textContent = course.name ?? `Course ${course.id}`;
+                restoreCourseSelect.appendChild(option);
+            });
+
+            restoreCourseSelect.hidden = restorableCourses.length === 0;
+            restoreCourseButton.hidden = restorableCourses.length === 0;
+
+            setStatus(
+                restorableCourses.length > 0
+                    ? `Found ${restorableCourses.length} Canvas course(s). Pick one to restore.`
+                    : "No Canvas courses found.",
+                restorableCourses.length > 0 ? "success" : "neutral"
+            );
+        }
+    );
+}
+
+async function restoreSelectedCourse() {
+
+    const result =
+        await chrome.storage.local.get(
+            "canvasOrigin"
+        );
+
+    if (!result.canvasOrigin) {
+
+        setStatus("❌ Connect Canvas first.", "error");
+
+        return;
+    }
+
+    const course = restorableCourses[Number(restoreCourseSelect.value)];
+
+    if (!course) {
+
+        setStatus("❌ Pick a course first.", "error");
+
+        return;
+    }
+
+    restoreCourseButton.disabled = true;
+    setStatus(`🔁 Restoring ${course.name}...`);
+
+    chrome.runtime.sendMessage(
+        {
+            type: "RESTORE_COURSE",
+            canvasOrigin:
+                result.canvasOrigin,
+            course,
+        },
+        (response) => {
+
+            restoreCourseButton.disabled = false;
+
+            if (!response) {
+
+                setStatus("❌ No response from extension.", "error");
+
+                return;
+            }
+
+            if (!response.success) {
+
+                setStatus(describeError("❌ Restore failed", response.error), "error");
+
+                return;
+            }
+
+            setStatus(`✅ Restored ${response.courseName}!`, "success");
+        }
+    );
+}
+
+
+// ============================================================
 // EVENT LISTENERS
 // ============================================================
 
@@ -290,6 +424,16 @@ connectButton.addEventListener(
 syncButton.addEventListener(
     "click",
     syncCanvas
+);
+
+loadCoursesButton.addEventListener(
+    "click",
+    loadCourseOptions
+);
+
+restoreCourseButton.addEventListener(
+    "click",
+    restoreSelectedCourse
 );
 
 

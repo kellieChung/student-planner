@@ -61,7 +61,6 @@ export async function getAllAssignments(userId: string) {
             dueAt: assignment.dueAt ? assignment.dueAt.toISOString() : null,
             course: course.displayName ?? course.name,
             createdAt: assignment.createdAt.toISOString(),
-            shortTitle: assignment.shortTitle,
         }))
     );
 

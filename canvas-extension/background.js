@@ -1,13 +1,36 @@
 console.log("🚀 Student Planner background service worker loaded!");
 
-async function getCanvasData(url) {
-    const response = await fetch(url);
+// Follows Canvas's RFC 5988 `Link` header pagination (every call site here
+// requests per_page=100 and expects a flat array back) — without this, a
+// course with more than 100 assignments/discussions/announcements would
+// silently lose everything past page 1.
+function getNextPageUrl(linkHeader) {
+    if (!linkHeader) return null;
 
-    if (!response.ok) {
-        throw new Error(`Canvas returned ${response.status}`);
+    for (const part of linkHeader.split(",")) {
+        const match = part.match(/<([^>]+)>;\s*rel="next"/);
+        if (match) return match[1];
     }
 
-    return response.json();
+    return null;
+}
+
+async function getCanvasData(url) {
+    let results = [];
+    let nextUrl = url;
+
+    while (nextUrl) {
+        const response = await fetch(nextUrl);
+
+        if (!response.ok) {
+            throw new Error(`Canvas returned ${response.status}`);
+        }
+
+        results = results.concat(await response.json());
+        nextUrl = getNextPageUrl(response.headers.get("Link"));
+    }
+
+    return results;
 }
 
 // Looked up on demand (rather than relying solely on theme-sync.js having
@@ -37,6 +60,25 @@ async function getPlannerTabTheme() {
     console.log("🎨 Read live planner theme from open tab:", result);
 
     return result ?? null;
+}
+
+// Shared by the full SYNC_CANVAS loop and the single-course RESTORE_COURSE
+// handler below — both need the identical assignments/discussions/
+// announcements fetch for one course.
+async function fetchCourseData(canvasOrigin, course) {
+    const assignments = await getCanvasData(
+        `${canvasOrigin}/api/v1/courses/${course.id}/assignments?per_page=100`
+    );
+
+    const discussions = await getCanvasData(
+        `${canvasOrigin}/api/v1/courses/${course.id}/discussion_topics?per_page=100`
+    );
+
+    const announcements = await getCanvasData(
+        `${canvasOrigin}/api/v1/announcements?context_codes[]=course_${course.id}&active_only=true&per_page=100`
+    );
+
+    return { course, assignments, discussions, announcements };
 }
 
 async function clearExtensionAuth() {
@@ -448,27 +490,9 @@ chrome.runtime.onMessage.addListener(
                             `🔍 Syncing: ${course.name}`
                         );
 
-                        const assignments =
-                            await getCanvasData(
-                                `${canvasOrigin}/api/v1/courses/${course.id}/assignments?per_page=100`
-                            );
-
-                        const discussions =
-                            await getCanvasData(
-                                `${canvasOrigin}/api/v1/courses/${course.id}/discussion_topics?per_page=100`
-                            );
-
-                        const announcements =
-                            await getCanvasData(
-                                `${canvasOrigin}/api/v1/announcements?context_codes[]=course_${course.id}&active_only=true&per_page=100`
-                            );
-
-                        courseData.push({
-                            course,
-                            assignments,
-                            discussions,
-                            announcements,
-                        });
+                        courseData.push(
+                            await fetchCourseData(canvasOrigin, course)
+                        );
                     }
 
                     console.log(
@@ -567,6 +591,135 @@ chrome.runtime.onMessage.addListener(
 
                     console.error(
                         "❌ Canvas sync failed:",
+                        error
+                    );
+
+                    sendResponse({
+                        success: false,
+                        error: error.message,
+                    });
+                }
+
+            })();
+
+            return true;
+        }
+
+        if (message.type === "LIST_CANVAS_COURSES") {
+
+            const canvasOrigin = message.canvasOrigin;
+
+            // Includes concluded ("completed") courses, unlike GET_COURSES/
+            // SYNC_CANVAS above (both intentionally active-only) — this is
+            // what lets a course that's no longer active in Canvas still
+            // show up to be restored.
+            getCanvasData(
+                `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state[]=active&enrollment_state[]=completed&per_page=100`
+            )
+                .then((courses) => {
+
+                    sendResponse({
+                        success: true,
+                        courses,
+                    });
+                })
+                .catch((error) => {
+
+                    console.error(
+                        "Canvas course list request failed:",
+                        error
+                    );
+
+                    sendResponse({
+                        success: false,
+                        error: error.message,
+                    });
+                });
+
+            return true;
+        }
+
+        if (message.type === "RESTORE_COURSE") {
+
+            (async () => {
+
+                try {
+
+                    const canvasOrigin = message.canvasOrigin;
+                    const course = message.course;
+
+                    const authResult =
+                        await chrome.storage.local.get(
+                            "extensionToken"
+                        );
+
+                    if (!authResult.extensionToken) {
+                        await clearExtensionAuth();
+
+                        throw new Error(
+                            "Extension is not authenticated. Please sign in again."
+                        );
+                    }
+
+                    console.log(
+                        `🔁 Restoring course: ${course.name}`
+                    );
+
+                    const restoredCourse =
+                        await fetchCourseData(canvasOrigin, course);
+
+                    const backendResponse =
+                        await fetch(
+                            "http://localhost:3000/api/canvas/restore-course",
+                            {
+                                method: "POST",
+                                headers: {
+                                    "Content-Type":
+                                        "application/json",
+                                    "Authorization":
+                                        `Bearer ${authResult.extensionToken}`,
+                                },
+                                body: JSON.stringify({
+                                    canvasOrigin,
+                                    courses: [restoredCourse],
+                                }),
+                            }
+                        );
+
+                    if (!backendResponse.ok) {
+
+                        const errorData =
+                            await backendResponse
+                                .json()
+                                .catch(() => null);
+
+                        if (backendResponse.status === 401) {
+                            await clearExtensionAuth();
+
+                            throw new Error(
+                                "Your session expired. Please sign in again."
+                            );
+                        }
+
+                        throw new Error(
+                            errorData?.error ||
+                            `Student Planner returned ${backendResponse.status}`
+                        );
+                    }
+
+                    console.log(
+                        `✅ Restored course: ${course.name}`
+                    );
+
+                    sendResponse({
+                        success: true,
+                        courseName: course.name,
+                    });
+
+                } catch (error) {
+
+                    console.error(
+                        "❌ Course restore failed:",
                         error
                     );
 
