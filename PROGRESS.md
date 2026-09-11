@@ -1018,8 +1018,18 @@ documentation (that's what `CLAUDE.md` and code comments are for).
     same-status-group ordering-invariant assertion (zero violations) and
     the existing zero-overlap invariant (also zero).
 
-## Active TODOs (as of 2026-09-09)
+## Active TODOs (as of 2026-09-11)
 
+- **Gamification layer follow-ups** (see the 2026-09-11 session log entry
+  for the full build): currency spend/shop UI, laptop stickers/case
+  cosmetics, and real-calendar milestone gating (finals week, semester end)
+  for big stage-jump visuals are all deliberately deferred. Also worth a
+  follow-up pass: the `announcementFound` mascot trigger has never fired
+  against a real AI suggestion batch; building stage-2 ("Upgraded") and
+  kingdom Town/City/Kingdom stage visuals have only been verified by
+  threshold math, not seen rendered; light-theme rendering of `WorldView`/
+  `OnboardingOverlay` is unchecked; the currency/streak HUD's mobile-width
+  layout is unchecked.
 - **Music player loop/shuffle** (`MusicPlayer.tsx`): shuffle/repeat button
   toggling and localStorage persistence are live-verified, but actual
   end-of-track behavior (`loopMode: "one"` restarting the same track,
@@ -1093,7 +1103,113 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Session log
 
-### 2026-09-09 — add music player loop/shuffle, redesign transport controls
+### 2026-09-11 — build the medieval-kingdom gamification layer (gamificationSystem.md)
+
+User asked to implement `gamificationSystem.md` end-to-end: a pixel-art
+"World" (mascot + growing town) wrapped around the existing "OS" (the
+current productivity UI, untouched), following the spec's own scope-down
+guidance. Went through Plan Mode; three parallel Explore passes first
+confirmed the pre-existing "gamification" system was just a flat
+`GamificationState` (`totalXp`/`awardedTaskIds`) with no town/currency/
+streak/mascot state anywhere — greenfield. User locked in: OS loads by
+default (not World) per their own `projectReview.md` review brief warning
+against burying the daily task list behind "a full open-app-inside-app
+flow"; a first-run-only onboarding sequence is the one exception; mascot
+name **Nano**; reskin scope limited to Pomodoro + music copy only (not the
+spec's other reskin-table entries — schedule bar, notifications, AI-parsing
+labels — left untouched).
+
+- **New `TownState` Prisma model** (migration `20260911001118_add_town_state`),
+  deliberately a **separate model from `GamificationState`** rather than an
+  extension of it — keeps `GamificationState`'s existing PATCH
+  validator/full-row-replace untouched, so this work can't risk silently
+  wiping real XP data (this account had real 620 XP / Level 7 before this
+  session). One row per user: `currency`, 5 typed growth counters
+  (`libraryGrowth`/`workshopGrowth`/`trainingGroundsGrowth`/
+  `watchtowerGrowth`/`townSquareGrowth`), streak fields (`currentStreak`/
+  `longestStreak`/`graceTokens`/`lastGoodDay`), `onboardingCompletedAt`.
+  New `app/api/town-state/route.ts` (GET/PATCH), copying
+  `app/api/gamification/route.ts`'s exact auth→findUnique→scope→upsert
+  skeleton.
+- **`lib/townGrowth.ts`** (framework-free, mirrors `lib/prioritization.ts`'s
+  "keep lib/ testable" convention): `mapTypeCodeToBuilding` (HW→workshop,
+  R→library, EXAM→trainingGrounds, TODO→townSquare, reusing
+  `lib/taskLabel.ts`'s `classifyLabelType` as the single source of that
+  taxonomy — no new classifier), `computeGrowthAward`/`applyGrowthAward`
+  (currency earned = the same deterministic amount `/api/task-xp` already
+  computed for XP — one reward economy, not two formulas), building/kingdom
+  stage math off scaling threshold tables, and `updateStreak`/
+  `applyDailyCompletion` (extends on a consecutive on-time-completion day,
+  spends one of 2 grace tokens to bridge exactly one missed day, otherwise
+  resets — a late completion never breaks the streak, only a fully missed
+  day does, per the spec's explicit "avoid punishing streak mechanics").
+  `lib/mascotDialogue.ts` holds Nano's line pools (keyed by
+  `taskStart`/`taskComplete`/`announcementFound`), `lib/townState.ts` is the
+  client fetch wrapper (mirrors `lib/gamification.ts`'s pattern exactly).
+- **New `components/world/`**: `PixelBlock` (the one placeholder-art
+  primitive — colored div + optional emoji/label — everything else composes
+  from this, per the user's explicit "emoji/colored blocks, don't spend
+  tokens generating art" instruction), `Building`/`Mascot`/`WorldView`
+  (town scene: kingdom-stage banner+progress bar, the 5 buildings, currency/
+  streak HUD, Nano, an "Open the Laptop" CTA — currency spend/shop UI
+  deliberately deferred, per the spec's own build-sequencing note that this
+  "can come after core town-growth and mascot voice are working
+  end-to-end"), `MascotBubble` (the persistent OS-voice icon + transient
+  speech bubble), `OnboardingOverlay` (two phases: a `WorldView`-styled Nano
+  intro before the laptop opens, then 3 dismissible tour callouts layered
+  over the real OS once it does), and `LaptopFrame` — wraps **all** of
+  `app/page.tsx`'s existing body (auth controls, header text,
+  `WeeklyPlannerView`, `AIReviewPanel`, not just the planner) as the laptop
+  "screen," owns the World⇄OS toggle + lid-open/close CSS transition
+  (`laptop-frame--transitioning`/`@keyframes lid-transition` in
+  `globals.css`), and exports a `MascotContext`/`useMascot()` hook so
+  `WeeklyPlannerView` and `AIReviewPanel` — siblings under `page.tsx`, not
+  nested in each other — can both trigger Nano's dialogue into one shared
+  bubble.
+- **Three additive interior hooks**, no existing logic touched:
+  `WeeklyPlannerView.tsx`'s `awardXpForTask` (after the existing XP award,
+  computes+persists the town-growth award and streak update using the same
+  `award.xp` value) and `handleSetStatus`'s transition into `"in_progress"`
+  (`useMascot().say("taskStart")`); `AIReviewPanel.tsx` fires
+  `say("announcementFound")` when a fresh suggestion batch loads.
+  `PomodoroTimer.tsx`/`MusicPlayer.tsx` got copy-only reskin passes (⏳
+  "Ancient Time Magic" eyebrow/mode messages; the music player's existing
+  "Tavern Radio" branding gained the bard's-lute subtext) — no prop/logic
+  changes to either.
+- **Coordination note**: a background fork tasked with building
+  `components/world/*` in isolation instead left that directory empty but
+  went ahead and wired `app/page.tsx` (`LaptopFrame` wrapping) and
+  `AIReviewPanel.tsx` (the `announcementFound` hook) directly — both turned
+  out correct and consistent with the plan, so they were kept as-is; the
+  actual `components/world/` components were then built directly in the
+  main session instead of re-delegating.
+- **Verified**: `npx tsc --noEmit` clean, `npm run lint` at the exact
+  15-problem pre-existing baseline (0 new), `npm run build` clean.
+  **Live-verified end-to-end** via the Chrome extension against the real
+  logged-in account: reset `onboardingCompletedAt` to `null` through the
+  app's own `PATCH /api/town-state` (not a raw DB write — that was correctly
+  blocked by the sandbox as a bypass of the app's auth/API layer) to
+  exercise the real first-run flow — intro dialogue → lid-open → 3-step
+  tour → completion persisted; toggled World⇄OS via "View Kingdom"/"Open
+  the Laptop"; added a throwaway custom task, confirmed the task-start
+  mascot bubble fires on marking it in-progress, then completed it and
+  confirmed **all of it end-to-end**: +75 XP (Level 7→695), 🪙75 currency,
+  Training Grounds grew to 75/200 ("Basic Structure" stage), Watchtower
+  +5/Town Square +3 (the general-activity bonus), a 1-day streak, and Nano's
+  completion dialogue bubble. Deleted the test task and reverted the XP/
+  currency/growth/streak fields back to their exact pre-test values via the
+  same PATCH APIs (same documented precedent as the 2026-09-08 session's XP
+  revert) — `onboardingCompletedAt` was deliberately left set, since that's
+  the correct end state for this real, already-active account (they aren't
+  a first-time user).
+- **Not yet verified live**: the `announcementFound` mascot trigger (no
+  fresh AI-suggestion batch was available to trigger during this session);
+  building visuals beyond stage 1 ("Upgraded," the 3rd stage) and the
+  Town→City→Kingdom stage transitions (thresholds only reachable with much
+  more cumulative growth than one test task produces); `WorldView`/
+  `OnboardingOverlay` rendering on the light theme (only checked dark, same
+  open item pattern as the completed-card dimming note below); the
+  currency/streak HUD's mobile-width layout.
 
 User request: loop/shuffle for `MusicPlayer.tsx` ("Tavern Radio") plus a
 better-looking play/pause/next/previous row. Went through Plan Mode.

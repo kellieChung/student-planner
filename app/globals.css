@@ -388,3 +388,15 @@ html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
 .task-status-toggle--pop {
   animation: task-status-pop 400ms ease-out;
 }
+
+/* Laptop lid open/close transition between the World and OS views
+   (components/world/LaptopFrame.tsx) — transform/opacity only. */
+@keyframes lid-transition {
+  0% { transform: scaleY(0.94); opacity: 0.35; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+.laptop-frame--transitioning {
+  animation: lid-transition 260ms ease-out;
+  transform-origin: top center;
+}

@@ -11,6 +11,10 @@ import ManageCoursesModal from "./ManageCoursesModal";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
+import {getTownState, saveTownState} from "@/lib/townState";
+import {TownState} from "@/types/townState";
+import {applyDailyCompletion, applyGrowthAward, computeGrowthAward, isCompletionOnTime} from "@/lib/townGrowth";
+import {useMascot} from "./world/LaptopFrame";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
@@ -108,6 +112,20 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
+    const [townState, setTownState] = useState<TownState>({
+        currency: 0,
+        libraryGrowth: 0,
+        workshopGrowth: 0,
+        trainingGroundsGrowth: 0,
+        watchtowerGrowth: 0,
+        townSquareGrowth: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        graceTokens: 2,
+        lastGoodDay: null,
+        onboardingCompletedAt: null,
+    });
+    const mascot = useMascot();
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
     const [taskCustomizations, setTaskCustomizations] = useState<Record<string, TaskCustomizationState>>({});
@@ -504,6 +522,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
 
         void getGamificationState().then((savedGamification) => {
             if (!cancelled) setGamification(savedGamification);
+        });
+
+        void getTownState().then((savedTownState) => {
+            if (!cancelled) setTownState(savedTownState);
         });
 
         return () => {
@@ -1122,6 +1144,23 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             return nextState;
         });
         setLatestXpAward(award);
+
+        const taskCourse = courses.find((c) => c.name === task.course);
+        const typeCode = task.typeOverride || classifyLabelType({
+            name: task.name,
+            course: task.course,
+            isCustomCourse: taskCourse?.isCustom,
+        });
+        const growthAward = computeGrowthAward(typeCode, award.xp);
+        const onTime = completedAt !== null && isCompletionOnTime(task.due, completedAt);
+
+        setTownState((current) => {
+            const withGrowth = applyGrowthAward(current, growthAward);
+            const next = applyDailyCompletion(withGrowth, onTime, completedAt ?? getTodayString());
+
+            void saveTownState(next);
+            return next;
+        });
     };
 
     // Plays the green completion pulse (app/globals.css's task-complete-
@@ -1172,12 +1211,14 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         }
 
         void awardXpForTask(task, getTodayString(), estimatedMinutes);
+        mascot.say("taskComplete");
     };
 
     const handleSetStatus = (task: Assignment, newStatus: TaskStatus, estimatedMinutes?: number) => {
         const { id } = task;
         const current = taskCustomizations[id] ?? EMPTY_CUSTOMIZATION;
         const wasCompleted = current.completed;
+        const wasInProgress = current.inProgress;
 
         persistCustomization(id, {
             ...current,
@@ -1185,6 +1226,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             completedAt: newStatus === "completed" ? getTodayString() : "",
             inProgress: newStatus === "in_progress",
         });
+
+        if (newStatus === "in_progress" && !wasInProgress) {
+            mascot.say("taskStart");
+        }
 
         if (newStatus === "completed" && !wasCompleted) {
             triggerCompletionPulse(id);
@@ -1411,6 +1456,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                                 ? `+${latestXpAward.xp} XP earned`
                                 : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
                     </p>
+                    <div className="mt-1.5 flex items-center gap-3 border-t border-indigo-900/60 pt-1.5 text-[11px] text-slate-400">
+                        <span>🪙 {townState.currency}</span>
+                        {townState.currentStreak > 0 && <span>🔥 {townState.currentStreak}-day streak</span>}
+                    </div>
                 </div>
 
             </div>

@@ -6,6 +6,7 @@ import AIReviewCard from "@/components/AIReviewCard";
 import { Assignment } from "@/types/assignment";
 import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString } from "@/lib/utils";
+import { useMascot } from "@/components/world/LaptopFrame";
 
 type RangePreset = "thisWeek" | "thisAndLastWeek" | "last30Days" | "custom";
 
@@ -103,6 +104,7 @@ export default function AIReviewPanel() {
     const [previewLoading, setPreviewLoading] = useState(false);
 
     const previewSeq = useRef(0);
+    const { say } = useMascot();
 
     function currentRange(): { from: string; to: string } | null {
         if (preset === "custom") {
@@ -223,8 +225,13 @@ export default function AIReviewPanel() {
                 );
             }
 
-            setResults(data.results ?? []);
+            const newResults = data.results ?? [];
+            setResults(newResults);
             setCurrentIndex(0);
+
+            if (newResults.some((result: AnnouncementResult) => result.tasks.length > 0)) {
+                say("announcementFound");
+            }
         } catch (error) {
             console.error(
                 "❌ Failed to analyze announcements:",

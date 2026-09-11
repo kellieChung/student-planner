@@ -27,6 +27,7 @@ model User {
   customTasks            CustomTask[]
   taskPlanningEstimates  TaskPlanningEstimate[]
   procrastinationRecords ProcrastinationRecord[]
+  townState              TownState?
 }
 
 model Account {
@@ -319,6 +320,36 @@ model GamificationState {
 
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Medieval-kingdom gamification layer (gamificationSystem.md). Deliberately a
+// separate model from GamificationState rather than an extension of it, so
+// GamificationState's existing PATCH validator/full-row-replace never has to
+// change and can't accidentally wipe real XP data.
+model TownState {
+  id      String @id @default(cuid())
+  userId  String @unique
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  currency Int @default(0)
+
+  // Typed growth counters, one per building. townSquareGrowth is both the
+  // TODO-task bucket and the general-activity anchor (see lib/townGrowth.ts).
+  libraryGrowth         Int @default(0)
+  workshopGrowth        Int @default(0)
+  trainingGroundsGrowth Int @default(0)
+  watchtowerGrowth      Int @default(0)
+  townSquareGrowth      Int @default(0)
+
+  // On-time completion streak (Watchtower). lastGoodDay is a plain
+  // "YYYY-MM-DD" key, same convention as Assignment.due.
+  currentStreak  Int     @default(0)
+  longestStreak  Int     @default(0)
+  graceTokens    Int     @default(2)
+  lastGoodDay    String?
+
+  onboardingCompletedAt DateTime?
+  updatedAt             DateTime  @updatedAt
 }
 
 model MusicPlaylist {

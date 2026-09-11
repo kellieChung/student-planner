@@ -30,9 +30,9 @@ const MODE_LABELS: Record<PomodoroMode, string> = {
 };
 
 const MODE_MESSAGES: Record<PomodoroMode, string> = {
-    focus: "Time to work on the quest.",
-    shortBreak: "Rest your mind before the next quest.",
-    longBreak: "You've earned a longer rest, adventurer.",
+    focus: "The hourglass turns. Time to work on the quest.",
+    shortBreak: "Let the sands settle — rest your mind before the next quest.",
+    longBreak: "The ritual is complete. You've earned a longer rest, adventurer.",
 };
 
 type PomodoroState = {
@@ -466,11 +466,11 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
             <div className="mb-3 flex items-center justify-between">
                 <div>
                     <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                        Focus Tavern
+                        ⏳ Ancient Time Magic
                     </p>
 
                     <h2 className="mt-0.5 text-sm font-bold text-slate-100">
-                        🍅 {MODE_LABELS[state.mode]}
+                        ⏳ {MODE_LABELS[state.mode]}
                     </h2>
                 </div>
 

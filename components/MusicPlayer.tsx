@@ -1793,11 +1793,11 @@ export default function MusicPlayer() {
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                     <h1 className="text-lg font-bold">
-                        Tavern Radio
+                        🎶 Tavern Radio
                     </h1>
 
                     <p className="text-xs text-gray-500">
-                        Your personal study soundtrack.
+                        The bard&apos;s enchanted lute — songs collected from traveling minstrels.
                     </p>
                 </div>
 
