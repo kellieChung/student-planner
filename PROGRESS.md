@@ -1035,6 +1035,16 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   the laptop frame's minimum usable height on a short/small browser window
   is unchecked now that it has no floor (`min-h-[420px]` was removed along
   with the aspect-ratio/max-width constraints per direct user feedback).
+- **Taskbar follow-ups** (see the iteration-3 session log entry): the
+  `Log Out` button itself was never clicked live (would have ended the
+  real testing session) — its underlying `signOut()` call is reused
+  verbatim from the already-proven `UserMenu.tsx`, but the full click →
+  redirect-to-`/login` round trip through the taskbar's Settings popover
+  specifically hasn't been observed. The Start button ("🖥️ ATLAS OS") is
+  decorative-only in v1, no click behavior. Taskbar layout at a genuinely
+  narrow (~400px) viewport is unchecked — the pinned-icon labels already
+  hide below `md:`, but the tray pills/clock/settings icon wrapping
+  behavior hasn't been visually confirmed there.
 - **Music player loop/shuffle** (`MusicPlayer.tsx`): shuffle/repeat button
   toggling and localStorage persistence are live-verified, but actual
   end-of-track behavior (`loopMode: "one"` restarting the same track,
@@ -1107,6 +1117,85 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   pre-select) hasn't been clicked through live.
 
 ## Session log
+
+### 2026-09-11 (iteration 3) — OS taskbar, absorbed header, ambient scanline texture
+
+User asked to add real "OS vibe" to the laptop interior. Clarified via
+AskUserQuestion: a Windows-style **dock/taskbar** (not a macOS top menu
+bar), **ambient system details**, general **"window vibe,"** and
+explicitly **a Settings entry on the taskbar** for dark/light mode and log
+out — with the existing header content (quest-log title, Level/XP card,
+account menu) **absorbed** into the new chrome rather than duplicated.
+
+- **Architecture call**: the taskbar needed to stay visible (`position:
+  sticky; bottom: 0`) across *all* scrollable OS content, including
+  `AIReviewPanel` — previously a sibling of `WeeklyPlannerView` rendered
+  directly by `app/page.tsx`, not a descendant of it, so a sticky element's
+  containing block wouldn't have spanned it. Rather than inventing a new
+  cross-component context (the way `MascotContext` solves the same class
+  of problem for dialogue), **moved `<AIReviewPanel/>` to be rendered by
+  `WeeklyPlannerView.tsx` itself** (it already took no props — a pure
+  relocation) so one component's render output covers the whole OS
+  experience end-to-end and a taskbar placed as its last returned sibling
+  naturally spans everything under it.
+- **New `components/os/Taskbar.tsx`**: Start branding (decorative in v1),
+  4 pinned quick-launch icons (Add Task, Courses, Focus, Radio — Focus/
+  Radio `scrollIntoView({behavior:"smooth"})` two new `useRef`s wrapped
+  around the existing `<PomodoroTimer/>`/`<MusicPlayer/>` grid cells, no
+  changes to either component itself), a system tray (Level/XP pill,
+  currency pill, streak pill, a self-contained live clock via
+  `useEffect`/`setInterval`), and a ⚙ Settings popover holding the theme
+  toggle (`theme`/`onSetTheme`, reused verbatim) plus `<UserMenu>` **reused
+  as-is** (not reimplemented) for the account/log-out ask. `isSettingsOpen`
+  + its click-outside-to-close effect moved here from
+  `WeeklyPlannerView.tsx`, since the trigger and popover are now fully
+  taskbar-owned.
+- **Absorbed the old header**: `WeeklyPlannerView.tsx` lost its top toolbar
+  block (Add Task/Courses/Settings buttons, the theme dropdown, the
+  standalone XP/currency/streak card) — replaced by the taskbar. Gained two
+  new optional props, `userName`/`userEmail`, threaded from `app/page.tsx`'s
+  `session` straight to the taskbar's `<UserMenu>`. `app/page.tsx` dropped
+  its `SignInButton`/`UserMenu` imports and JSX and the "Your quest log /
+  ATLAS Planner / Weekly calendar overview" text block (all now covered by
+  the taskbar) and its own `<AIReviewPanel/>` render (moved, see above).
+  **Deleted `components/SignInButton.tsx` entirely** — confirmed via grep
+  it had exactly one remaining reference (the one just removed); `/login`
+  already has its own independent server-side `signIn()` flow and never
+  used this component, so it was already unreachable dead UI given the
+  existing `redirect("/login")` guard, not a behavior change.
+- **Ambient scanline texture** (`LaptopFrame.tsx`): a faint
+  `repeating-linear-gradient` overlay (`rgba(255,255,255,0.06)` lines,
+  `mix-blend-mode: overlay`), `pointer-events-none`, added only inside the
+  **OS** layer's conditional block — never shown over the pixel-art World,
+  confirmed live (screenshotted the World view after this change: clean,
+  no bleed). Kept deliberately faint per `projectReview.md`'s "the
+  high-frequency screen should stay calm" note.
+- Verified: `npx tsc --noEmit` clean, `npm run lint` at **17** problems (up
+  from 16 by exactly one — `Taskbar.tsx`'s clock effect, the same
+  hydration-safe-mount-sync category as 3 other instances already in this
+  codebase, not a new class of issue), `npm run build` clean, `/dev/
+  gamification` unaffected. **Live-verified end-to-end** via the Chrome
+  extension against the real account: taskbar renders full-width at the
+  true bottom edge of the laptop screen (the `-mx-4` on `Taskbar.tsx`
+  correctly cancels `app/page.tsx`'s `app-header` div's `px-4` — confirmed
+  by screenshot, not assumed); stays pinned while scrolling all the way
+  down through the weekly grid into `AIReviewPanel`'s "Announcements to
+  Analyze" content; Add Task and Courses icons open their real modals;
+  Focus and Radio icons `scrollIntoView` correctly (smooth-scroll takes
+  ~2-3s over the full page height — a screenshot taken too early looked
+  like nothing happened, resolved by waiting longer, not a bug); Settings
+  popover's theme toggle switches Forest⇄Tavern live (confirmed via
+  screenshot, both directions) and closes the popover on selection; the
+  live clock ticked forward across screenshots taken minutes apart; no
+  console errors on load or after any interaction. **Not clicked**: the
+  taskbar's `Log Out` button itself — doing so would have ended the real
+  authenticated session this testing depends on; its underlying
+  `signOut()` call is `UserMenu.tsx`'s existing, already-proven code,
+  reused verbatim, not reimplemented. A transient screenshot right after
+  the World⇄OS lid animation briefly showed OS task-row text under the
+  World map — re-screenshotted ~2s later and it was gone; a mid-transition
+  paint artifact, not a persistent layering bug (re-confirmed by
+  deliberately waiting before the next screenshot).
 
 ### 2026-09-11 (iteration 2) — full-page laptop, spatial town map, lid animation, dev/test page
 

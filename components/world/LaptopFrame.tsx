@@ -161,6 +161,19 @@ export default function LaptopFrame({ children, initialView, townState: initialT
                         {children}
                         {view === "os" && <MascotBubble dialogue={dialogue} />}
                         {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
+                        {/* Ambient "this is a display" texture — a faint CRT scanline
+                            overlay, OS-only (never shown over the pixel-art World).
+                            Kept very low-opacity so it's atmosphere, not a readability
+                            hit on the daily-use screen. */}
+                        <div
+                            className="pointer-events-none absolute inset-0 z-40"
+                            style={{
+                                backgroundImage:
+                                    "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 3px)",
+                                mixBlendMode: "overlay",
+                            }}
+                            aria-hidden="true"
+                        />
                     </div>
 
                     {view === "onboarding" && (

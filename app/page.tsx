@@ -1,11 +1,8 @@
 import { getAllAssignments } from "@/lib/canvas";
 import WeeklyPlannerView from "@/components/WeeklyPlannerView";
 import { Assignment } from "@/types/assignment";
-import SignInButton from "@/components/SignInButton";
 import {auth} from "@/auth"
-import UserMenu from "@/components/UserMenu";
 import {redirect} from "next/navigation";
-import AIReviewPanel from "@/components/AIReviewPanel";
 import {prisma} from "@/lib/prisma";
 import { getStartOfWeek } from "@/lib/utils";
 import LaptopFrame from "@/components/world/LaptopFrame";
@@ -59,19 +56,12 @@ export default async function TestPage() {
                 townState={townState}
             >
                 <div className="app-header w-full px-4 mx-auto">
-                    <SignInButton />
-                    <UserMenu
-                        name = {session?.user?.name}
-                        email = {session?.user?.email}
+                    <WeeklyPlannerView
+                        assignments={assignments}
+                        weekStartDate={sunday}
+                        userName={session.user.name}
+                        userEmail={session.user.email}
                     />
-                    <p className="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--muted)] opacity-70">
-                        Your quest log
-                    </p>
-                    <h1 className="mb-2 text-4xl font-bold tracking-tight">ATLAS Planner</h1>
-                    <p className="mb-8 text-[var(--muted)]">Weekly calendar overview</p>
-
-                    <WeeklyPlannerView assignments={assignments} weekStartDate={sunday} />
-                    <AIReviewPanel />
                 </div>
             </LaptopFrame>
         </main>

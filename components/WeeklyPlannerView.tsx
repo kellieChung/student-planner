@@ -26,6 +26,8 @@ import PomodoroTimer from "./PomodoroTimer";
 import MusicPlayer from "./MusicPlayer";
 import Spinner from "./Spinner";
 import TaskStatusToggle from "./TaskStatusToggle";
+import AIReviewPanel from "./AIReviewPanel";
+import Taskbar from "./os/Taskbar";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -55,6 +57,8 @@ function deriveAddedAt(task: Assignment): string | null {
 type WeeklyPlannerProps = {
     assignments: Assignment[];
     weekStartDate: Date;
+    userName?: string | null;
+    userEmail?: string | null;
 }
 
 // One row per (userId, taskId) in TaskCustomization — course/name/type/due
@@ -103,7 +107,7 @@ function toCustomizationPatchBody(updates: TaskCustomizationState) {
     };
 }
 
-export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyPlannerProps) {
+export default function WeeklyPlannerView({ assignments, weekStartDate, userName, userEmail }: WeeklyPlannerProps) {
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -149,7 +153,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         const domTheme = document.documentElement.dataset.theme;
         return domTheme === "light" ? "light" : "dark";
     });
-    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const pomodoroSectionRef = useRef<HTMLDivElement>(null);
+    const musicSectionRef = useRef<HTMLDivElement>(null);
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
         start.setHours(0, 0, 0, 0);
@@ -938,26 +943,14 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
         setTheme(nextTheme);
         localStorage.setItem("planner_theme", nextTheme);
         document.documentElement.dataset.theme = nextTheme;
-        setIsSettingsOpen(false);
     };
 
     useEffect(() => {
         document.documentElement.dataset.theme = theme;
     }, [theme]);
 
-    useEffect(() => {
-        if (!isSettingsOpen) return;
-
-        const closeSettings = (event: MouseEvent) => {
-            const target = event.target as HTMLElement;
-            if (!target.closest("[data-settings-root]")) {
-                setIsSettingsOpen(false);
-            }
-        };
-
-        document.addEventListener("mousedown", closeSettings);
-        return () => document.removeEventListener("mousedown", closeSettings);
-    }, [isSettingsOpen]);
+    const scrollToPomodoro = () => pomodoroSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const scrollToMusic = () => musicSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     useEffect(() => {
         // Wait for the persisted estimates to load first — otherwise every
@@ -1396,79 +1389,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
     }
 
     return (
+        <>
         <div className = "theme-surface planner-shell w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick = {openAddTask}
-                        className = "bg-blue-600 px-4 py-2 rounded"
-                    >
-                        + Add Task
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setIsCourseManagerOpen(true)}
-                        className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
-                    >
-                        📚 Courses
-                    </button>
-                    <div className="relative" data-settings-root>
-                        <button
-                            type="button"
-                            onClick={() => setIsSettingsOpen((open) => !open)}
-                            className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
-                            aria-expanded={isSettingsOpen}
-                            aria-label="Open settings"
-                        >
-                            ⚙ Settings
-                        </button>
-                        {isSettingsOpen && (
-                            <div className="absolute left-0 top-full z-40 mt-2 w-56 rounded-xl border border-slate-700 bg-slate-900 p-3 shadow-xl">
-                                <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Quest Log Theme</p>
-                                <div className="flex rounded-lg bg-slate-800 p-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => updateTheme("dark")}
-                                        className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${theme === "dark" ? "bg-emerald-900/80 text-emerald-100" : "text-slate-400 hover:text-slate-200"}`}
-                                    >
-                                        🌲 Forest
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => updateTheme("light")}
-                                        className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${theme === "light" ? "bg-orange-500 text-white" : "text-slate-400 hover:text-slate-200"}`}
-                                    >
-                                        🍺 Tavern
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="min-w-52 rounded-xl border border-indigo-900/70 bg-indigo-950/30 px-4 py-2.5">
-                    <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-sm font-bold text-indigo-200">Level {level}</span>
-                        <span className="text-xs font-semibold text-indigo-300">{gamification.totalXp} XP</span>
-                    </div>
-                    <div className="xp-track mt-2 h-1.5 overflow-hidden rounded-full bg-slate-800">
-                        <div className="xp-fill h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${xpTowardsNextLevel}%` }} />
-                    </div>
-                    <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-400">
-                        {awardingXp && <Spinner className="h-3 w-3" />}
-                        {awardingXp
-                            ? "Calculating XP..."
-                            : latestXpAward
-                                ? `+${latestXpAward.xp} XP earned`
-                                : `${100 - xpTowardsNextLevel} XP to Level ${level + 1}`}
-                    </p>
-                    <div className="mt-1.5 flex items-center gap-3 border-t border-indigo-900/60 pt-1.5 text-[11px] text-slate-400">
-                        <span>🪙 {townState.currency}</span>
-                        {townState.currentStreak > 0 && <span>🔥 {townState.currentStreak}-day streak</span>}
-                    </div>
-                </div>
-
-            </div>
 
             {estimatingCount > 0 && (
                 <p className="mb-4 flex items-center gap-2 text-xs font-medium text-slate-400">
@@ -1538,21 +1460,25 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             />
 
             <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-                <PomodoroTimer
-                    focusTask={
-                        activeFocusTask
-                            ? {
-                                  id: activeFocusTask.task.id,
-                                  name: activeFocusTask.task.name,
-                                  course: activeFocusTask.task.course,
-                                  due: activeFocusTask.task.due,
-                                  priorityReason: activeFocusTask.priority.reason,
-                              }
-                            : null
-                    }
-                    onClearFocusTask={() => setFocusTask(null)}
-                />
-                <MusicPlayer />
+                <div ref={pomodoroSectionRef}>
+                    <PomodoroTimer
+                        focusTask={
+                            activeFocusTask
+                                ? {
+                                      id: activeFocusTask.task.id,
+                                      name: activeFocusTask.task.name,
+                                      course: activeFocusTask.task.course,
+                                      due: activeFocusTask.task.due,
+                                      priorityReason: activeFocusTask.priority.reason,
+                                  }
+                                : null
+                        }
+                        onClearFocusTask={() => setFocusTask(null)}
+                    />
+                </div>
+                <div ref={musicSectionRef}>
+                    <MusicPlayer />
+                </div>
             </div>
 
             <EditTaskModal
@@ -1812,6 +1738,27 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
                     </div>
                 )}
             </section>
+
+            <AIReviewPanel />
         </div>
+
+        <Taskbar
+            theme={theme}
+            onSetTheme={updateTheme}
+            level={level}
+            totalXp={gamification.totalXp}
+            xpTowardsNextLevel={xpTowardsNextLevel}
+            awardingXp={awardingXp}
+            latestXpAward={latestXpAward}
+            currency={townState.currency}
+            currentStreak={townState.currentStreak}
+            onAddTask={openAddTask}
+            onOpenCourses={() => setIsCourseManagerOpen(true)}
+            onScrollToPomodoro={scrollToPomodoro}
+            onScrollToMusic={scrollToMusic}
+            userName={userName}
+            userEmail={userEmail}
+        />
+        </>
     );
 }
