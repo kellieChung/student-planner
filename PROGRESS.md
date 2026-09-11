@@ -1020,6 +1020,13 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs (as of 2026-09-09)
 
+- **Music player loop/shuffle** (`MusicPlayer.tsx`): shuffle/repeat button
+  toggling and localStorage persistence are live-verified, but actual
+  end-of-track behavior (`loopMode: "one"` restarting the same track,
+  `loopMode: "all"`/shuffle wrapping past the last track) was only
+  verified by reading the code — the YouTube iframe never got past
+  buffering in this session's browser-automation environment. Worth a
+  quick manual play-through next interactive session.
 - **Not a bug, don't "fix" again**: the skyline packer leaves two small
   unfilled gaps in Thursday's column in today's real data — expected,
   since it's greedy first-fit, not maximum-density, and everything that
@@ -1085,6 +1092,82 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   pre-select) hasn't been clicked through live.
 
 ## Session log
+
+### 2026-09-09 — add music player loop/shuffle, redesign transport controls
+
+User request: loop/shuffle for `MusicPlayer.tsx` ("Tavern Radio") plus a
+better-looking play/pause/next/previous row. Went through Plan Mode.
+
+- **New state**: `loopMode: "off"|"all"|"one"` (cycled by one repeat
+  button) and `shuffle: boolean` (toggled by one button), persisted to new
+  `music-player-loop`/`music-player-shuffle` localStorage keys next to the
+  existing `music-player-volume` one — same "genuinely per-device, not
+  account data" reasoning already documented above for that key.
+- **Shuffle**: `buildShuffleOrder(length, keepFirst)` (local Fisher-Yates
+  helper) builds a permutation of track indices, anchored on the
+  currently-playing track so toggling shuffle on mid-track doesn't jump.
+  `playNext`/`playPrevious` walk that order when shuffle is on; a new
+  `ensureShuffleOrder()` rebuilds it lazily (called from those two
+  functions, not an effect) if it's stale — covers a track being
+  added/removed or the playlist being switched while shuffled, with no
+  extra effect/dependency-array to keep in sync.
+- **Repeat**: `loopMode: "one"` replays the same track on the YouTube
+  player's `ENDED` event (`seekTo(0)` + `playVideo()`) instead of
+  advancing; `"all"` wraps `playNext`/`playPrevious` around the ends of
+  the (shuffled or linear) order instead of stopping/no-op'ing there,
+  matching the disabled-state changes on the Previous/Next buttons (no
+  longer hard-disabled at index 0/last-index once shuffle or loop-all
+  makes wrapping valid).
+- **Stale-closure fix**: the YT player's event handlers are created once
+  per *track* (`useEffect(..., [currentTrack?.id])`) — toggling
+  shuffle/repeat mid-track doesn't change `currentTrack.id`, so those
+  handlers would otherwise keep reading the loopMode/shuffle values from
+  whenever the track last changed. Added `loopModeRef`/`shuffleRef`/
+  `shuffleOrderRef`, synced via small effects (same purpose as the
+  pre-existing `shouldAutoplayRef`), and read those refs instead of state
+  inside the handlers/`playNext`/`playPrevious`.
+- **Real bug caught live, not assumed**: the first version persisted
+  loop/shuffle via a plain `useEffect(() => localStorage.setItem(...),
+  [loopMode])`-style effect. Every effect in a component runs once on
+  initial mount regardless of its dependency array, so on every fresh
+  page load that effect fired immediately with `loopMode`/`shuffle` still
+  at their `useState` defaults — before the sibling load-effect's
+  `setState` had committed — silently overwriting a saved `"one"`/`true`
+  back to `"off"`/`false`. Confirmed via the Chrome extension: set repeat
+  to "one", reloaded, `localStorage.getItem("music-player-loop")` came
+  back `"off"`. The pre-existing `volume` persist effect never hit this
+  because it's gated on `playerReady` (incidental, not designed for this).
+  Fixed with a `preferencesLoaded` flag (same pattern as
+  `PomodoroTimer.tsx`'s `hydrated`), set at the end of the load effect;
+  both persist effects now no-op until it's true. Re-verified live after
+  the fix: set shuffle on + repeat to "one", reloaded, both correctly
+  came back highlighted with the "1" badge, `localStorage` round-tripped
+  `"one"`/`"true"`.
+- **Transport row redesign**: replaced the plain text
+  Previous/Play/Next buttons (hardcoded `border`/`text-gray-500`,
+  inconsistent with the theme tokens the rest of the component uses) with
+  circular icon buttons — inline hand-written SVGs following
+  `Spinner.tsx`'s existing `currentColor` precedent (this repo has no icon
+  library and none was added). Play/Pause is now a larger accent-filled
+  circle; Previous/Next/Shuffle/Repeat use `--panel-muted`/`--border`/
+  `--muted`/`--accent-soft` tokens instead of hardcoded gray/white, so
+  they read correctly in both themes.
+- Verified: `npx tsc --noEmit` clean, `npm run lint` at the exact
+  15-problem pre-existing baseline (0 new — confirmed by diffing against
+  `git stash`). Live-verified via the Chrome extension against the real
+  logged-in account/playlist: shuffle toggle highlights correctly, repeat
+  cycles off→all→one with the "1" badge, both persist correctly across a
+  real reload (after the fix above), and both dark/light theme rendering
+  checked (light theme's `--accent-soft` background reads correctly,
+  confirmed via `getComputedStyle`, not just visually).
+- **Not verified live**: actual end-of-track behavior (repeat-one
+  restarting, repeat-all/shuffle wrapping past the last track) — the
+  YouTube iframe never got past its buffering spinner in this session's
+  browser-automation environment (no console errors, likely a
+  network/embedding restriction specific to that sandboxed browser, not
+  a code issue — `togglePlay`'s call to `playVideo()` is unchanged from
+  before this session). Worth a quick manual check next time there's a
+  normal interactive browser session; see Active TODOs.
 
 ### 2026-09-09 — fix weekly-grid stacking bugs, redesign completion animation and card sizing
 

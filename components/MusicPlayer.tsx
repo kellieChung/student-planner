@@ -114,6 +114,159 @@ function getYouTubeVideoId(url: string): string | null {
     }
 }
 
+type LoopMode = "off" | "all" | "one";
+
+/*
+ * Fisher-Yates shuffle of [0..length-1]. If keepFirst is given,
+ * that index is moved to the front so toggling shuffle on
+ * mid-track doesn't jump to a different track.
+ */
+function buildShuffleOrder(
+    length: number,
+    keepFirst?: number
+): number[] {
+    const order = Array.from(
+        { length },
+        (_, index) => index
+    );
+
+    for (
+        let i = order.length - 1;
+        i > 0;
+        i--
+    ) {
+        const j = Math.floor(
+            Math.random() * (i + 1)
+        );
+
+        [order[i], order[j]] = [
+            order[j],
+            order[i],
+        ];
+    }
+
+    if (
+        keepFirst !== undefined &&
+        keepFirst >= 0
+    ) {
+        const currentPosition =
+            order.indexOf(keepFirst);
+
+        if (currentPosition > 0) {
+            order.splice(
+                currentPosition,
+                1
+            );
+
+            order.unshift(keepFirst);
+        }
+    }
+
+    return order;
+}
+
+function PreviousIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="h-4 w-4"
+            aria-hidden="true"
+        >
+            <path d="M6 5a1 1 0 0 1 1 1v5.1l9.4-6.27A1 1 0 0 1 18 5.68v12.64a1 1 0 0 1-1.6.83L7 12.9V18a1 1 0 1 1-2 0V6a1 1 0 0 1 1-1Z" />
+        </svg>
+    );
+}
+
+function NextIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="h-4 w-4"
+            aria-hidden="true"
+        >
+            <path d="M18 5a1 1 0 0 0-1 1v5.1L7.6 4.83A1 1 0 0 0 6 5.68v12.64a1 1 0 0 0 1.6.83L17 12.9V18a1 1 0 1 0 2 0V6a1 1 0 0 0-1-1Z" />
+        </svg>
+    );
+}
+
+function PlayIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="h-5 w-5"
+            aria-hidden="true"
+        >
+            <path d="M7.5 5.14a1 1 0 0 1 1.5-.87l10.5 6.86a1 1 0 0 1 0 1.74L9 19.73a1 1 0 0 1-1.5-.87Z" />
+        </svg>
+    );
+}
+
+function PauseIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            className="h-5 w-5"
+            aria-hidden="true"
+        >
+            <path d="M7 5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1Zm7 0a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1Z" />
+        </svg>
+    );
+}
+
+function ShuffleIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden="true"
+        >
+            <path d="M4 6h3.2c1.6 0 2.9.8 3.7 2.1M4 18h3.2c1.6 0 2.9-.8 3.7-2.1M14 6h2.5M14 18h2.5" />
+            <path d="M20 6h-3.5m3.5 0-2.5-2.3M20 6l-2.5 2.3M20 18h-3.5m3.5 0-2.5-2.3M20 18l-2.5 2.3" />
+        </svg>
+    );
+}
+
+function RepeatIcon({
+    mode,
+}: {
+    mode: LoopMode;
+}) {
+    return (
+        <span className="relative inline-flex">
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+                aria-hidden="true"
+            >
+                <path d="M6 4v3a1 1 0 0 0 1 1h11" />
+                <path d="M18 6.5 15.5 4 18 1.5" />
+                <path d="M18 20v-3a1 1 0 0 0-1-1H6" />
+                <path d="M6 17.5 8.5 20 6 22.5" />
+            </svg>
+
+            {mode === "one" && (
+                <span className="absolute -bottom-1.5 -right-1.5 rounded-full bg-[var(--accent)] px-[3px] text-[8px] font-bold leading-[10px] text-white">
+                    1
+                </span>
+            )}
+        </span>
+    );
+}
+
 export default function MusicPlayer() {
     const [playlists, setPlaylists] =
         useState<MusicPlaylist[]>([]);
@@ -138,6 +291,15 @@ export default function MusicPlayer() {
 
     const [volume, setVolume] =
         useState(70);
+
+    const [loopMode, setLoopMode] =
+        useState<LoopMode>("off");
+
+    const [shuffle, setShuffle] =
+        useState(false);
+
+    const [shuffleOrder, setShuffleOrder] =
+        useState<number[]>([]);
 
     const [loading, setLoading] =
         useState(true);
@@ -199,6 +361,36 @@ export default function MusicPlayer() {
     const shouldAutoplayRef =
         useRef(false);
 
+    /*
+     * loopMode/shuffle/shuffleOrder are read inside the YT
+     * player's onStateChange handler, which is only recreated
+     * when the current track changes (see the player-creation
+     * effect's [currentTrack?.id] deps below) — not when the
+     * user toggles shuffle/repeat mid-track. Refs keep that
+     * long-lived closure reading the latest value instead of a
+     * stale one, same purpose as shouldAutoplayRef above.
+     */
+    const loopModeRef =
+        useRef<LoopMode>("off");
+
+    const shuffleRef =
+        useRef(false);
+
+    const shuffleOrderRef =
+        useRef<number[]>([]);
+
+    useEffect(() => {
+        loopModeRef.current = loopMode;
+    }, [loopMode]);
+
+    useEffect(() => {
+        shuffleRef.current = shuffle;
+    }, [shuffle]);
+
+    useEffect(() => {
+        shuffleOrderRef.current = shuffleOrder;
+    }, [shuffleOrder]);
+
     const selectedPlaylist =
         playlists.find(
             (playlist) =>
@@ -210,7 +402,27 @@ export default function MusicPlayer() {
         null;
 
     /*
-     * Load saved volume.
+     * Guards the loop/shuffle persist effects below from firing
+     * with their default values before the load effect has had a
+     * chance to apply the saved ones — same "hydrated" flag
+     * PomodoroTimer.tsx uses for the same reason. Without this, on
+     * every fresh mount both persist effects run once with
+     * loopMode/shuffle still at their initial defaults (React runs
+     * every effect on mount regardless of deps), clobbering
+     * whatever was actually saved before the load effect's
+     * setState below has committed.
+     */
+    const [
+        preferencesLoaded,
+        setPreferencesLoaded,
+    ] = useState(false);
+
+    /*
+     * Load saved volume/loop/shuffle preferences.
+     *
+     * These are genuinely per-device UI preferences (same as
+     * pomodoro_state/planner_theme), not account data, so they
+     * stay localStorage-only rather than moving to the DB.
      */
     useEffect(() => {
         const savedVolume =
@@ -230,7 +442,87 @@ export default function MusicPlayer() {
                 setVolume(parsed);
             }
         }
+
+        const savedLoopMode =
+            localStorage.getItem(
+                "music-player-loop"
+            );
+
+        if (
+            savedLoopMode === "off" ||
+            savedLoopMode === "all" ||
+            savedLoopMode === "one"
+        ) {
+            setLoopMode(savedLoopMode);
+        }
+
+        const savedShuffle =
+            localStorage.getItem(
+                "music-player-shuffle"
+            );
+
+        if (savedShuffle === "true") {
+            setShuffle(true);
+        }
+
+        setPreferencesLoaded(true);
     }, []);
+
+    /*
+     * Persist loop/shuffle preferences. Gated on preferencesLoaded
+     * — see that flag's comment above.
+     */
+    useEffect(() => {
+        if (!preferencesLoaded) {
+            return;
+        }
+
+        localStorage.setItem(
+            "music-player-loop",
+            loopMode
+        );
+    }, [loopMode, preferencesLoaded]);
+
+    useEffect(() => {
+        if (!preferencesLoaded) {
+            return;
+        }
+
+        localStorage.setItem(
+            "music-player-shuffle",
+            String(shuffle)
+        );
+    }, [shuffle, preferencesLoaded]);
+
+    /*
+     * Rebuild the shuffle order if it's missing or stale (track
+     * count changed since it was built — e.g. a track was
+     * added/removed, or a different playlist was selected while
+     * shuffle was already on). Called from playNext/playPrevious
+     * (event handlers / the YT player's callback, not a React
+     * effect body), not an effect, so this can't drift out of
+     * sync the way an effect keyed on track count could.
+     */
+    function ensureShuffleOrder(
+        trackCount: number
+    ): number[] {
+        if (
+            shuffleOrderRef.current.length ===
+            trackCount
+        ) {
+            return shuffleOrderRef.current;
+        }
+
+        const rebuilt = buildShuffleOrder(
+            trackCount,
+            currentIndex
+        );
+
+        shuffleOrderRef.current = rebuilt;
+        setShuffleOrder(rebuilt);
+
+        return rebuilt;
+    }
 
     /*
      * Load playlists.
@@ -430,6 +722,33 @@ export default function MusicPlayer() {
                                     window.YT.PlayerState
                                         .ENDED
                                 ) {
+                                    if (
+                                        loopModeRef.current ===
+                                        "one"
+                                    ) {
+                                        const repeatPlayer =
+                                            event.target as YTPlayer & {
+                                                seekTo?: (
+                                                    seconds: number,
+                                                    allowSeekAhead: boolean
+                                                ) => void;
+                                            };
+
+                                        if (
+                                            typeof repeatPlayer.seekTo ===
+                                            "function"
+                                        ) {
+                                            repeatPlayer.seekTo(
+                                                0,
+                                                true
+                                            );
+                                        }
+
+                                        repeatPlayer.playVideo();
+
+                                        return;
+                                    }
+
                                     playNext();
                                 }
                             },
@@ -1199,20 +1518,61 @@ export default function MusicPlayer() {
     }
 
     /*
-     * Next track.
+     * Next track. Shuffle/loop-aware — reads loopModeRef/
+     * shuffleRef/shuffleOrderRef (not state) since this is also
+     * called from a long-lived player event handler; see those
+     * refs' comment above.
      */
     function playNext() {
         if (!selectedPlaylist) {
             return;
         }
 
+        const trackCount =
+            selectedPlaylist.tracks.length;
+
+        if (shuffleRef.current) {
+            const order =
+                ensureShuffleOrder(trackCount);
+
+            const position =
+                order.indexOf(currentIndex);
+
+            const nextPosition =
+                position + 1;
+
+            if (nextPosition < order.length) {
+                shouldAutoplayRef.current = true;
+                setCurrentIndex(
+                    order[nextPosition]
+                );
+                return;
+            }
+
+            if (loopModeRef.current === "all") {
+                const reshuffled =
+                    buildShuffleOrder(trackCount);
+
+                setShuffleOrder(reshuffled);
+                shouldAutoplayRef.current = true;
+                setCurrentIndex(reshuffled[0]);
+                return;
+            }
+
+            setIsPlaying(false);
+            return;
+        }
+
         const nextIndex =
             currentIndex + 1;
 
-        if (
-            nextIndex >=
-            selectedPlaylist.tracks.length
-        ) {
+        if (nextIndex >= trackCount) {
+            if (loopModeRef.current === "all") {
+                shouldAutoplayRef.current = true;
+                setCurrentIndex(0);
+                return;
+            }
+
             setIsPlaying(false);
             return;
         }
@@ -1224,10 +1584,44 @@ export default function MusicPlayer() {
     }
 
     /*
-     * Previous track.
+     * Previous track. Shuffle/loop-aware, mirrors playNext.
      */
     function playPrevious() {
         if (!selectedPlaylist) {
+            return;
+        }
+
+        const trackCount =
+            selectedPlaylist.tracks.length;
+
+        if (shuffleRef.current) {
+            const order =
+                ensureShuffleOrder(trackCount);
+
+            const position =
+                order.indexOf(currentIndex);
+
+            const previousPosition =
+                position - 1;
+
+            if (previousPosition >= 0) {
+                shouldAutoplayRef.current = true;
+                setCurrentIndex(
+                    order[previousPosition]
+                );
+                return;
+            }
+
+            if (
+                loopModeRef.current === "all" &&
+                order.length > 0
+            ) {
+                shouldAutoplayRef.current = true;
+                setCurrentIndex(
+                    order[order.length - 1]
+                );
+            }
+
             return;
         }
 
@@ -1235,6 +1629,14 @@ export default function MusicPlayer() {
             currentIndex - 1;
 
         if (previousIndex < 0) {
+            if (
+                loopModeRef.current === "all" &&
+                trackCount > 0
+            ) {
+                shouldAutoplayRef.current = true;
+                setCurrentIndex(trackCount - 1);
+            }
+
             return;
         }
 
@@ -1244,6 +1646,42 @@ export default function MusicPlayer() {
         setCurrentIndex(
             previousIndex
         );
+    }
+
+    /*
+     * Cycle repeat: off -> all -> one -> off.
+     */
+    function cycleLoopMode() {
+        setLoopMode((current) => {
+            if (current === "off") {
+                return "all";
+            }
+
+            if (current === "all") {
+                return "one";
+            }
+
+            return "off";
+        });
+    }
+
+    /*
+     * Toggle shuffle. Builds the initial shuffle order right
+     * away (anchored on the currently-playing track) so Next/
+     * Previous have an order to walk as soon as shuffle turns on.
+     */
+    function toggleShuffle() {
+        if (!shuffle && selectedPlaylist) {
+            const rebuilt = buildShuffleOrder(
+                selectedPlaylist.tracks.length,
+                currentIndex
+            );
+
+            shuffleOrderRef.current = rebuilt;
+            setShuffleOrder(rebuilt);
+        }
+
+        setShuffle((current) => !current);
     }
 
     /*
@@ -1643,21 +2081,59 @@ export default function MusicPlayer() {
                                         <div className="mt-3 flex items-center justify-center gap-2">
                                             <button
                                                 type="button"
+                                                title={
+                                                    shuffle
+                                                        ? "Shuffle on"
+                                                        : "Shuffle off"
+                                                }
+                                                aria-pressed={
+                                                    shuffle
+                                                }
+                                                onClick={
+                                                    toggleShuffle
+                                                }
+                                                disabled={
+                                                    !selectedPlaylist ||
+                                                    selectedPlaylist
+                                                        .tracks
+                                                        .length <
+                                                        2
+                                                }
+                                                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
+                                                    shuffle
+                                                        ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                                                        : "text-[var(--muted)] hover:bg-[var(--panel-muted)]"
+                                                }`}
+                                            >
+                                                <ShuffleIcon />
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                title="Previous"
                                                 onClick={
                                                     playPrevious
                                                 }
                                                 disabled={
                                                     !currentTrack ||
-                                                    currentIndex ===
-                                                        0
+                                                    (!shuffle &&
+                                                        loopMode !==
+                                                            "all" &&
+                                                        currentIndex ===
+                                                            0)
                                                 }
-                                                className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-40"
+                                                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--panel-muted)] text-[var(--foreground)] transition-colors hover:bg-[var(--border)] disabled:opacity-30"
                                             >
-                                                Previous
+                                                <PreviousIcon />
                                             </button>
 
                                             <button
                                                 type="button"
+                                                title={
+                                                    isPlaying
+                                                        ? "Pause"
+                                                        : "Play"
+                                                }
                                                 onClick={
                                                     togglePlay
                                                 }
@@ -1665,29 +2141,59 @@ export default function MusicPlayer() {
                                                     !currentTrack ||
                                                     !playerReady
                                                 }
-                                                className="rounded-full bg-[var(--accent)] px-5 py-1.5 text-sm text-white disabled:opacity-40"
+                                                className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-md transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
                                             >
-                                                {isPlaying
-                                                    ? "Pause"
-                                                    : "Play"}
+                                                {isPlaying ? (
+                                                    <PauseIcon />
+                                                ) : (
+                                                    <PlayIcon />
+                                                )}
                                             </button>
 
                                             <button
                                                 type="button"
+                                                title="Next"
                                                 onClick={
                                                     playNext
                                                 }
                                                 disabled={
                                                     !currentTrack ||
-                                                    currentIndex >=
-                                                        selectedPlaylist
-                                                            .tracks
-                                                            .length -
-                                                            1
+                                                    (!shuffle &&
+                                                        loopMode !==
+                                                            "all" &&
+                                                        currentIndex >=
+                                                            selectedPlaylist
+                                                                .tracks
+                                                                .length -
+                                                                1)
                                                 }
-                                                className="rounded-full border px-3 py-1.5 text-sm disabled:opacity-40"
+                                                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--panel-muted)] text-[var(--foreground)] transition-colors hover:bg-[var(--border)] disabled:opacity-30"
                                             >
-                                                Next
+                                                <NextIcon />
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                title={`Repeat: ${loopMode}`}
+                                                aria-pressed={
+                                                    loopMode !==
+                                                    "off"
+                                                }
+                                                onClick={
+                                                    cycleLoopMode
+                                                }
+                                                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                                                    loopMode !==
+                                                    "off"
+                                                        ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                                                        : "text-[var(--muted)] hover:bg-[var(--panel-muted)]"
+                                                }`}
+                                            >
+                                                <RepeatIcon
+                                                    mode={
+                                                        loopMode
+                                                    }
+                                                />
                                             </button>
                                         </div>
 
