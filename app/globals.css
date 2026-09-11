@@ -389,14 +389,24 @@ html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
   animation: task-status-pop 400ms ease-out;
 }
 
-/* Laptop lid open/close transition between the World and OS views
-   (components/world/LaptopFrame.tsx) — transform/opacity only. */
-@keyframes lid-transition {
-  0% { transform: scaleY(0.94); opacity: 0.35; }
-  100% { transform: scaleY(1); opacity: 1; }
+/* Laptop lid close/open transition between the World and OS views
+   (components/world/LaptopFrame.tsx) — the frame rotates shut around its
+   bottom edge, the view swaps while visually closed, then it rotates back
+   open. transform-origin is set inline (bottom center) alongside these. */
+@keyframes lid-close {
+  0% { transform: rotateX(0deg); opacity: 1; }
+  100% { transform: rotateX(-100deg); opacity: 0.15; }
 }
 
-.laptop-frame--transitioning {
-  animation: lid-transition 260ms ease-out;
-  transform-origin: top center;
+@keyframes lid-open {
+  0% { transform: rotateX(-100deg); opacity: 0.15; }
+  100% { transform: rotateX(0deg); opacity: 1; }
+}
+
+.laptop-lid--closing {
+  animation: lid-close 280ms ease-in forwards;
+}
+
+.laptop-lid--opening {
+  animation: lid-open 280ms ease-out forwards;
 }

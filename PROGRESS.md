@@ -1020,16 +1020,21 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs (as of 2026-09-11)
 
-- **Gamification layer follow-ups** (see the 2026-09-11 session log entry
-  for the full build): currency spend/shop UI, laptop stickers/case
+- **Gamification layer follow-ups** (see the two 2026-09-11 session log
+  entries for the full build): currency spend/shop UI, laptop stickers/case
   cosmetics, and real-calendar milestone gating (finals week, semester end)
   for big stage-jump visuals are all deliberately deferred. Also worth a
   follow-up pass: the `announcementFound` mascot trigger has never fired
-  against a real AI suggestion batch; building stage-2 ("Upgraded") and
-  kingdom Town/City/Kingdom stage visuals have only been verified by
-  threshold math, not seen rendered; light-theme rendering of `WorldView`/
-  `OnboardingOverlay` is unchecked; the currency/streak HUD's mobile-width
-  layout is unchecked.
+  against a real AI suggestion batch; kingdom Town/City/Kingdom stage
+  visuals (as opposed to per-building stages, which were checked via the
+  dev page) have only been verified by threshold math, not seen rendered;
+  light-theme rendering of `WorldView`/`TownMap`/`OnboardingOverlay` is
+  unchecked; `TownMap`'s spatial layout hasn't been checked at a genuinely
+  narrow (~400px) viewport width — the percentage-positioned buildings
+  should scale down together but haven't been visually confirmed there;
+  the laptop frame's minimum usable height on a short/small browser window
+  is unchecked now that it has no floor (`min-h-[420px]` was removed along
+  with the aspect-ratio/max-width constraints per direct user feedback).
 - **Music player loop/shuffle** (`MusicPlayer.tsx`): shuffle/repeat button
   toggling and localStorage persistence are live-verified, but actual
   end-of-track behavior (`loopMode: "one"` restarting the same track,
@@ -1102,6 +1107,103 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   pre-select) hasn't been clicked through live.
 
 ## Session log
+
+### 2026-09-11 (iteration 2) — full-page laptop, spatial town map, lid animation, dev/test page
+
+Follow-up to the same-day gamification build below, after using it live.
+User feedback, addressed in order:
+
+1. **Laptop screen too tall/narrow.** `LaptopFrame`'s box had no bounded
+   size — it grew to whatever height `WeeklyPlannerView` needed (thousands
+   of px), reading as a squished vertical strip against its `max-w-6xl`
+   cap. First fix: `aspect-[16/10]` + `max-h-[80vh]`. **User pushed back
+   live** (screenshot showing a small centered box) — wanted it to fill the
+   page, not hold a laptop-accurate aspect ratio. Landed on: `app/page.tsx`'s
+   `<main>` is now `h-screen w-screen overflow-hidden p-3 sm:p-4` (was
+   `min-h-screen p-8`), and `LaptopFrame`'s outer box is `h-full w-full`
+   with no aspect-ratio/max-width constraint at all — a second live
+   screenshot still showed real edge gaps (a leftover `max-w-[1800px]`),
+   removed entirely. Each view layer (OS/World/onboarding) is an `absolute
+   inset-0 overflow-y-auto` panel inside this now-fixed box, so long OS
+   content scrolls in place instead of stretching the frame — the actual
+   fix for "squished," independent of the sizing back-and-forth.
+2. **World view redesigned as a spatial map, not a stat-card list.** New
+   `components/world/TownMap.tsx`: a `relative` canvas with a grass-toned
+   background + soft dirt/stone radial-gradient "clearing" patches under
+   each of 5 percentage-positioned buildings (Town Square center, the other
+   4 at the corners), a handful of static decorative `PixelBlock`s
+   (trees/logs/a signpost), Mascot roaming near center, and an in-world
+   laptop-sprite "Open the Laptop" control (no more floating button).
+   Deliberately **no literal connecting path lines** — percentage-based
+   line geometry (`rotate()` + computed length) isn't isotropic across
+   arbitrary container aspect ratios, and the frame no longer has a fixed
+   one after point 1 above, so lines would visibly skew at different window
+   sizes; radial-gradient patches don't have that problem. `Building.tsx`
+   moved from a bordered stat card to an absolutely-positioned sprite:
+   stage-based size/tone/decoration-count kept, added a stage-2 flag/banner
+   topper and a stage-0→1 ground-base swap (bare dirt → a small plaza) so
+   leveling up is a visible sprite/ground change, not just a growth number.
+   `WorldView.tsx` kept a slim top HUD bar (stage/progress/currency/streak)
+   and hands the rest of the space to `TownMap`.
+3. **Real lid-close/open animation**, replacing the old single-phase
+   fade/scale (`lid-transition`/`laptop-frame--transitioning`, both
+   removed from `globals.css`). `LaptopFrame`'s `switchView` is now a
+   3-phase state machine (`"idle"|"closing"|"opening"`, `LID_PHASE_MS =
+   280` each): the frame rotates shut around its bottom edge
+   (`@keyframes lid-close`, `rotateX(0→-100deg)` + opacity fade), the view
+   swaps at the boundary, then it rotates back open (`@keyframes
+   lid-open`). **Constraint carried over from the plan and respected**:
+   `perspective` (needed for the 3D rotation to read correctly) is only
+   ever set via inline style while `lidPhase !== "idle"`, never
+   persistently — `transform`/`perspective` on an ancestor makes any
+   `position:fixed` descendant (every modal in this app) position relative
+   to that ancestor instead of the viewport. Verified live: opened
+   Add Task mid-idle after several toggles, modal still centers correctly
+   in the viewport, not offset by any leftover transform.
+4. **New unlinked dev/test page**, `app/dev/gamification/page.tsx` +
+   `components/dev/GamificationDevPanel.tsx` — delegated to a fork (scoped
+   tightly to exactly these two new files this time, after the first
+   session's fork wandered outside its scope; it stayed in bounds and
+   delivered both files cleanly). Five cards: real-account reset controls
+   (XP/town-growth/onboarding/everything, each behind an inline two-step
+   `ConfirmButton` — deliberately not `window.confirm()`, which would block
+   this session's own Chrome-extension-based testing), a fake-task
+   generator/cleanup pair (`POST`/`DELETE /api/custom-tasks`, spread across
+   Biology/Calculus/History/Personal course names so they classify as
+   different label types), a live preview sandbox (plain number inputs,
+   never persisted, driving a real embedded `<WorldView>`/`<Mascot>`/
+   `<OnboardingOverlay>` render — used this live to instantly check all 3
+   building stages and a kingdom-stage jump without grinding real growth,
+   confirmed the flag-topper/plaza-base changes from point 2 actually
+   render), and a raw-state JSON panel. **One real bug caught by this
+   session's own use of the page, fixed same-session**: `generatedTaskIds`
+   (which fake-task ids the "delete" button knows about) was in-memory-only
+   React state — generating 5 tasks, reloading the page, and clicking
+   delete correctly showed "Delete 0 fake task(s)," silently orphaning the
+   5 real tasks it had just created. Fixed by persisting that id list to
+   `localStorage` (`gamification_dev_generated_task_ids`, same "genuinely
+   per-device" precedent as `pomodoro_state`/`music-player-volume`), using
+   the same load-effect + loaded-flag hydration pattern already established
+   in `PomodoroTimer.tsx`/`MusicPlayer.tsx`/`WeeklyPlannerView.tsx` (a
+   lazy `useState` initializer reading `localStorage` directly would break
+   SSR for this client component, which is why that pattern exists at all
+   here). Re-verified live: generate → reload → delete → confirmed via
+   direct `fetch` that all 5 were actually removed and localStorage cleared
+   back to `"[]"`. This is the one new `react-hooks/set-state-in-effect`
+   warning in the lint count below — same category as 2 pre-existing
+   instances elsewhere in this codebase for the identical hydration idiom,
+   not a new class of issue.
+- Verified: `npx tsc --noEmit` clean, `npm run lint` at **16** problems (13
+  errors + 3 warnings — up from the 15-problem baseline by exactly the one
+  disclosed warning above), `npm run build` clean, `/dev/gamification`
+  route generated. Live-verified via the Chrome extension: the frame now
+  fills the page edge-to-edge with OS content scrolling inside it; the
+  town map renders 5 spatially-placed buildings with visibly distinct
+  stage-0/1/2 sprites (checked via the dev page's live inputs, not real
+  grinding); the World⇄OS toggle round-trips correctly through the new
+  lid-animation state machine with no console errors; the dev page's full
+  fake-task-generate → reload → delete → verify loop was exercised twice
+  (once catching the bug above, once confirming the fix).
 
 ### 2026-09-11 — build the medieval-kingdom gamification layer (gamificationSystem.md)
 

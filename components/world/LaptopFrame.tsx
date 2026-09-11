@@ -31,12 +31,16 @@ type Props = {
 };
 
 const DIALOGUE_DURATION_MS = 4500;
-const TRANSITION_MS = 260;
+
+// Two-phase "lid" animation: the frame rotates shut (closing), the view
+// swaps while it's visually closed, then it rotates back open (opening).
+type LidPhase = "idle" | "closing" | "opening";
+const LID_PHASE_MS = 280;
 
 export default function LaptopFrame({ children, initialView, townState: initialTownState }: Props) {
     const [view, setView] = useState<ViewMode>(initialView);
     const [showTour, setShowTour] = useState(false);
-    const [transitioning, setTransitioning] = useState(false);
+    const [lidPhase, setLidPhase] = useState<LidPhase>("idle");
     const [dialogue, setDialogue] = useState<string | null>(null);
     const [worldTownState, setWorldTownState] = useState<TownState>(initialTownState);
     const dialogueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,7 +59,7 @@ export default function LaptopFrame({ children, initialView, townState: initialT
     }, []);
 
     const switchView = useCallback((next: ViewMode) => {
-        setTransitioning(true);
+        setLidPhase("closing");
 
         if (next === "world") {
             void getTownState().then(setWorldTownState);
@@ -63,8 +67,10 @@ export default function LaptopFrame({ children, initialView, townState: initialT
 
         setTimeout(() => {
             setView(next);
-            setTransitioning(false);
-        }, TRANSITION_MS);
+            setLidPhase("opening");
+
+            setTimeout(() => setLidPhase("idle"), LID_PHASE_MS);
+        }, LID_PHASE_MS);
     }, []);
 
     const openWorld = useCallback(() => switchView("world"), [switchView]);
@@ -90,52 +96,84 @@ export default function LaptopFrame({ children, initialView, townState: initialT
         setWorldTownState((current) => ({ ...current, onboardingCompletedAt: completedAt }));
     }, []);
 
+    const lidClassName =
+        lidPhase === "closing" ? "laptop-lid--closing" : lidPhase === "opening" ? "laptop-lid--opening" : "";
+
     return (
         <MascotContext.Provider value={{ say }}>
+            {/* perspective is only ever set while actually animating (never
+                persistently) — transform/perspective on an ancestor makes any
+                position:fixed descendant (every modal in this app) position
+                relative to that ancestor instead of the viewport, which would
+                break every modal if left on while idle. */}
             <div
-                className={`relative mx-auto w-full max-w-6xl overflow-hidden rounded-[28px] border-[6px] shadow-2xl ${
-                    transitioning ? "laptop-frame--transitioning" : ""
-                }`}
-                style={{ borderColor: "var(--border)", background: "var(--app-background)" }}
+                className="h-full w-full"
+                style={lidPhase !== "idle" ? { perspective: "1600px" } : undefined}
             >
-                {/* Cosmetic "scuffed laptop" detail — a worn corner nick, purely
-                    decorative, never implies the real UI underneath is unreliable. */}
+                {/* The laptop "screen": fills the available page space edge to
+                    edge (its parent is sized by <main>'s h-screen in
+                    app/page.tsx) — no fixed aspect ratio or max-width, just
+                    enough chrome (rounded corners + border) to read as "a
+                    screen" without constraining the actual planning UI. Not
+                    content-driven height — each view below is an absolutely
+                    positioned, independently scrolling panel inside this fixed
+                    box, so long OS content scrolls in place instead of
+                    stretching the frame into a tall vertical strip. */}
                 <div
-                    className="pointer-events-none absolute -right-3 -top-3 h-10 w-10 rotate-45 border-b-2"
-                    style={{ borderColor: "var(--border)" }}
-                    aria-hidden="true"
-                />
+                    className={`relative h-full w-full overflow-hidden rounded-[28px] border-[6px] shadow-2xl ${lidClassName}`}
+                    style={{ borderColor: "var(--border)", background: "var(--app-background)", transformOrigin: "bottom center" }}
+                >
+                    {/* Cosmetic "scuffed laptop" detail — a worn corner nick, purely
+                        decorative, never implies the real UI underneath is unreliable. */}
+                    <div
+                        className="pointer-events-none absolute -right-3 -top-3 z-30 h-10 w-10 rotate-45 border-b-2"
+                        style={{ borderColor: "var(--border)" }}
+                        aria-hidden="true"
+                    />
 
-                {/* OS content is always mounted, even while World/onboarding is the
-                    active view — Pomodoro and the music player live inside
-                    `children`, and unmounting them on every "View Kingdom" toggle
-                    would restart playback and every one of WeeklyPlannerView's
-                    mount-effect fetches, exactly the "ambient tools buried behind a
-                    UI layer" problem projectReview.md flags. When inactive it's
-                    taken out of flow (absolute) and hidden with `invisible`
-                    (visibility:hidden) rather than unmounted or `display:none` —
-                    unlike display:none, visibility:hidden doesn't interrupt media
-                    playback in an iframe, and taking it out of flow means it no
-                    longer dictates the frame's height while some other view is
-                    the one actually being shown. */}
-                <div className={view === "os" ? "relative" : "invisible absolute inset-0 pointer-events-none overflow-hidden"}>
-                    <button
-                        type="button"
-                        onClick={openWorld}
-                        className="absolute right-4 top-4 z-20 rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
-                        style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
+                    {/* OS content is always mounted, even while World/onboarding is the
+                        active view — Pomodoro and the music player live inside
+                        `children`, and unmounting them on every "View Kingdom" toggle
+                        would restart playback and every one of WeeklyPlannerView's
+                        mount-effect fetches, exactly the "ambient tools buried behind a
+                        UI layer" problem projectReview.md flags. When inactive it's
+                        taken out of flow (absolute) and hidden with `invisible`
+                        (visibility:hidden) rather than unmounted or `display:none` —
+                        unlike display:none, visibility:hidden doesn't interrupt media
+                        playback in an iframe, and taking it out of flow means it no
+                        longer dictates the frame's height while some other view is
+                        the one actually being shown. */}
+                    <div
+                        className={
+                            view === "os"
+                                ? "absolute inset-0 overflow-y-auto"
+                                : "invisible absolute inset-0 overflow-hidden pointer-events-none"
+                        }
                     >
-                        🗺️ View Kingdom
-                    </button>
-                    {children}
-                    {view === "os" && <MascotBubble dialogue={dialogue} />}
-                    {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
-                </div>
+                        <button
+                            type="button"
+                            onClick={openWorld}
+                            className="absolute right-4 top-4 z-20 rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
+                            style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
+                        >
+                            🗺️ View Kingdom
+                        </button>
+                        {children}
+                        {view === "os" && <MascotBubble dialogue={dialogue} />}
+                        {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
+                    </div>
 
-                {view === "onboarding" && <OnboardingOverlay phase="intro" onOpenLaptop={openLaptop} />}
-                {view === "world" && (
-                    <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />
-                )}
+                    {view === "onboarding" && (
+                        <div className="absolute inset-0 overflow-y-auto">
+                            <OnboardingOverlay phase="intro" onOpenLaptop={openLaptop} />
+                        </div>
+                    )}
+                    {view === "world" && (
+                        <div className="absolute inset-0 overflow-y-auto">
+                            <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />
+                        </div>
+                    )}
+                </div>
             </div>
         </MascotContext.Provider>
     );

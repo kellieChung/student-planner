@@ -1,9 +1,8 @@
 "use client";
 
-import { TownState, KingdomStage, BuildingKey } from "@/types/townState";
+import { TownState, KingdomStage } from "@/types/townState";
 import { computeKingdomStage, nextKingdomStage, STAGE_THRESHOLDS, totalTownGrowth } from "@/lib/townGrowth";
-import Building from "./Building";
-import Mascot from "./Mascot";
+import TownMap from "./TownMap";
 
 type Props = {
     townState: TownState;
@@ -18,14 +17,6 @@ const STAGE_LABEL: Record<KingdomStage, string> = {
     kingdom: "Kingdom",
 };
 
-const BUILDINGS: Array<{ key: BuildingKey; field: keyof TownState; label: string; emoji: string }> = [
-    { key: "library", field: "libraryGrowth", label: "Library", emoji: "📚" },
-    { key: "workshop", field: "workshopGrowth", label: "Workshop", emoji: "⚒️" },
-    { key: "trainingGrounds", field: "trainingGroundsGrowth", label: "Training Grounds", emoji: "🏹" },
-    { key: "watchtower", field: "watchtowerGrowth", label: "Watchtower", emoji: "🗼" },
-    { key: "townSquare", field: "townSquareGrowth", label: "Town Square", emoji: "🏪" },
-];
-
 export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) {
     const stage = computeKingdomStage(townState);
     const next = nextKingdomStage(stage);
@@ -34,12 +25,9 @@ export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) 
     const progressPercent = nextThreshold ? Math.min(100, Math.round((total / nextThreshold) * 100)) : 100;
 
     return (
-        <div
-            className="flex h-full min-h-[560px] w-full flex-col gap-4 overflow-y-auto p-4 sm:p-6"
-            style={{ background: "var(--app-background)" }}
-        >
+        <div className="flex h-full w-full flex-col" style={{ background: "var(--app-background)" }}>
             <div
-                className="rounded-xl border px-4 py-3"
+                className="shrink-0 border-b px-4 py-2 sm:px-6 sm:py-3"
                 style={{ borderColor: "var(--border)", background: "var(--panel)" }}
             >
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -50,7 +38,7 @@ export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) 
                         >
                             Realm status
                         </p>
-                        <h2 className="text-xl font-bold" style={{ color: "var(--heading)" }}>
+                        <h2 className="text-lg font-bold sm:text-xl" style={{ color: "var(--heading)" }}>
                             {STAGE_LABEL[stage]}
                         </h2>
                     </div>
@@ -73,7 +61,7 @@ export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) 
                 </div>
                 {next && (
                     <div className="mt-2">
-                        <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "var(--xp-track)" }}>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full" style={{ background: "var(--xp-track)" }}>
                             <div
                                 className="h-full rounded-full transition-all"
                                 style={{ width: `${progressPercent}%`, background: "var(--xp-bar)" }}
@@ -86,31 +74,8 @@ export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) 
                 )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
-                {BUILDINGS.map((building) => (
-                    <Building
-                        key={building.key}
-                        buildingKey={building.key}
-                        growth={townState[building.field] as number}
-                        label={building.label}
-                        emoji={building.emoji}
-                    />
-                ))}
-            </div>
-
-            <div className="flex flex-1 items-center justify-center py-4">
-                <Mascot dialogue={dialogue} />
-            </div>
-
-            <div className="flex justify-center pb-2">
-                <button
-                    type="button"
-                    onClick={onOpenLaptop}
-                    className="rounded-lg border px-5 py-2 text-sm font-bold transition-transform hover:scale-105"
-                    style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
-                >
-                    💻 Open the Laptop
-                </button>
+            <div className="min-h-0 flex-1">
+                <TownMap townState={townState} onOpenLaptop={onOpenLaptop} dialogue={dialogue} />
             </div>
         </div>
     );

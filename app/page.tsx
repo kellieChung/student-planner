@@ -53,7 +53,7 @@ export default async function TestPage() {
     };
 
     return (
-        <main className="min-h-screen p-8">
+        <main className="h-screen w-screen overflow-hidden p-3 sm:p-4">
             <LaptopFrame
                 initialView={townState.onboardingCompletedAt ? "os" : "onboarding"}
                 townState={townState}
