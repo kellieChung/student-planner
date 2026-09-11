@@ -100,24 +100,35 @@ export default function LaptopFrame({ children, initialView, townState: initialT
                     aria-hidden="true"
                 />
 
+                {/* OS content is always mounted, even while World/onboarding is the
+                    active view — Pomodoro and the music player live inside
+                    `children`, and unmounting them on every "View Kingdom" toggle
+                    would restart playback and every one of WeeklyPlannerView's
+                    mount-effect fetches, exactly the "ambient tools buried behind a
+                    UI layer" problem projectReview.md flags. When inactive it's
+                    taken out of flow (absolute) and hidden with `invisible`
+                    (visibility:hidden) rather than unmounted or `display:none` —
+                    unlike display:none, visibility:hidden doesn't interrupt media
+                    playback in an iframe, and taking it out of flow means it no
+                    longer dictates the frame's height while some other view is
+                    the one actually being shown. */}
+                <div className={view === "os" ? "relative" : "invisible absolute inset-0 pointer-events-none overflow-hidden"}>
+                    <button
+                        type="button"
+                        onClick={openWorld}
+                        className="absolute right-4 top-4 z-20 rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
+                        style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
+                    >
+                        🗺️ View Kingdom
+                    </button>
+                    {children}
+                    {view === "os" && <MascotBubble dialogue={dialogue} />}
+                    {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
+                </div>
+
                 {view === "onboarding" && <OnboardingOverlay phase="intro" onOpenLaptop={openLaptop} />}
-
-                {view === "world" && <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />}
-
-                {view === "os" && (
-                    <div className="relative">
-                        <button
-                            type="button"
-                            onClick={openWorld}
-                            className="absolute right-4 top-4 z-40 rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
-                            style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
-                        >
-                            🗺️ View Kingdom
-                        </button>
-                        {children}
-                        <MascotBubble dialogue={dialogue} />
-                        {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
-                    </div>
+                {view === "world" && (
+                    <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />
                 )}
             </div>
         </MascotContext.Provider>

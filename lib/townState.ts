@@ -54,3 +54,35 @@ export async function saveTownState(state: TownState): Promise<void> {
         console.error("Could not save town state", error);
     }
 }
+
+// Like saveTownState, but deliberately omits onboardingCompletedAt from the
+// request body so a caller holding a stale copy of that field (e.g.
+// WeeklyPlannerView's own townState, fetched before LaptopFrame's
+// onboarding tour finishes) can never overwrite it back to null — the PATCH
+// route treats a missing key as "leave this field alone." Callers that
+// genuinely need to set onboardingCompletedAt (LaptopFrame's own
+// completeOnboarding) should use saveTownState instead.
+export async function saveTownGrowth(state: TownState): Promise<void> {
+    const growthFields = {
+        currency: state.currency,
+        libraryGrowth: state.libraryGrowth,
+        workshopGrowth: state.workshopGrowth,
+        trainingGroundsGrowth: state.trainingGroundsGrowth,
+        watchtowerGrowth: state.watchtowerGrowth,
+        townSquareGrowth: state.townSquareGrowth,
+        currentStreak: state.currentStreak,
+        longestStreak: state.longestStreak,
+        graceTokens: state.graceTokens,
+        lastGoodDay: state.lastGoodDay,
+    };
+
+    try {
+        await fetch("/api/town-state", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(growthFields),
+        });
+    } catch (error) {
+        console.error("Could not save town growth", error);
+    }
+}

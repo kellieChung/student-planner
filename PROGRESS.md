@@ -1202,6 +1202,62 @@ labels — left untouched).
   revert) — `onboardingCompletedAt` was deliberately left set, since that's
   the correct end state for this real, already-active account (they aren't
   a first-time user).
+- **Two real bugs caught by an advisor review after the above, both fixed
+  and re-verified live** (not caught by the first pass because that pass
+  happened to toggle World/reload between steps, masking both):
+  1. **`onboardingCompletedAt` could get silently wiped by the next task
+     completion.** `WeeklyPlannerView` loads its own `townState` copy on
+     mount; if that copy was fetched *before* the onboarding tour finished
+     (a real race on a genuine first run — mounting happens at "open the
+     laptop," onboarding doesn't finish until a few tour steps later), its
+     stale `onboardingCompletedAt: null` would ride along inside the full
+     object `awardXpForTask`'s completion handler PATCHed back on the very
+     next task completion, overwriting the real timestamp
+     `LaptopFrame.completeOnboarding` had just set. Fixed with a new
+     `lib/townState.ts`'s `saveTownGrowth` — identical to `saveTownState`
+     except it never includes `onboardingCompletedAt` in the request body
+     at all, so the PATCH route's existing "absent key = leave alone" branch
+     protects it; `WeeklyPlannerView`'s completion path now calls this
+     instead of `saveTownState`. Also fixed the underlying dedup asymmetry
+     that let this go unnoticed: the town-growth award lived outside both of
+     `awardXpForTask`'s existing XP dedup guards, so a rapid re-complete
+     before state committed could double-award currency/growth even when
+     XP correctly no-op'd; moved the growth-award block inside the
+     `setGamification` updater itself, gated by the exact same
+     `current.awardedTaskIds.includes(task.id)` check XP already uses.
+  2. **"View Kingdom" unmounted the entire OS**, including `PomodoroTimer`
+     and `MusicPlayer` — every toggle killed music playback (the YouTube
+     iframe torn down) and re-ran every one of `WeeklyPlannerView`'s
+     mount-effect fetches, exactly the "ambient tools buried behind a UI
+     layer" problem `projectReview.md` warns against and this session's own
+     plan had elevated into a hard constraint. Fixed in `LaptopFrame.tsx`:
+     the OS content (`children`) is now always mounted; when inactive it's
+     taken out of flow with `absolute` and hidden with `invisible`
+     (`visibility: hidden`) rather than unmounted or `display: none` —
+     visibility:hidden doesn't interrupt iframe/media playback the way
+     display:none can in some browsers, and taking it out of flow stops it
+     from dictating the frame's height while World/onboarding is the active
+     view. A first attempt at this (an absolutely-positioned overlay on top
+     of the always-mounted OS content) had a real regression caught before
+     committing: the overlay's height matched the very tall OS content
+     underneath it, so the onboarding intro's vertically-centered dialogue
+     rendered far off-screen — invisible without any console error. Fixed by
+     inverting which element is out-of-flow (the inactive one, not the
+     active overlay). **Re-verified live end-to-end**: reset
+     `onboardingCompletedAt` to `null` again via the same legitimate
+     `PATCH /api/town-state` flow, completed a throwaway task *without*
+     toggling views or reloading in between (the exact race condition),
+     confirmed via direct `fetch` that `onboardingCompletedAt` survived the
+     completion untouched, then reloaded and confirmed onboarding correctly
+     did not replay. Separately confirmed the music iframe survives a
+     "View Kingdom" toggle: tagged the live `<iframe id="youtube-player">`
+     with a unique `data-` marker before toggling, confirmed via
+     `document.querySelector` after toggling to World and back that it's
+     the exact same DOM node (`isConnected: true`, marker unchanged) rather
+     than a freshly recreated one. `npx tsc --noEmit`/`npm run lint`
+     (still the 15-problem baseline)/`npm run build` all reconfirmed clean
+     after both fixes. Test task deleted and XP/currency/growth/streak
+     reverted again via the same PATCH-based precedent.
 - **Not yet verified live**: the `announcementFound` mascot trigger (no
   fresh AI-suggestion batch was available to trigger during this session);
   building visuals beyond stage 1 ("Upgraded," the 3rd stage) and the

@@ -11,7 +11,7 @@ import ManageCoursesModal from "./ManageCoursesModal";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
-import {getTownState, saveTownState} from "@/lib/townState";
+import {getTownState, saveTownGrowth} from "@/lib/townState";
 import {TownState} from "@/types/townState";
 import {applyDailyCompletion, applyGrowthAward, computeGrowthAward, isCompletionOnTime} from "@/lib/townGrowth";
 import {useMascot} from "./world/LaptopFrame";
@@ -1141,26 +1141,32 @@ export default function WeeklyPlannerView({ assignments, weekStartDate}: WeeklyP
             };
 
             saveGamificationState(nextState);
+
+            // Town growth is awarded inside this same updater, gated by the
+            // identical dedup check above — awardXpForTask's own early-return
+            // guard reads a stale `gamification` closure, so without this a
+            // rapid re-complete before that state commits would correctly
+            // no-op XP but still double-award currency/growth.
+            const taskCourse = courses.find((c) => c.name === task.course);
+            const typeCode = task.typeOverride || classifyLabelType({
+                name: task.name,
+                course: task.course,
+                isCustomCourse: taskCourse?.isCustom,
+            });
+            const growthAward = computeGrowthAward(typeCode, award.xp);
+            const onTime = completedAt !== null && isCompletionOnTime(task.due, completedAt);
+
+            setTownState((currentTown) => {
+                const withGrowth = applyGrowthAward(currentTown, growthAward);
+                const nextTown = applyDailyCompletion(withGrowth, onTime, completedAt ?? getTodayString());
+
+                void saveTownGrowth(nextTown);
+                return nextTown;
+            });
+
             return nextState;
         });
         setLatestXpAward(award);
-
-        const taskCourse = courses.find((c) => c.name === task.course);
-        const typeCode = task.typeOverride || classifyLabelType({
-            name: task.name,
-            course: task.course,
-            isCustomCourse: taskCourse?.isCustom,
-        });
-        const growthAward = computeGrowthAward(typeCode, award.xp);
-        const onTime = completedAt !== null && isCompletionOnTime(task.due, completedAt);
-
-        setTownState((current) => {
-            const withGrowth = applyGrowthAward(current, growthAward);
-            const next = applyDailyCompletion(withGrowth, onTime, completedAt ?? getTodayString());
-
-            void saveTownState(next);
-            return next;
-        });
     };
 
     // Plays the green completion pulse (app/globals.css's task-complete-
