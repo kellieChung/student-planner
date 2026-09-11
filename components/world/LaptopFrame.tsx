@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { TownState } from "@/types/townState";
 import { MascotTrigger } from "@/types/townState";
 import { pickLine } from "@/lib/mascotDialogue";
-import { getTownState, saveTownState } from "@/lib/townState";
+import { getTownState, saveOnboardingCompletion } from "@/lib/townState";
 import WorldView from "./WorldView";
 import MascotBubble from "./MascotBubble";
 import OnboardingOverlay from "./OnboardingOverlay";
@@ -77,11 +77,17 @@ export default function LaptopFrame({ children, initialView, townState: initialT
 
     const completeOnboarding = useCallback(() => {
         setShowTour(false);
-        setWorldTownState((current) => {
-            const next = { ...current, onboardingCompletedAt: new Date().toISOString() };
-            void saveTownState(next);
-            return next;
-        });
+
+        const completedAt = new Date().toISOString();
+
+        // Deliberately does not send worldTownState's other fields — see
+        // saveOnboardingCompletion's own comment. worldTownState may still be
+        // the stale page-load snapshot if the user never visited World before
+        // finishing the tour, and a task completed during the tour (the OS
+        // underneath is real and clickable, not blocked by the callout card)
+        // would already have its own currency/growth award in flight.
+        void saveOnboardingCompletion(completedAt);
+        setWorldTownState((current) => ({ ...current, onboardingCompletedAt: completedAt }));
     }, []);
 
     return (

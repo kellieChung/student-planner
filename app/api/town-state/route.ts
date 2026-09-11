@@ -105,6 +105,12 @@ export async function PATCH(request: Request) {
 
         const input = body as Record<string, unknown>;
 
+        // Every field is optional on a PATCH here, not just onboardingCompletedAt
+        // — a key that's simply absent from the body means "leave this field
+        // alone," matching the client helpers below (saveTownGrowth omits
+        // onboardingCompletedAt, a dedicated onboarding-only save omits every
+        // growth/currency field) so two independent writers can never clobber
+        // each other's fields with a stale value from a full-row send.
         const numericFields = [
             "currency",
             "libraryGrowth",
@@ -117,40 +123,54 @@ export async function PATCH(request: Request) {
             "graceTokens",
         ] as const;
 
+        const data: {
+            currency?: number;
+            libraryGrowth?: number;
+            workshopGrowth?: number;
+            trainingGroundsGrowth?: number;
+            watchtowerGrowth?: number;
+            townSquareGrowth?: number;
+            currentStreak?: number;
+            longestStreak?: number;
+            graceTokens?: number;
+            lastGoodDay?: string | null;
+            onboardingCompletedAt?: Date | null;
+        } = {};
+
         for (const field of numericFields) {
-            if (!isFiniteNumber(input[field])) {
+            if (field in input) {
+                if (!isFiniteNumber(input[field])) {
+                    return NextResponse.json(
+                        { success: false, error: `'${field}' must be a number.` },
+                        { status: 400 }
+                    );
+                }
+                data[field] = input[field] as number;
+            }
+        }
+
+        if ("lastGoodDay" in input) {
+            if (input.lastGoodDay !== null && typeof input.lastGoodDay !== "string") {
                 return NextResponse.json(
-                    { success: false, error: `'${field}' must be a number.` },
+                    { success: false, error: "'lastGoodDay' must be a string or null." },
+                    { status: 400 }
+                );
+            }
+            data.lastGoodDay = input.lastGoodDay as string | null;
+        }
+
+        if ("onboardingCompletedAt" in input) {
+            if (typeof input.onboardingCompletedAt === "string") {
+                data.onboardingCompletedAt = new Date(input.onboardingCompletedAt);
+            } else if (input.onboardingCompletedAt === null) {
+                data.onboardingCompletedAt = null;
+            } else {
+                return NextResponse.json(
+                    { success: false, error: "'onboardingCompletedAt' must be a string or null." },
                     { status: 400 }
                 );
             }
         }
-
-        if (input.lastGoodDay !== null && typeof input.lastGoodDay !== "undefined" && typeof input.lastGoodDay !== "string") {
-            return NextResponse.json(
-                { success: false, error: "'lastGoodDay' must be a string or null." },
-                { status: 400 }
-            );
-        }
-
-        const data = {
-            currency: input.currency as number,
-            libraryGrowth: input.libraryGrowth as number,
-            workshopGrowth: input.workshopGrowth as number,
-            trainingGroundsGrowth: input.trainingGroundsGrowth as number,
-            watchtowerGrowth: input.watchtowerGrowth as number,
-            townSquareGrowth: input.townSquareGrowth as number,
-            currentStreak: input.currentStreak as number,
-            longestStreak: input.longestStreak as number,
-            graceTokens: input.graceTokens as number,
-            lastGoodDay: (input.lastGoodDay as string | null | undefined) ?? null,
-            onboardingCompletedAt:
-                typeof input.onboardingCompletedAt === "string"
-                    ? new Date(input.onboardingCompletedAt)
-                    : input.onboardingCompletedAt === null
-                        ? null
-                        : undefined,
-        };
 
         const state = await prisma.townState.upsert({
             where: { userId: user.id },

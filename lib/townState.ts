@@ -43,25 +43,18 @@ export async function getTownState(): Promise<TownState> {
     }
 }
 
-export async function saveTownState(state: TownState): Promise<void> {
-    try {
-        await fetch("/api/town-state", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(state),
-        });
-    } catch (error) {
-        console.error("Could not save town state", error);
-    }
-}
+// The PATCH route treats an absent key as "leave this field alone," so
+// every save helper below sends only the fields it actually owns — two
+// independent writers (a task completion vs. finishing onboarding) can
+// then never clobber each other's fields with a stale full-row copy. There
+// is deliberately no general "send the whole TownState" helper; each real
+// writer below is scoped to what it's actually responsible for.
 
-// Like saveTownState, but deliberately omits onboardingCompletedAt from the
-// request body so a caller holding a stale copy of that field (e.g.
-// WeeklyPlannerView's own townState, fetched before LaptopFrame's
-// onboarding tour finishes) can never overwrite it back to null — the PATCH
-// route treats a missing key as "leave this field alone." Callers that
-// genuinely need to set onboardingCompletedAt (LaptopFrame's own
-// completeOnboarding) should use saveTownState instead.
+// WeeklyPlannerView's own townState copy is fetched once on mount and can
+// easily be stale by the time a completion fires (e.g. mounted before
+// LaptopFrame's onboarding tour finishes) — omitting onboardingCompletedAt
+// here means that staleness can never roll back the real timestamp
+// completeOnboarding below just set.
 export async function saveTownGrowth(state: TownState): Promise<void> {
     const growthFields = {
         currency: state.currency,
@@ -84,5 +77,24 @@ export async function saveTownGrowth(state: TownState): Promise<void> {
         });
     } catch (error) {
         console.error("Could not save town growth", error);
+    }
+}
+
+// LaptopFrame's own worldTownState copy is only refreshed when the user
+// actually visits World, so on a genuine first run it can still hold the
+// page-load snapshot (all zeros) if a task is completed while the
+// onboarding tour is still showing (the tour is dismissible, not a modal —
+// the OS underneath is real and clickable). Sending only the timestamp
+// here means finishing onboarding can never roll back currency/growth a
+// completion already awarded.
+export async function saveOnboardingCompletion(completedAt: string): Promise<void> {
+    try {
+        await fetch("/api/town-state", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ onboardingCompletedAt: completedAt }),
+        });
+    } catch (error) {
+        console.error("Could not save onboarding completion", error);
     }
 }

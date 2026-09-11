@@ -1258,6 +1258,42 @@ labels — left untouched).
      (still the 15-problem baseline)/`npm run build` all reconfirmed clean
      after both fixes. Test task deleted and XP/currency/growth/streak
      reverted again via the same PATCH-based precedent.
+  3. **A third bug of the identical shape, caught by a follow-up advisor
+     review before it shipped**: `LaptopFrame.completeOnboarding` PATCHed a
+     full-row body built from its own `worldTownState` — which is only
+     refreshed when the user actually visits World, so on a genuine first
+     run (open the laptop, tour shows, never visits World) it still held
+     the page-load snapshot (all zeros). The tour overlay is dismissible,
+     not a modal — the OS underneath is real and clickable — so a task
+     completed *while the tour is still showing* would have its
+     just-awarded currency/growth rolled back to zero the moment the tour
+     finished. Root fix went one level deeper than the first two: the PATCH
+     route itself (`app/api/town-state/route.ts`) validated all 9 numeric
+     fields as *required*, so a narrow body could never have been sent for
+     this path either. Changed every field there to genuinely optional
+     (present-key validated, absent-key left alone — the same semantics
+     `onboardingCompletedAt` already had), and added a new
+     `lib/townState.ts`'s `saveOnboardingCompletion(completedAt)` that
+     sends only that one field. `saveTownState` (the old full-row helper)
+     is now unused by anything and was deleted rather than left as dead
+     code — every real writer is intentionally scoped to just the fields it
+     owns; there is no general "send the whole row" helper left to misuse.
+     **Verified live**: reset `onboardingCompletedAt` to `null` again,
+     skipped the intro, then — *while the 3-step tour was still showing* —
+     clicked "Mark done" on the real "Eat this frog" task underneath it
+     (confirmed via a direct `fetch` that currency/workshopGrowth jumped to
+     100/100 while `onboardingCompletedAt` was still `null`), then finished
+     the tour and confirmed via another `fetch` that `onboardingCompletedAt`
+     was now set **and** currency/growth were still 100/100, not rolled
+     back. `npx tsc --noEmit`/`npm run lint` (15-problem baseline)/
+     `npm run build` all clean. Reverted the real Canvas task
+     ("Macromolecules Lab," accidentally used for this test instead of a
+     throwaway — cycled its status control back to not-started) and
+     restored `totalXp`/`awardedTaskIds`/town growth to their exact
+     pre-session values (the known-good 25-entry `awardedTaskIds` array
+     from earlier in this same session, since the live account's own array
+     is too long to safely diff by eye against a blocked-output tool
+     result).
 - **Not yet verified live**: the `announcementFound` mascot trigger (no
   fresh AI-suggestion batch was available to trigger during this session);
   building visuals beyond stage 1 ("Upgraded," the 3rd stage) and the
