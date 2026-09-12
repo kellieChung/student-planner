@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePomodoroRemote } from "@/components/os/PomodoroRemoteContext";
 
 export type PomodoroFocusTask = {
     id: string;
@@ -53,7 +54,12 @@ const DEFAULT_STATE: PomodoroState = {
     endTime: null,
 };
 
-const STORAGE_KEY = "pomodoro_state";
+// Exported so PomodoroWindow.tsx can write a paused snapshot directly on
+// Close — see that file's onBeforeClose for why (closeWindow's unmount and
+// a setState-based pause race in the same React batch, so the pause can't
+// reliably go through this component's own state+persist-effect pipeline
+// at that exact moment).
+export const STORAGE_KEY = "pomodoro_state";
 
 function formatTime(seconds: number): string {
     const safeSeconds = Math.max(0, Math.floor(seconds));
@@ -388,6 +394,59 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
         setIsEditingTime(false);
         setTimeInput("");
     };
+
+    // Publishes this instance's live state/actions into PomodoroRemoteContext
+    // so the OS taskbar and the World's HourglassPanel can render/control the
+    // exact same timer. Refs (rather than putting toggleTimer/resetTimer/
+    // changeMode directly in the effect's deps) keep the published action
+    // wrappers permanently stable — those three functions are recreated every
+    // render, so using them as deps directly would re-fire this effect (and
+    // the context's setState) on every render, including ones this effect
+    // itself causes via the Provider re-rendering its subtree.
+    const { publishEngine: publishPomodoroEngine, clearEngine: clearPomodoroEngine } = usePomodoroRemote();
+    const toggleTimerRef = useRef(toggleTimer);
+    const resetTimerRef = useRef(resetTimer);
+    const changeModeRef = useRef(changeMode);
+
+    useEffect(() => {
+        toggleTimerRef.current = toggleTimer;
+        resetTimerRef.current = resetTimer;
+        changeModeRef.current = changeMode;
+    });
+
+    const stableActions = useMemo(
+        () => ({
+            toggleTimer: () => toggleTimerRef.current(),
+            resetTimer: () => resetTimerRef.current(),
+            changeMode: (mode: PomodoroMode) => changeModeRef.current(mode),
+        }),
+        []
+    );
+
+    useEffect(() => {
+        publishPomodoroEngine(
+            {
+                mode: state.mode,
+                timeRemaining: state.timeRemaining,
+                duration: state.duration,
+                isRunning: state.isRunning,
+                completedSessions: state.completedSessions,
+            },
+            stableActions
+        );
+    }, [
+        publishPomodoroEngine,
+        state.mode,
+        state.timeRemaining,
+        state.duration,
+        state.isRunning,
+        state.completedSessions,
+        stableActions,
+    ]);
+
+    useEffect(() => {
+        return () => clearPomodoroEngine();
+    }, [clearPomodoroEngine]);
 
     /*
      * Open the custom duration editor.

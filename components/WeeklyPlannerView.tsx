@@ -22,18 +22,15 @@ import {classifyLabelType, courseAbbreviationDefault, dayCode} from "@/lib/taskL
 import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
 import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
 import {ProcrastinationHistory} from "@/types/procrastination";
-import PomodoroTimer from "./PomodoroTimer";
-import MusicPlayer from "./MusicPlayer";
 import Spinner from "./Spinner";
 import TaskStatusToggle from "./TaskStatusToggle";
 import AIReviewPanel from "./AIReviewPanel";
 import Taskbar from "./os/Taskbar";
+import { usePomodoroRemote } from "./os/PomodoroRemoteContext";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
-
-const FOCUS_TASK_STORAGE_KEY = "pomodoro_active_task_id";
 
 /*
  * Canvas-synced tasks carry a real createdAt. Manually/AI-added tasks don't
@@ -145,7 +142,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const [courses, setCourses] = useState<Course[]>([]);
     const [estimatingCount, setEstimatingCount] = useState(0);
     const [awardingXp, setAwardingXp] = useState(false);
-    const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
+    const { focusTaskId, setFocusTask, setFocusTaskSummary } = usePomodoroRemote();
     const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
     const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
     const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -153,8 +150,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         const domTheme = document.documentElement.dataset.theme;
         return domTheme === "light" ? "light" : "dark";
     });
-    const pomodoroSectionRef = useRef<HTMLDivElement>(null);
-    const musicSectionRef = useRef<HTMLDivElement>(null);
     const [activeWeekStart, setActiveWeekStart] = useState(() => {
         const start = new Date(weekStartDate);
         start.setHours(0, 0, 0, 0);
@@ -385,14 +380,34 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     }, [openTasks, taskPlanning, procrastinationIndexByType]);
 
     const activeFocusTask = useMemo(() => {
-        if (!activeFocusTaskId) return null;
+        if (!focusTaskId) return null;
 
-        const task = effectiveTasks.find((t) => t.id === activeFocusTaskId);
+        const task = effectiveTasks.find((t) => t.id === focusTaskId);
         if (!task || taskCustomizations[task.id]?.completed) return null;
 
         return { task, priority: computeTaskPriority(task) };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeFocusTaskId, effectiveTasks, taskCustomizations, taskPlanning, procrastinationIndexByType]);
+    }, [focusTaskId, effectiveTasks, taskCustomizations, taskPlanning, procrastinationIndexByType]);
+
+    // Publishes the rich focus-task summary into PomodoroRemoteContext
+    // whenever it changes — the context owns *which* task id is focused
+    // (setFocusTask/focusTaskId, above), but the rich {name,course,due,
+    // priorityReason} shape needs effectiveTasks/taskCustomizations/
+    // taskPlanning, which only exist here, so this stays a one-way publish
+    // rather than moving the whole computation into the context.
+    useEffect(() => {
+        setFocusTaskSummary(
+            activeFocusTask
+                ? {
+                      id: activeFocusTask.task.id,
+                      name: activeFocusTask.task.name,
+                      course: activeFocusTask.task.course,
+                      due: activeFocusTask.task.due,
+                      priorityReason: activeFocusTask.priority.reason,
+                  }
+                : null
+        );
+    }, [activeFocusTask, setFocusTaskSummary]);
 
     // Declared before any effect (several below reference it) rather than
     // near the other task handlers — a forward reference from inside a
@@ -440,21 +455,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     };
 
     useEffect(() => {
-        if (activeFocusTaskId && !activeFocusTask) {
-            setActiveFocusTaskId(null);
-            localStorage.removeItem(FOCUS_TASK_STORAGE_KEY);
+        if (focusTaskId && !activeFocusTask) {
+            setFocusTask(null);
         }
-    }, [activeFocusTaskId, activeFocusTask]);
-
-    const setFocusTask = (id: string | null) => {
-        setActiveFocusTaskId(id);
-
-        if (id) {
-            localStorage.setItem(FOCUS_TASK_STORAGE_KEY, id);
-        } else {
-            localStorage.removeItem(FOCUS_TASK_STORAGE_KEY);
-        }
-    };
+    }, [focusTaskId, activeFocusTask, setFocusTask]);
 
     const monthGridStart = new Date(activeMonthStart);
     monthGridStart.setDate(1 - activeMonthStart.getDay());
@@ -539,9 +543,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     }, []);
 
     useEffect(() => {
-        const savedFocusTaskId = localStorage.getItem(FOCUS_TASK_STORAGE_KEY);
-        setActiveFocusTaskId(savedFocusTaskId);
-
         // Resolve each Canvas-synced task's real due date/time from its
         // raw UTC instant using the browser's own local timezone (plain
         // Date getters, same as toDateKey below) rather than a guessed
@@ -949,8 +950,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         document.documentElement.dataset.theme = theme;
     }, [theme]);
 
-    const scrollToPomodoro = () => pomodoroSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    const scrollToMusic = () => musicSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
     useEffect(() => {
         // Wait for the persisted estimates to load first — otherwise every
@@ -1424,10 +1423,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                             <button
                                 type="button"
                                 onClick={() => setFocusTask(upNext.task.id)}
-                                disabled={activeFocusTaskId === upNext.task.id}
+                                disabled={focusTaskId === upNext.task.id}
                                 className="rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {activeFocusTaskId === upNext.task.id ? "🎯 Focused" : "🎯 Focus in Pomodoro"}
+                                {focusTaskId === upNext.task.id ? "🎯 Focused" : "🎯 Focus in Pomodoro"}
                             </button>
                             <button
                                 type="button"
@@ -1458,28 +1457,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                     void refetchCourses();
                 }}
             />
-
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-                <div ref={pomodoroSectionRef}>
-                    <PomodoroTimer
-                        focusTask={
-                            activeFocusTask
-                                ? {
-                                      id: activeFocusTask.task.id,
-                                      name: activeFocusTask.task.name,
-                                      course: activeFocusTask.task.course,
-                                      due: activeFocusTask.task.due,
-                                      priorityReason: activeFocusTask.priority.reason,
-                                  }
-                                : null
-                        }
-                        onClearFocusTask={() => setFocusTask(null)}
-                    />
-                </div>
-                <div ref={musicSectionRef}>
-                    <MusicPlayer />
-                </div>
-            </div>
 
             <EditTaskModal
                 task = {selectedTask}
@@ -1615,10 +1592,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                                         completedAt = {taskCustomization?.completedAt || null}
                                         isCompleting = {pulsingIds.has(task.id)}
                                         estimatedMinutes = {estimate?.estimatedMinutes}
-                                        isFocused={task.id === activeFocusTaskId}
+                                        isFocused={task.id === focusTaskId}
                                         onSetStatus = {(newStatus) => handleSetStatus(task, newStatus, estimate?.estimatedMinutes)}
                                         onDelete = {handleDelete}
-                                        onFocus={(id) => setFocusTask(id === activeFocusTaskId ? null : id)}
+                                        onFocus={(id) => setFocusTask(id === focusTaskId ? null : id)}
                                         onOpen={() => setSelectedTask(task)}
                                     />
                                 );
@@ -1754,8 +1731,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             currentStreak={townState.currentStreak}
             onAddTask={openAddTask}
             onOpenCourses={() => setIsCourseManagerOpen(true)}
-            onScrollToPomodoro={scrollToPomodoro}
-            onScrollToMusic={scrollToMusic}
             userName={userName}
             userEmail={userEmail}
         />

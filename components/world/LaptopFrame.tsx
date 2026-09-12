@@ -8,6 +8,11 @@ import { getTownState, saveOnboardingCompletion } from "@/lib/townState";
 import WorldView from "./WorldView";
 import MascotBubble from "./MascotBubble";
 import OnboardingOverlay from "./OnboardingOverlay";
+import { WindowManagerProvider } from "@/components/os/WindowManagerContext";
+import { PomodoroRemoteProvider } from "@/components/os/PomodoroRemoteContext";
+import { MusicRemoteProvider } from "@/components/os/MusicRemoteContext";
+import PomodoroWindow from "@/components/os/PomodoroWindow";
+import MusicWindow from "@/components/os/MusicWindow";
 
 type MascotContextValue = {
     say: (trigger: MascotTrigger) => void;
@@ -100,94 +105,118 @@ export default function LaptopFrame({ children, initialView, townState: initialT
         lidPhase === "closing" ? "laptop-lid--closing" : lidPhase === "opening" ? "laptop-lid--opening" : "";
 
     return (
-        <MascotContext.Provider value={{ say }}>
-            {/* perspective is only ever set while actually animating (never
-                persistently) — transform/perspective on an ancestor makes any
-                position:fixed descendant (every modal in this app) position
-                relative to that ancestor instead of the viewport, which would
-                break every modal if left on while idle. */}
-            <div
-                className="h-full w-full"
-                style={lidPhase !== "idle" ? { perspective: "1600px" } : undefined}
-            >
-                {/* The laptop "screen": fills the available page space edge to
-                    edge (its parent is sized by <main>'s h-screen in
-                    app/page.tsx) — no fixed aspect ratio or max-width, just
-                    enough chrome (rounded corners + border) to read as "a
-                    screen" without constraining the actual planning UI. Not
-                    content-driven height — each view below is an absolutely
-                    positioned, independently scrolling panel inside this fixed
-                    box, so long OS content scrolls in place instead of
-                    stretching the frame into a tall vertical strip. */}
-                <div
-                    className={`relative h-full w-full overflow-hidden rounded-[28px] border-[6px] shadow-2xl ${lidClassName}`}
-                    style={{ borderColor: "var(--border)", background: "var(--app-background)", transformOrigin: "bottom center" }}
-                >
-                    {/* Cosmetic "scuffed laptop" detail — a worn corner nick, purely
-                        decorative, never implies the real UI underneath is unreliable. */}
-                    <div
-                        className="pointer-events-none absolute -right-3 -top-3 z-30 h-10 w-10 rotate-45 border-b-2"
-                        style={{ borderColor: "var(--border)" }}
-                        aria-hidden="true"
-                    />
-
-                    {/* OS content is always mounted, even while World/onboarding is the
-                        active view — Pomodoro and the music player live inside
-                        `children`, and unmounting them on every "View Kingdom" toggle
-                        would restart playback and every one of WeeklyPlannerView's
-                        mount-effect fetches, exactly the "ambient tools buried behind a
-                        UI layer" problem projectReview.md flags. When inactive it's
-                        taken out of flow (absolute) and hidden with `invisible`
-                        (visibility:hidden) rather than unmounted or `display:none` —
-                        unlike display:none, visibility:hidden doesn't interrupt media
-                        playback in an iframe, and taking it out of flow means it no
-                        longer dictates the frame's height while some other view is
-                        the one actually being shown. */}
-                    <div
-                        className={
-                            view === "os"
-                                ? "absolute inset-0 overflow-y-auto"
-                                : "invisible absolute inset-0 overflow-hidden pointer-events-none"
-                        }
-                    >
-                        <button
-                            type="button"
-                            onClick={openWorld}
-                            className="absolute right-4 top-4 z-20 rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
-                            style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
-                        >
-                            🗺️ View Kingdom
-                        </button>
-                        {children}
-                        {view === "os" && <MascotBubble dialogue={dialogue} />}
-                        {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
-                        {/* Ambient "this is a display" texture — a faint CRT scanline
-                            overlay, OS-only (never shown over the pixel-art World).
-                            Kept very low-opacity so it's atmosphere, not a readability
-                            hit on the daily-use screen. */}
+        <WindowManagerProvider>
+            <PomodoroRemoteProvider>
+                <MusicRemoteProvider>
+                    <MascotContext.Provider value={{ say }}>
+                        {/* perspective is only ever set while actually animating (never
+                            persistently) — transform/perspective on an ancestor makes any
+                            position:fixed descendant (every modal in this app) position
+                            relative to that ancestor instead of the viewport, which would
+                            break every modal if left on while idle. */}
                         <div
-                            className="pointer-events-none absolute inset-0 z-40"
-                            style={{
-                                backgroundImage:
-                                    "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 3px)",
-                                mixBlendMode: "overlay",
-                            }}
-                            aria-hidden="true"
-                        />
-                    </div>
+                            className="h-full w-full"
+                            style={lidPhase !== "idle" ? { perspective: "1600px" } : undefined}
+                        >
+                            {/* The laptop "screen": fills the available page space edge to
+                                edge (its parent is sized by <main>'s h-screen in
+                                app/page.tsx) — no fixed aspect ratio or max-width, just
+                                enough chrome (rounded corners + border) to read as "a
+                                screen" without constraining the actual planning UI. Not
+                                content-driven height — each view below is an absolutely
+                                positioned, independently scrolling panel inside this fixed
+                                box, so long OS content scrolls in place instead of
+                                stretching the frame into a tall vertical strip. */}
+                            <div
+                                className={`relative h-full w-full overflow-hidden rounded-[28px] border-[6px] shadow-2xl ${lidClassName}`}
+                                style={{ borderColor: "var(--border)", background: "var(--app-background)", transformOrigin: "bottom center" }}
+                            >
+                                {/* Cosmetic "scuffed laptop" detail — a worn corner nick, purely
+                                    decorative, never implies the real UI underneath is unreliable. */}
+                                <div
+                                    className="pointer-events-none absolute -right-3 -top-3 z-30 h-10 w-10 rotate-45 border-b-2"
+                                    style={{ borderColor: "var(--border)" }}
+                                    aria-hidden="true"
+                                />
 
-                    {view === "onboarding" && (
-                        <div className="absolute inset-0 overflow-y-auto">
-                            <OnboardingOverlay phase="intro" onOpenLaptop={openLaptop} />
+                                {/* OS content (and the floating windows layer below) are
+                                    always mounted, even while World/onboarding is the active
+                                    view — unmounting on every "View Kingdom" toggle would
+                                    restart playback/timers and every one of
+                                    WeeklyPlannerView's mount-effect fetches, exactly the
+                                    "ambient tools buried behind a UI layer" problem
+                                    projectReview.md flags. When inactive this whole wrapper is
+                                    hidden with `invisible` (visibility:hidden) rather than
+                                    unmounted or `display:none` — unlike display:none,
+                                    visibility:hidden doesn't interrupt media playback in an
+                                    iframe, and it no longer dictates the frame's height while
+                                    some other view is the one actually being shown. */}
+                                <div
+                                    className={
+                                        view === "os"
+                                            ? "absolute inset-0"
+                                            : "invisible absolute inset-0 overflow-hidden pointer-events-none"
+                                    }
+                                >
+                                    <div className="absolute inset-0 overflow-y-auto">
+                                        <button
+                                            type="button"
+                                            onClick={openWorld}
+                                            className="absolute right-4 top-4 z-20 rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
+                                            style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--heading)" }}
+                                        >
+                                            🗺️ View Kingdom
+                                        </button>
+                                        {children}
+                                        {view === "os" && <MascotBubble dialogue={dialogue} />}
+                                        {showTour && <OnboardingOverlay phase="tour" onComplete={completeOnboarding} />}
+                                        {/* Ambient "this is a display" texture — a faint CRT scanline
+                                            overlay, OS-only (never shown over the pixel-art World).
+                                            Kept very low-opacity so it's atmosphere, not a readability
+                                            hit on the daily-use screen. */}
+                                        <div
+                                            className="pointer-events-none absolute inset-0 z-40"
+                                            style={{
+                                                backgroundImage:
+                                                    "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 3px)",
+                                                mixBlendMode: "overlay",
+                                            }}
+                                            aria-hidden="true"
+                                        />
+                                    </div>
+
+                                    {/* Floating windows layer: NOT part of the scrolling
+                                        content above, so dragged windows stay fixed on screen
+                                        regardless of scroll position — a sibling `absolute
+                                        inset-0`, itself pointer-events-none so clicks pass
+                                        through to the content beneath in areas with no window
+                                        (each Window opts back in with pointer-events-auto).
+                                        Music must keep playing while minimized or while the
+                                        World is showing, so it's rendered unconditionally here
+                                        and only ever unmounted by its own Close button (via
+                                        WindowManagerContext's isOpen), never by this view
+                                        toggle. */}
+                                    <div className="pointer-events-none absolute inset-0 z-30">
+                                        <PomodoroWindow />
+                                        <MusicWindow />
+                                    </div>
+                                </div>
+
+                                {view === "onboarding" && (
+                                    <div className="absolute inset-0 overflow-y-auto">
+                                        <OnboardingOverlay phase="intro" onOpenLaptop={openLaptop} />
+                                    </div>
+                                )}
+                                {view === "world" && (
+                                    <div className="absolute inset-0 overflow-y-auto">
+                                        <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    )}
-                    {view === "world" && (
-                        <div className="absolute inset-0 overflow-y-auto">
-                            <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />
-                        </div>
-                    )}
-                </div>
-            </div>
-        </MascotContext.Provider>
+                    </MascotContext.Provider>
+                </MusicRemoteProvider>
+            </PomodoroRemoteProvider>
+        </WindowManagerProvider>
     );
 }

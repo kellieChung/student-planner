@@ -1,10 +1,13 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { BuildingKey, TownState } from "@/types/townState";
+import { useWindowManager } from "@/components/os/WindowManagerContext";
 import Building from "./Building";
 import Mascot from "./Mascot";
 import PixelBlock from "./PixelBlock";
+import HourglassPanel from "./HourglassPanel";
+import BardPanel from "./BardPanel";
 
 type Props = {
     townState: TownState;
@@ -28,8 +31,6 @@ const BUILDING_LAYOUT: Array<{
 ];
 
 const DECORATIONS: Array<{ top: string; left: string; emoji: string }> = [
-    { top: "45%", left: "6%", emoji: "🌳" },
-    { top: "45%", left: "94%", emoji: "🌳" },
     { top: "10%", left: "50%", emoji: "🌲" },
     { top: "24%", left: "50%", emoji: "🪵" },
     { top: "84%", left: "50%", emoji: "🪧" },
@@ -54,6 +55,19 @@ const GROUND_STYLE: CSSProperties = {
 };
 
 export default function TownMap({ townState, onOpenLaptop, dialogue }: Props) {
+    const { openWindow } = useWindowManager();
+    const [openPanel, setOpenPanel] = useState<"hourglass" | "bard" | null>(null);
+
+    const openHourglass = () => {
+        openWindow("pomodoro");
+        setOpenPanel("hourglass");
+    };
+
+    const openBard = () => {
+        openWindow("music");
+        setOpenPanel("bard");
+    };
+
     return (
         <div className="relative h-full min-h-[320px] w-full overflow-hidden" style={GROUND_STYLE}>
             {DECORATIONS.map((decoration, index) => (
@@ -83,6 +97,41 @@ export default function TownMap({ townState, onOpenLaptop, dialogue }: Props) {
                 <Mascot dialogue={dialogue} />
             </div>
 
+            {/* The hourglass and the bard: in-world equivalents of the OS
+                Pomodoro/Music windows, reskinned per the spec's Reskinned
+                Tools table ("Ancient time magic" / "Bard's enchanted
+                lute") — same live state and controls, just Kingdom-themed,
+                so the laptop never has to open just for these two. */}
+            <button
+                type="button"
+                onClick={openHourglass}
+                className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 transition-transform hover:scale-105"
+                style={{ top: "45%", left: "8%" }}
+            >
+                <PixelBlock size="md" emoji="⏳" tone="accent" />
+                <span
+                    className="text-[10px] font-bold"
+                    style={{ color: "var(--heading)", textShadow: "0 1px 3px rgba(0,0,0,0.85)" }}
+                >
+                    The Hourglass
+                </span>
+            </button>
+
+            <button
+                type="button"
+                onClick={openBard}
+                className="absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1 transition-transform hover:scale-105"
+                style={{ top: "45%", left: "92%" }}
+            >
+                <PixelBlock size="md" emoji="🎻" tone="accent" />
+                <span
+                    className="text-[10px] font-bold"
+                    style={{ color: "var(--heading)", textShadow: "0 1px 3px rgba(0,0,0,0.85)" }}
+                >
+                    The Bard
+                </span>
+            </button>
+
             <button
                 type="button"
                 onClick={onOpenLaptop}
@@ -97,6 +146,19 @@ export default function TownMap({ townState, onOpenLaptop, dialogue }: Props) {
                     Open the Laptop
                 </span>
             </button>
+
+            {openPanel && (
+                <div
+                    className="absolute -translate-x-1/2 -translate-y-1/2"
+                    style={{ top: "55%", left: "50%", zIndex: 20 }}
+                >
+                    {openPanel === "hourglass" ? (
+                        <HourglassPanel onClose={() => setOpenPanel(null)} />
+                    ) : (
+                        <BardPanel onClose={() => setOpenPanel(null)} />
+                    )}
+                </div>
+            )}
         </div>
     );
 }

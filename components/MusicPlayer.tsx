@@ -3,10 +3,12 @@
 import {
     FormEvent,
     useEffect,
+    useMemo,
     useRef,
     useState,
 } from "react";
 import Spinner from "@/components/Spinner";
+import { useMusicRemote } from "@/components/os/MusicRemoteContext";
 
 type MusicTrack = {
     id: string;
@@ -1683,6 +1685,70 @@ export default function MusicPlayer() {
 
         setShuffle((current) => !current);
     }
+
+    // Publishes this instance's live state/actions into MusicRemoteContext
+    // so the OS taskbar and the World's BardPanel can render/control the
+    // exact same player. Refs (rather than putting togglePlay/playNext/
+    // playPrevious/cycleLoopMode/toggleShuffle directly in the effect's
+    // deps) keep the published action wrappers permanently stable — those
+    // functions are recreated every render, so using them as deps directly
+    // would re-fire this effect (and the context's setState) on every
+    // render, including ones this effect itself causes via the Provider
+    // re-rendering its subtree. setVolume is a useState setter, already
+    // stable, so it's used directly.
+    const { publishEngine: publishMusicEngine, clearEngine: clearMusicEngine } = useMusicRemote();
+    const togglePlayRef = useRef(togglePlay);
+    const playNextRef = useRef(playNext);
+    const playPreviousRef = useRef(playPrevious);
+    const cycleLoopModeRef = useRef(cycleLoopMode);
+    const toggleShuffleRef = useRef(toggleShuffle);
+
+    useEffect(() => {
+        togglePlayRef.current = togglePlay;
+        playNextRef.current = playNext;
+        playPreviousRef.current = playPrevious;
+        cycleLoopModeRef.current = cycleLoopMode;
+        toggleShuffleRef.current = toggleShuffle;
+    });
+
+    const stableActions = useMemo(
+        () => ({
+            togglePlay: () => togglePlayRef.current(),
+            playNext: () => playNextRef.current(),
+            playPrevious: () => playPreviousRef.current(),
+            cycleLoopMode: () => cycleLoopModeRef.current(),
+            toggleShuffle: () => toggleShuffleRef.current(),
+            setVolume,
+        }),
+        [setVolume]
+    );
+
+    useEffect(() => {
+        publishMusicEngine(
+            {
+                trackTitle: currentTrack?.title ?? null,
+                playlistName: selectedPlaylist?.name ?? null,
+                isPlaying,
+                volume,
+                loopMode,
+                shuffle,
+            },
+            stableActions
+        );
+    }, [
+        publishMusicEngine,
+        currentTrack?.title,
+        selectedPlaylist?.name,
+        isPlaying,
+        volume,
+        loopMode,
+        shuffle,
+        stableActions,
+    ]);
+
+    useEffect(() => {
+        return () => clearMusicEngine();
+    }, [clearMusicEngine]);
 
     /*
      * Seek.

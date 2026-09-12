@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Spinner from "@/components/Spinner";
 import UserMenu from "@/components/UserMenu";
 import { XpAward } from "@/types/gamification";
+import { useWindowManager } from "./WindowManagerContext";
 
 type Props = {
     theme: "dark" | "light";
@@ -17,8 +18,6 @@ type Props = {
     currentStreak: number;
     onAddTask: () => void;
     onOpenCourses: () => void;
-    onScrollToPomodoro: () => void;
-    onScrollToMusic: () => void;
     userName?: string | null;
     userEmail?: string | null;
 };
@@ -55,14 +54,13 @@ export default function Taskbar({
     currentStreak,
     onAddTask,
     onOpenCourses,
-    onScrollToPomodoro,
-    onScrollToMusic,
     userName,
     userEmail,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRootRef = useRef<HTMLDivElement>(null);
     const clock = useClock();
+    const { windows, openWindow } = useWindowManager();
 
     useEffect(() => {
         if (!isSettingsOpen) return;
@@ -99,8 +97,18 @@ export default function Taskbar({
             <div className="flex shrink-0 items-center gap-1">
                 <TaskbarIconButton label="Add Task" emoji="➕" onClick={onAddTask} />
                 <TaskbarIconButton label="Courses" emoji="📚" onClick={onOpenCourses} />
-                <TaskbarIconButton label="Focus" emoji="⏳" onClick={onScrollToPomodoro} />
-                <TaskbarIconButton label="Radio" emoji="🎶" onClick={onScrollToMusic} />
+                <TaskbarIconButton
+                    label="Focus"
+                    emoji="⏳"
+                    onClick={() => openWindow("pomodoro")}
+                    running={windows.pomodoro.isOpen}
+                />
+                <TaskbarIconButton
+                    label="Radio"
+                    emoji="🎶"
+                    onClick={() => openWindow("music")}
+                    running={windows.music.isOpen}
+                />
             </div>
 
             {/* System tray */}
@@ -187,18 +195,35 @@ export default function Taskbar({
     );
 }
 
-function TaskbarIconButton({ label, emoji, onClick }: { label: string; emoji: string; onClick: () => void }) {
+function TaskbarIconButton({
+    label,
+    emoji,
+    onClick,
+    running,
+}: {
+    label: string;
+    emoji: string;
+    onClick: () => void;
+    running?: boolean;
+}) {
     return (
         <button
             type="button"
             onClick={onClick}
-            aria-label={label}
-            title={label}
-            className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
+            aria-label={running ? `${label} (running)` : label}
+            title={running ? `${label} (running)` : label}
+            className="relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
             style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
         >
             <span aria-hidden="true">{emoji}</span>
             <span className="hidden md:inline">{label}</span>
+            {running && (
+                <span
+                    className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full"
+                    style={{ background: "var(--accent)" }}
+                    aria-hidden="true"
+                />
+            )}
         </button>
     );
 }

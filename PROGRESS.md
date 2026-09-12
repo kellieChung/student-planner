@@ -1118,6 +1118,150 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Session log
 
+### 2026-09-11 (iteration 4) — Pomodoro/Music as real draggable OS windows + World equivalents
+
+User asked for Pomodoro/Music to become real draggable/minimizable/
+closable OS windows (closed by default, launched from the taskbar,
+position/state persisted per-device) instead of scrolling to a fixed
+embedded spot — with minimize keeping them running but close actually
+stopping them — plus themed World equivalents (**the Hourglass**,
+**the Bard**) as full-featured replicas of the same live state, "so it
+keeps the theming while keeping it convenient." Went through Plan Mode
+after an Explore pass confirmed `PomodoroTimer.tsx` (no refs, no DOM-id
+dependency, `endTime`-timestamp-based persistence — survives unmount/
+remount for free) and `MusicPlayer.tsx` (YT player already destroyed/
+recreated on every track change, anchored to a hardcoded `#youtube-player`
+container) could both keep their internals fully intact, needing only one
+small additive effect each to publish live state/actions into a new
+context.
+
+- **New `components/os/WindowManagerContext.tsx`**: generic, app-agnostic
+  window-chrome state (`isOpen`/`isMinimized`/`position`/`zIndex`) for
+  `"pomodoro"|"music"`, persisted to `os_window_manager` (same load-then-
+  persist hydration pattern as every other per-device key in this app).
+  `openWindow` always clears `isMinimized` too, so the taskbar's Focus/
+  Radio icons can call it unconditionally for both "not yet open" and
+  "minimized" cases without branching.
+- **New `components/os/PomodoroRemoteContext.tsx`** — owns `focusTaskId`+
+  `setFocusTask` directly now (lifted out of `WeeklyPlannerView.tsx`,
+  including its own `pomodoro_active_task_id` persistence, unchanged key)
+  plus a publish channel (`engineState`/`engineActions`) for wherever the
+  real `PomodoroTimer` is currently mounted. **New
+  `components/os/MusicRemoteContext.tsx`** — same publish-channel shape for
+  Music, deliberately scoped to only the plain-data playback actions
+  (`togglePlay`/`playNext`/`playPrevious`/`cycleLoopMode`/`toggleShuffle`/
+  raw `setVolume`) — playlist create/import/add-track all read from
+  `MusicPlayer.tsx`'s own internal form-field state rather than taking
+  parameters, so they're not cleanly remote-controllable without a deeper
+  rewrite; left laptop-only on purpose.
+- **`PomodoroTimer.tsx`/`MusicPlayer.tsx` each got exactly one additive
+  block** (no other internal changes): a publish effect pushing live state
+  into the new context, and a stable-action-wrapper pattern so the
+  published actions don't churn every render. **Two real bugs caught by
+  the linter and fixed before this ever hit the browser**: (1) mirroring
+  the latest callback into a ref (`fooRef.current = foo`) was done directly
+  in the render body — flagged as "Cannot access refs during render";
+  fixed by moving those assignments into a plain `useEffect(() => {...})`
+  with no dependency array (runs after every render, exactly matching
+  "always keep the ref current"). (2) The publish effects depended on
+  `remote.publishEngine`/`musicRemote.clearEngine` (member expressions on
+  the context's return value) — eslint's exhaustive-deps flagged a missing
+  `remote`/`musicRemote` dependency; fixed by destructuring
+  `publishEngine`/`clearEngine` into their own local names at the call
+  site instead of accessing them off a shared object, which also happens
+  to be clearer.
+- **New `components/os/Window.tsx`**: generic draggable chrome (pointer-
+  event-based drag, no `useCallback` cross-referencing — each drag builds
+  its own local move/up handler pair, which a first attempt got wrong,
+  see below). **Real bug caught by the linter**: the first version defined
+  `stopDragging` via `useCallback` and referenced `stopDragging` inside its
+  own body to remove its own listener — flagged as "accessed before it is
+  declared." Rewritten so each `startDragging` call builds its own
+  self-contained closures (no cross-render stable-callback juggling
+  needed, since each drag is independent), with a ref tracking whichever
+  pair is currently active so an unmount mid-drag can still clean up.
+  `components/os/PomodoroWindow.tsx`/`MusicWindow.tsx` wrap the real
+  `PomodoroTimer`/`MusicPlayer` in this chrome — `MusicWindow` must stay
+  mounted whenever `isOpen` regardless of current view or minimized state
+  (the same "invisible, not display:none" trick already used for the
+  World/OS toggle), `PomodoroWindow` can mount/unmount freely since its
+  correctness survives that (per the Explore finding above).
+- **`LaptopFrame.tsx`** now nests `WindowManagerProvider`/
+  `PomodoroRemoteProvider`/`MusicRemoteProvider` around everything (same
+  level as the existing `MascotContext`), and the OS layer gained a new
+  non-scrolling "windows layer" sibling to the scrollable content — windows
+  need to stay visually fixed on screen regardless of scroll position and
+  clipped to the laptop's rounded bezel, which ruled out both nesting them
+  in the scrolling container (they'd scroll away) and `position: fixed`
+  (would escape the bezel's clipping, the same class of issue already
+  fixed for `MascotBubble` last session).
+- **A real behavior gap caught live, not just by lint/types**: closing the
+  Pomodoro window visually removed it but left `pomodoro_state` in
+  localStorage still `isRunning: true` — the countdown kept silently
+  ticking toward its `endTime` in the background, inconsistent with "close
+  actually stops it" (unlike Music, where unmounting the player already
+  stops audio for free). Root cause: calling `engineActions.toggleTimer()`
+  (a `setState` inside `PomodoroTimer`) immediately before `closeWindow`
+  batches both into the same React update — the component unmounts before
+  its own persist effect ever gets to observe and write the paused state,
+  and React drops pending updates for a component unmounted in the same
+  commit. Fixed by exporting `PomodoroTimer.tsx`'s `STORAGE_KEY` and having
+  `PomodoroWindow.tsx`'s new `onBeforeClose` (a new optional `Window.tsx`
+  prop) write the paused snapshot directly to localStorage, bypassing the
+  component's React lifecycle entirely so it's guaranteed to land before
+  the unmount. Re-verified live after the fix: start → close →
+  `pomodoro_state` immediately shows `isRunning: false, endTime: null`.
+- **World equivalents**: `components/world/HourglassPanel.tsx`/
+  `BardPanel.tsx` are pure presentational consumers of the same two
+  contexts (no engine of their own) — mode tabs/countdown/start-pause-reset
+  plus the focused-task display for the Hourglass; track/playlist name,
+  play/pause/skip/shuffle/repeat/volume for the Bard (deliberately no
+  seek/progress bar — out of scope per the user's own answer when asked
+  how much World control to build). `TownMap.tsx` gained two new sprites
+  ("The Hourglass," "The Bard") that call `openWindow` (ensuring the real
+  engine is mounted even if the user never visited the OS window first)
+  and toggle a local popover.
+- **`WeeklyPlannerView.tsx`**: removed the embedded `<PomodoroTimer/>`/
+  `<MusicPlayer/>` render, the scroll-target refs, and `scrollToPomodoro`/
+  `scrollToMusic` — all superseded. `activeFocusTaskId` local state
+  replaced by reading/writing `PomodoroRemoteContext` at the two existing
+  call sites (the up-next callout, `AssignmentCard`'s 🎯 toggle);
+  the rich focus-task summary computation (`activeFocusTask` memo) stays
+  exactly where it is (needs `effectiveTasks`/`taskCustomizations`/
+  `taskPlanning`, only available here) and now publishes outward via one
+  new effect instead of flowing down as a prop. `components/os/Taskbar.tsx`
+  now consumes `WindowManagerContext` directly for its Focus/Radio icons
+  (dropping the `onScrollToPomodoro`/`onScrollToMusic` props entirely) and
+  shows a small green "running" dot on either icon while that app `isOpen`.
+- Verified: `npx tsc --noEmit` clean, `npm run lint` at **18** problems
+  (same established `set-state-in-effect` hydration-load category as
+  every other localStorage-backed load effect in this codebase — not a new
+  problem class), `npm run build` clean. **Live-verified end-to-end** via
+  the Chrome extension: started the Pomodoro timer, minimized it, confirmed
+  `pomodoro_state` in localStorage showed `isRunning: true` with a real
+  `endTime` (genuinely still counting, not just visually hidden); restored
+  it from the taskbar and watched it show correctly-elapsed time; started
+  Music playback, tagged the live `<iframe id="youtube-player">` with a
+  marker, minimized the window, switched to the World view, and confirmed
+  via `document.querySelector` that it was still the *same* DOM node the
+  whole time (audio uninterrupted); opened the Bard panel from the World
+  and confirmed it showed the same track/playlist as the OS window, and
+  that a control clicked there (next track) was reflected back in the OS
+  window on return; closed the Music window and confirmed the iframe was
+  completely gone (`document.querySelector` returned null) — a genuine
+  stop, not a mute. **One live-testing wrinkle, not a bug**: the Pomodoro
+  window was found already open (and dragged) with real XP/currency higher
+  than this session's own prior baseline when testing began — consistent
+  with the real user independently exercising the dev server in their own
+  browser window concurrently (same origin, same localStorage) rather than
+  anything introduced by this work; confirmed by observing `pomodoro_state`
+  continue ticking down from a *fixed, unfamiliar* `endTime` after this
+  session's own tab had already closed the window — a live, separate
+  writer, not this session's code. Not something in scope to fix (cross-
+  tab localStorage races are a pre-existing, already-documented
+  characteristic of this app, e.g. the two-browser custom-tasks bug fixed
+  in an earlier session).
+
 ### 2026-09-11 (iteration 3) — OS taskbar, absorbed header, ambient scanline texture
 
 User asked to add real "OS vibe" to the laptop interior. Clarified via
