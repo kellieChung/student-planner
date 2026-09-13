@@ -2,7 +2,7 @@
 
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useRouter} from "next/navigation";
-import {CARD_HEIGHT_PX, calculateGridSpan, getStartOfWeek, getTodayString, packColumnOffsets, parseLocalDate} from "@/lib/utils";
+import {CARD_HEIGHT_PX, calculateGridSpan, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import AssignmentCard from "./AssignmentCard";
@@ -129,6 +129,10 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
     const [taskCustomizations, setTaskCustomizations] = useState<Record<string, TaskCustomizationState>>({});
+    // Refreshed on a timer (not just at mount) so a custom start date that
+    // passes while the tab stays open flips back to auto live, without a
+    // reload — see hasCustomStartDatePassed's call sites below.
+    const [todayKey, setTodayKey] = useState(getTodayString());
     // Task ids currently playing the green completion pulse (app/globals.css's
     // task-complete-pulse) — purely a visual flash, cleared ~550ms after it's
     // triggered. Completing a task never moves it (see sortedTasks below), so
@@ -264,12 +268,19 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     // (completed) cards sharing a row with a tall (active) bar elsewhere.
     // Packing by independent per-column pixel cursors avoids that
     // cross-column coupling — see lib/utils.ts's packColumnOffsets comment.
+    //
+    // An expired custom start date is treated as unset here (not cleared in
+    // the DB — see hasCustomStartDatePassed) so a stale override can't keep
+    // stretching a bar further into the past every day it goes un-edited.
+    const resolveStartAt = (startAt: string) =>
+        startAt && hasCustomStartDatePassed(startAt, todayKey) ? "" : startAt;
+
     const weekTaskLayouts = tasksForActiveWeek.map((task) => ({
         task,
         span: calculateGridSpan(
             {
                 dueDate: task.due,
-                startDate: taskCustomizations[task.id]?.startAt || taskCustomizations[task.id]?.completedAt || undefined,
+                startDate: resolveStartAt(taskCustomizations[task.id]?.startAt ?? "") || taskCustomizations[task.id]?.completedAt || undefined,
                 dueFraction: task.dueFraction,
             },
             activeWeekStart
@@ -459,6 +470,22 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             setFocusTask(null);
         }
     }, [focusTaskId, activeFocusTask, setFocusTask]);
+
+    // Cheap string comparison, not a write — deliberately never persists an
+    // expired custom start date (see the plan's "derive at read time"
+    // decision): a periodic PATCH from an idle tab would clobber whatever
+    // an unrelated tab just changed on the same TaskCustomization row,
+    // since persistCustomization replaces the whole row from a snapshot.
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setTodayKey((prev) => {
+                const current = getTodayString();
+                return current === prev ? prev : current;
+            });
+        }, 60_000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     const monthGridStart = new Date(activeMonthStart);
     monthGridStart.setDate(1 - activeMonthStart.getDay());
@@ -1465,7 +1492,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             <EditTaskModal
                 task = {selectedTask}
                 isOpen = {selectedTask !== null}
-                startDate = {taskCustomizations[selectedTask?.id ?? ""]?.startAt ?? ""}
+                startDate = {resolveStartAt(taskCustomizations[selectedTask?.id ?? ""]?.startAt ?? "")}
                 notes = {taskCustomizations[selectedTask?.id ?? ""]?.notes ?? ""}
                 status = {getTaskStatus(
                     taskCustomizations[selectedTask?.id ?? ""]?.completed ?? false,

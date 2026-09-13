@@ -108,6 +108,26 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   cards render shrunk (`min-h-[24px]`) and dimmed (`opacity-55`).
 
 **Task customization / persistence**
+- A custom start date (`TaskCustomization.startAt`) auto-reverts to "auto"
+  (start = today) once it's in the past — the first *time-based* revert in
+  the app; every other override's "back to auto" (the field's own Auto
+  button, course color's Reset) is manual/user-initiated.
+  `hasCustomStartDatePassed(startAt, today)` (`lib/utils.ts`) is a pure
+  predicate; it's applied at **read time only** (`WeeklyPlannerView.tsx`'s
+  `resolveStartAt`, used by `weekTaskLayouts` and the `EditTaskModal`
+  `startDate` prop) — deliberately never persisted/cleared via a periodic
+  PATCH. An earlier draft did clear it via a `setInterval` + `persistCustomization`
+  call; an advisor review caught that this repeats the exact "stale
+  full-row PATCH from an in-memory snapshot" bug class already fixed twice
+  elsewhere (gamification PATCH races, this section's whole-row-replace
+  warning above) — an idle second tab's timer would silently clobber
+  whatever a different tab just changed on the same row. The DB value is
+  left untouched (a harmless historical fact); a `todayKey` state +
+  60s-interval effect just forces a re-render on an actual day rollover so
+  an open tab reflects it live, with no network call. If the user later
+  edits and saves that task through the modal, `handleSaveTask`'s existing
+  diffing (comparing the modal's resolved `""` against the raw stored
+  value) incidentally persists the clear too — a bonus, not depended on.
 - All planner state is DB-backed per `(userId, taskId)` via
   `TaskCustomization`/`CustomTask`/`TaskPlanningEstimate`/
   `ProcrastinationRecord` — not one per-user JSON blob — so two
@@ -236,6 +256,10 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- Expired-custom-start-date auto-revert: the completed-task interaction
+  (falls back to `completedAt` instead of today) and the live
+  60s-interval day-rollover path are unverified live (code-reading only —
+  see 2026-09-13 session log).
 - Gamification: currency spend/shop UI, cosmetics, and calendar-based
   milestone gating are deliberately deferred. `announcementFound` mascot
   trigger has never fired against a real batch. Kingdom-stage (Town/City/
@@ -288,6 +312,29 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   shrink with the window's own resize. Low-priority polish.
 
 ## Session log
+
+### 2026-09-13 — auto-revert an expired custom start date
+
+User asked for a custom start date to turn back into "auto" once it's
+passed, including live while the tab stays open. Initial design (a
+periodic PATCH clearing the field) was caught by an advisor review as a
+repeat of the whole-row-replace stale-PATCH race already documented twice
+in Architecture Decisions — redesigned to a pure read-time derivation
+instead (full rationale in the new "Task customization / persistence"
+entry above). No schema/API changes.
+
+Verified: tsc clean, lint unchanged (19-problem baseline, confirmed via
+`git stash -u` diff), build clean. Live-verified in Chrome against the
+real account: backdated a real task's custom start date via
+`EditTaskModal`, saved, confirmed the DB value survives untouched but the
+modal now displays "Auto" and the grid bar no longer starts from the
+stale date; confirmed via the Network tab that reopening/viewing the
+modal fires no PATCH (purely derived); cleaned up by resetting that task
+back to Auto afterward. **Not separately live-tested**: the completed-task
+interaction (an expired start on a completed task falls back to
+`completedAt` instead of today) and the live 60s-interval day-rollover
+path itself (not practical to wait for a real midnight) — both verified
+by code reading only.
 
 ### 2026-09-11/12 (iteration 6) — fix resize (real clipping bug), reorder Music player layout
 

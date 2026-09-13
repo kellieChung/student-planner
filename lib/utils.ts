@@ -242,6 +242,16 @@ export function parseLocalDate(dateString: string): Date {
     return new Date(year, month - 1, day);
 }
 
+// A custom start-date override only makes sense going forward — once it's
+// in the past the task should behave exactly as if no override were set
+// (auto = today), not keep "starting" further in the past every day it
+// goes un-edited. `today` is passed in (not read internally) so every call
+// site in the same render agrees on "now," including across a live
+// day-rollover.
+export function hasCustomStartDatePassed(startAt: string, today: string): boolean {
+    return parseLocalDate(startAt) < parseLocalDate(today);
+}
+
 // Whole-calendar-day difference (a - b), immune to the 23/25-hour days a
 // naive `(a.getTime() - b.getTime()) / MS_PER_DAY` produces across a DST
 // transition — this diffs Y/M/D components via UTC instead of raw local
