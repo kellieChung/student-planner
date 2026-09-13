@@ -13,7 +13,7 @@ import Window from "./Window";
 // the OS/World toggle elsewhere in this app.
 export default function MusicWindow() {
     return (
-        <Window app="music" title="Tavern Radio" icon="🎶" width={420}>
+        <Window app="music" title="Tavern Radio" icon="🎶">
             <MusicPlayer />
         </Window>
     );

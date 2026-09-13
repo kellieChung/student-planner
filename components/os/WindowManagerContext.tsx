@@ -2,12 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-export type WindowAppId = "pomodoro" | "music";
+export type WindowAppId = "pomodoro" | "music" | "courses";
 
 export type WindowMeta = {
     isOpen: boolean;
     isMinimized: boolean;
     position: { x: number; y: number };
+    size: { width: number; height: number };
     zIndex: number;
 };
 
@@ -20,20 +21,41 @@ type WindowManagerContextValue = {
     minimizeWindow: (app: WindowAppId) => void;
     restoreWindow: (app: WindowAppId) => void;
     moveWindow: (app: WindowAppId, position: { x: number; y: number }) => void;
+    resizeWindow: (app: WindowAppId, size: { width: number; height: number }) => void;
     focusWindow: (app: WindowAppId) => void;
 };
 
+const MIN_WINDOW_WIDTH = 280;
+const MIN_WINDOW_HEIGHT = 200;
+
 const DEFAULT_POSITIONS: Record<WindowAppId, { x: number; y: number }> = {
     pomodoro: { x: 24, y: 24 },
-    music: { x: 420, y: 24 },
+    music: { x: 24, y: 24 },
+    courses: { x: 480, y: 60 },
+};
+
+const DEFAULT_SIZES: Record<WindowAppId, { width: number; height: number }> = {
+    pomodoro: { width: 340, height: 480 },
+    music: { width: 800, height: 520 },
+    courses: { width: 440, height: 520 },
 };
 
 function defaultWindowMeta(app: WindowAppId): WindowMeta {
-    return { isOpen: false, isMinimized: false, position: DEFAULT_POSITIONS[app], zIndex: 0 };
+    return {
+        isOpen: false,
+        isMinimized: false,
+        position: DEFAULT_POSITIONS[app],
+        size: DEFAULT_SIZES[app],
+        zIndex: 0,
+    };
 }
 
 function defaultState(): WindowManagerState {
-    return { pomodoro: defaultWindowMeta("pomodoro"), music: defaultWindowMeta("music") };
+    return {
+        pomodoro: defaultWindowMeta("pomodoro"),
+        music: defaultWindowMeta("music"),
+        courses: defaultWindowMeta("courses"),
+    };
 }
 
 const STORAGE_KEY = "os_window_manager";
@@ -63,8 +85,13 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
                 setWindows((current) => ({
                     pomodoro: { ...current.pomodoro, ...parsed.pomodoro },
                     music: { ...current.music, ...parsed.music },
+                    courses: { ...current.courses, ...parsed.courses },
                 }));
-                const maxZ = Math.max(parsed.pomodoro?.zIndex ?? 0, parsed.music?.zIndex ?? 0);
+                const maxZ = Math.max(
+                    parsed.pomodoro?.zIndex ?? 0,
+                    parsed.music?.zIndex ?? 0,
+                    parsed.courses?.zIndex ?? 0
+                );
                 setNextZIndex(maxZ + 1);
             }
         } catch {
@@ -137,9 +164,31 @@ export function WindowManagerProvider({ children }: { children: ReactNode }) {
         }));
     }, []);
 
+    const resizeWindow = useCallback((app: WindowAppId, size: { width: number; height: number }) => {
+        setWindows((current) => ({
+            ...current,
+            [app]: {
+                ...current[app],
+                size: {
+                    width: Math.max(MIN_WINDOW_WIDTH, size.width),
+                    height: Math.max(MIN_WINDOW_HEIGHT, size.height),
+                },
+            },
+        }));
+    }, []);
+
     const value = useMemo<WindowManagerContextValue>(
-        () => ({ windows, openWindow, closeWindow, minimizeWindow, restoreWindow, moveWindow, focusWindow }),
-        [windows, openWindow, closeWindow, minimizeWindow, restoreWindow, moveWindow, focusWindow]
+        () => ({
+            windows,
+            openWindow,
+            closeWindow,
+            minimizeWindow,
+            restoreWindow,
+            moveWindow,
+            resizeWindow,
+            focusWindow,
+        }),
+        [windows, openWindow, closeWindow, minimizeWindow, restoreWindow, moveWindow, resizeWindow, focusWindow]
     );
 
     return <WindowManagerContext.Provider value={value}>{children}</WindowManagerContext.Provider>;

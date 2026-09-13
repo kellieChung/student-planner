@@ -1856,54 +1856,14 @@ export default function MusicPlayer() {
                 </div>
             )}
 
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <h1 className="text-lg font-bold">
-                        🎶 Tavern Radio
-                    </h1>
+            <div>
+                <h1 className="text-lg font-bold">
+                    🎶 Tavern Radio
+                </h1>
 
-                    <p className="text-xs text-gray-500">
-                        The bard&apos;s enchanted lute — songs collected from traveling minstrels.
-                    </p>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5">
-                    <button
-                        type="button"
-                        onClick={() =>
-                            setShowImport(true)
-                        }
-                        className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white"
-                    >
-                        Import Playlist
-                    </button>
-
-                    <button
-                        type="button"
-                        onClick={() =>
-                            setShowCreatePlaylist(
-                                true
-                            )
-                        }
-                        className="rounded-lg border px-3 py-1.5 text-xs font-medium"
-                    >
-                        New Playlist
-                    </button>
-
-                    {selectedPlaylist && (
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setShowAddTrack(
-                                    true
-                                )
-                            }
-                            className="rounded-lg border px-3 py-1.5 text-xs font-medium"
-                        >
-                            Add Track
-                        </button>
-                    )}
-                </div>
+                <p className="text-xs text-gray-500">
+                    The bard&apos;s enchanted lute — songs collected from traveling minstrels.
+                </p>
             </div>
 
             {playlists.length === 0 ? (
@@ -1916,155 +1876,28 @@ export default function MusicPlayer() {
                         Import a YouTube playlist or
                         create your first playlist.
                     </p>
+
+                    <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setShowImport(true)}
+                            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-white"
+                        >
+                            Import Playlist
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setShowCreatePlaylist(true)}
+                            className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                        >
+                            New Playlist
+                        </button>
+                    </div>
                 </div>
             ) : (
-                <div className="grid gap-4 @lg:grid-cols-[200px_minmax(0,1fr)]">
-                    <aside className="rounded-xl border p-3">
-                        <div className="mb-3 flex items-center justify-between">
-                            <h2 className="font-semibold">
-                                Playlists
-                            </h2>
-                        </div>
-
-                        <div className="flex flex-col gap-1">
-                            {playlists.map(
-                                (playlist) => (
-                                    <div
-                                        key={
-                                            playlist.id
-                                        }
-                                        className={`rounded-lg ${
-                                            selectedPlaylistId ===
-                                            playlist.id
-                                                ? "bg-gray-100"
-                                                : ""
-                                        }`}
-                                    >
-                                        {editingPlaylistId ===
-                                        playlist.id ? (
-                                            <div className="flex gap-1 p-2">
-                                                <input
-                                                    autoFocus
-                                                    value={
-                                                        editingPlaylistName
-                                                    }
-                                                    onChange={(
-                                                        event
-                                                    ) =>
-                                                        setEditingPlaylistName(
-                                                            event
-                                                                .target
-                                                                .value
-                                                        )
-                                                    }
-                                                    onKeyDown={(
-                                                        event
-                                                    ) => {
-                                                        if (
-                                                            event.key ===
-                                                            "Enter"
-                                                        ) {
-                                                            renamePlaylist(
-                                                                playlist.id
-                                                            );
-                                                        }
-
-                                                        if (
-                                                            event.key ===
-                                                            "Escape"
-                                                        ) {
-                                                            setEditingPlaylistId(
-                                                                null
-                                                            );
-                                                        }
-                                                    }}
-                                                    className="min-w-0 flex-1 rounded border px-2 py-1 text-sm"
-                                                />
-
-                                                <button
-                                                    type="button"
-                                                    disabled={busyItemId === playlist.id}
-                                                    onClick={() =>
-                                                        renamePlaylist(
-                                                            playlist.id
-                                                        )
-                                                    }
-                                                    className="flex items-center gap-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    {busyItemId === playlist.id && <Spinner className="h-3 w-3" />}
-                                                    Save
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setSelectedPlaylistId(
-                                                            playlist.id
-                                                        );
-                                                        setCurrentIndex(
-                                                            0
-                                                        );
-                                                        setIsPlaying(
-                                                            false
-                                                        );
-                                                    }}
-                                                    className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
-                                                >
-                                                    <span className="block truncate font-medium">
-                                                        {
-                                                            playlist.name
-                                                        }
-                                                    </span>
-
-                                                    <span className="text-xs text-gray-500">
-                                                        {
-                                                            playlist
-                                                                .tracks
-                                                                .length
-                                                        }{" "}
-                                                        tracks
-                                                    </span>
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setEditingPlaylistId(
-                                                            playlist.id
-                                                        );
-                                                        setEditingPlaylistName(
-                                                            playlist.name
-                                                        );
-                                                    }}
-                                                    className="px-2 text-xs text-gray-500"
-                                                >
-                                                    Edit
-                                                </button>
-
-                                                <button
-                                                    type="button"
-                                                    disabled={busyItemId === playlist.id}
-                                                    onClick={() =>
-                                                        deletePlaylist(
-                                                            playlist.id
-                                                        )
-                                                    }
-                                                    className="flex items-center gap-1 px-2 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
-                                                >
-                                                    {busyItemId === playlist.id && <Spinner className="h-3 w-3" />}
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )
-                            )}
-                        </div>
-                    </aside>
-
-                    <main className="min-w-0">
+                <div className="grid gap-4 @lg:grid-cols-[minmax(0,1fr)_200px]">
+                    <main className="min-w-0 @container">
                         {selectedPlaylist && (
                             <>
                                 <div className="mb-2">
@@ -2084,7 +1917,7 @@ export default function MusicPlayer() {
                                     </p>
                                 </div>
 
-                                <div className="grid gap-4 @xl:grid-cols-[minmax(0,1fr)_240px]">
+                                <div className="grid gap-4 @lg:grid-cols-[minmax(0,1fr)_240px]">
                                     <section className="rounded-xl border p-3">
                                         <div
                                             id="youtube-player"
@@ -2445,6 +2278,178 @@ export default function MusicPlayer() {
                             </>
                         )}
                     </main>
+
+                    <aside className="rounded-xl border p-3">
+                        <div className="mb-3 flex items-center justify-between">
+                            <h2 className="font-semibold">
+                                Playlists
+                            </h2>
+                        </div>
+                        <div className="mb-3 flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setShowImport(true)}
+                                className="rounded-lg bg-[var(--accent)] px-2 py-1 text-[11px] font-medium text-white"
+                            >
+                                Import Playlist
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setShowCreatePlaylist(true)}
+                                className="rounded-lg border px-2 py-1 text-[11px] font-medium"
+                            >
+                                New Playlist
+                            </button>
+
+                            {selectedPlaylist && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddTrack(true)}
+                                    className="rounded-lg border px-2 py-1 text-[11px] font-medium"
+                                >
+                                    Add Track
+                                </button>
+                            )}
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                            {playlists.map(
+                                (playlist) => (
+                                    <div
+                                        key={
+                                            playlist.id
+                                        }
+                                        className={`rounded-lg ${
+                                            selectedPlaylistId ===
+                                            playlist.id
+                                                ? "bg-gray-100"
+                                                : ""
+                                        }`}
+                                    >
+                                        {editingPlaylistId ===
+                                        playlist.id ? (
+                                            <div className="flex gap-1 p-2">
+                                                <input
+                                                    autoFocus
+                                                    value={
+                                                        editingPlaylistName
+                                                    }
+                                                    onChange={(
+                                                        event
+                                                    ) =>
+                                                        setEditingPlaylistName(
+                                                            event
+                                                                .target
+                                                                .value
+                                                        )
+                                                    }
+                                                    onKeyDown={(
+                                                        event
+                                                    ) => {
+                                                        if (
+                                                            event.key ===
+                                                            "Enter"
+                                                        ) {
+                                                            renamePlaylist(
+                                                                playlist.id
+                                                            );
+                                                        }
+
+                                                        if (
+                                                            event.key ===
+                                                            "Escape"
+                                                        ) {
+                                                            setEditingPlaylistId(
+                                                                null
+                                                            );
+                                                        }
+                                                    }}
+                                                    className="min-w-0 flex-1 rounded border px-2 py-1 text-sm"
+                                                />
+
+                                                <button
+                                                    type="button"
+                                                    disabled={busyItemId === playlist.id}
+                                                    onClick={() =>
+                                                        renamePlaylist(
+                                                            playlist.id
+                                                        )
+                                                    }
+                                                    className="flex items-center gap-1 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {busyItemId === playlist.id && <Spinner className="h-3 w-3" />}
+                                                    Save
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedPlaylistId(
+                                                            playlist.id
+                                                        );
+                                                        setCurrentIndex(
+                                                            0
+                                                        );
+                                                        setIsPlaying(
+                                                            false
+                                                        );
+                                                    }}
+                                                    className="min-w-0 flex-1 px-3 py-2 text-left text-sm"
+                                                >
+                                                    <span className="block truncate font-medium">
+                                                        {
+                                                            playlist.name
+                                                        }
+                                                    </span>
+
+                                                    <span className="text-xs text-gray-500">
+                                                        {
+                                                            playlist
+                                                                .tracks
+                                                                .length
+                                                        }{" "}
+                                                        tracks
+                                                    </span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setEditingPlaylistId(
+                                                            playlist.id
+                                                        );
+                                                        setEditingPlaylistName(
+                                                            playlist.name
+                                                        );
+                                                    }}
+                                                    className="px-2 text-xs text-gray-500"
+                                                >
+                                                    Edit
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    disabled={busyItemId === playlist.id}
+                                                    onClick={() =>
+                                                        deletePlaylist(
+                                                            playlist.id
+                                                        )
+                                                    }
+                                                    className="flex items-center gap-1 px-2 text-xs text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                                >
+                                                    {busyItemId === playlist.id && <Spinner className="h-3 w-3" />}
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            )}
+                        </div>
+                    </aside>
                 </div>
             )}
 

@@ -1115,8 +1115,195 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 - AI-suggested-task course-matching (uses a course's `displayName`
   override, correct abbreviation/color, correct `EditTaskModal` dropdown
   pre-select) hasn't been clicked through live.
+- **Music window's track list** (`MusicPlayer.tsx`) still has a fixed
+  `max-h-[280px]` — doesn't grow/shrink with the window's own resize, so a
+  much taller Music window leaves the track list looking short next to a
+  tall player. Low-priority polish, not a bug: would need threading
+  `h-full`/`min-h-0` sizing through `Window.tsx`'s content area, which also
+  touches Pomodoro/Courses scroll behavior — deliberately out of scope for
+  the resizing work below.
 
 ## Session log
+
+### 2026-09-11 (iteration 6) — fix resize (real clipping bug), reorder Music player layout
+
+User reported two problems from using iteration 5's work: resizing "doesn't
+work, it's stuck at the size" (default size was fine, only the drag-to-
+resize interaction was broken), and the Music player's layout priorities
+were backwards — video/controls should be the prominent, immediately-
+accessible part, with playlist import/creation buttons not "so far up."
+
+- **Resize grip clipping bug, confirmed with real numbers, not a guess**:
+  `Window.tsx`'s outer window container had `overflow-hidden` +
+  `rounded-2xl` (16px, confirmed against Tailwind v4's actual resolved
+  theme — this repo has no `tailwind.config`/`@theme` radius override) +
+  `border-[3px]`, all together, and the 16×16px (`h-4 w-4`, also
+  confirmed) resize grip sat flush at `bottom-0 right-0` inside it. A
+  border insets the effective clip radius (`16 − 3 = 13px`), and a 16×16
+  box in a 13px-radius rounded corner has its clip-affected region running
+  the *full 13px along both edges* — not just the very tip — meaning
+  anywhere a user aims within ~13px of the visible corner (i.e. almost
+  anywhere they'd naturally click, since that edge *is* "the corner") fell
+  in the clipped, unclickable zone. Verified live: dragging from the exact
+  boundary pixel of the grip's `getBoundingClientRect()` failed
+  repeatedly; dragging from a couple pixels inside it worked — confirming
+  the geometry, not a fluke. Fixed by moving `overflow-hidden` off the
+  outer sized/positioned/bordered container onto a new inner wrapper
+  (`<div className="flex min-h-0 flex-1 flex-col overflow-hidden
+  rounded-2xl">`) that holds just the title bar + content area; the grip
+  is now a sibling of that wrapper, both children of the un-clipped outer
+  div, so its full 16×16 hit area is clickable. The outer border still
+  renders its own rounded curve regardless of overflow, so no visual
+  change to the window's look. Also closed a related latent gap in the
+  same gesture code (`startDragging`/`startResizing`): added
+  `event.preventDefault()` on pointerdown and a `pointercancel` listener
+  alongside `pointerup` in both, so a canceled gesture (native
+  drag/selection interference) can't leave `window`-level `pointermove`
+  listeners dangling — applied to both drag and resize for consistency
+  even though only resize was reported broken, since it's the same gesture
+  pattern and same fix cost. No changes to `WindowManagerContext.tsx` —
+  `resizeWindow`'s clamping and the persisted `size` shape are unaffected.
+- **`MusicPlayer.tsx` reordered so the player is primary, playlist
+  management is secondary**: the "Import Playlist / New Playlist / Add
+  Track" button row was removed from the top header (previously above
+  everything, including the video player) — the header now shows just the
+  "🎶 Tavern Radio" title/subtitle. Those three buttons moved into the
+  `<aside>` Playlists panel, directly below its heading (same handlers/
+  conditional, just relocated and shrunk to fit the narrower 200px
+  column) — still fully accessible, just contextually grouped with
+  playlist management instead of competing for top-of-window space. The
+  two-column grid (`@lg:grid-cols-[200px_minmax(0,1fr)]`) was swapped to
+  `grid-cols-[minmax(0,1fr)_200px]` with `<main>` (the actual player/
+  track-list content) now first in both DOM order and the wider/left
+  column, `<aside>` (playlist list) second — so on a narrow/stacked layout
+  the player renders above the playlist list (not below), and at `@lg`+
+  widths it's the larger, left-hand focus. Real regression caught and
+  fixed during this same edit: with the buttons removed from the header,
+  the `playlists.length === 0` empty state (which renders *instead of* the
+  aside/main grid, so the relocated buttons wouldn't exist yet either) had
+  no way left to create a first playlist — added Import Playlist/New
+  Playlist buttons directly to that empty-state card too, so a first-time
+  user isn't locked out.
+- Verified: `npx tsc --noEmit` clean, `npm run lint` unchanged at the
+  19-problem tolerated baseline (no new hits from either file), `npm run
+  build` clean. **Live-verified via the Chrome extension**: confirmed the
+  reordered Music window shows the video player as the immediately visible
+  main area with Playlists/Import/New/Add Track moved to the right side;
+  used `getBoundingClientRect()` on the resize grips to click at their
+  *exact* boundary pixel first (reproducing the reported failure — this
+  precise click did fail to resize, confirming the clip diagnosis) then a
+  few pixels inside (succeeded) for both the Music and Pomodoro windows in
+  both grow and shrink directions; confirmed the new sizes persisted
+  correctly in `localStorage["os_window_manager"]` afterward.
+
+### 2026-09-11 (iteration 5) — resizable OS windows, wider Music layout, Courses as a real window
+
+User request: Music window's aspect ratio was too tall/narrow (tracks
+should sit beside the now-playing player, not stacked below), all OS
+windows should be user-resizable (only draggable before), and Courses
+should become a real movable/closable/minimizable OS window instead of a
+plain centered modal.
+
+- **Container-query bug found, not just "make it wider"**: `MusicPlayer.tsx`
+  has two nested container-query grids (playlist sidebar breakpoint, then
+  now-playing/tracks breakpoint) both querying the *same* outer `@container`
+  root, since the `<main>` between them never established its own
+  container. Widening the window alone would have tripped both breakpoints
+  at once, squeezing sidebar + player + tracks into one cramped row instead
+  of giving tracks visibly beside the player. Fixed by adding `@container`
+  to `<main className="min-w-0">` (`MusicPlayer.tsx:2067`) so the inner
+  now-playing/tracks grid measures its own column width, and lowering that
+  grid's breakpoint from `@xl:` to `@lg:` (line 2087) so it reliably
+  triggers at the new default window size. The side-by-side layout itself
+  already existed in the JSX — this was a scoping/breakpoint fix, not a
+  restructure.
+- **`WindowManagerContext.tsx`**: `WindowMeta` gained a `size: {width,
+  height}` field (previously only `position` was tracked — height was pure
+  content-driven, no per-window sizing existed at all). New `DEFAULT_SIZES`
+  (pomodoro 340×480, music 800×520 — sized so both nested container-query
+  breakpoints above clear at default width, courses 440×520 matching the
+  old modal's `max-w-[440px]`) and a `resizeWindow(app, size)` action
+  mirroring `moveWindow`, clamped to `MIN_WINDOW_WIDTH=280`/
+  `MIN_WINDOW_HEIGHT=200`. `WindowAppId` widened to `"pomodoro" | "music" |
+  "courses"` — the load-merge effect and z-index seed are per-app object
+  literals, not a generic loop, so both needed a manual third `courses`
+  entry (existing `os_window_manager` localStorage predating `size`
+  entirely falls through safely to `DEFAULT_SIZES` via the same shallow
+  per-app merge, no explicit migration needed). `DEFAULT_POSITIONS.music`
+  moved from `{420,24}` to `{24,24}` since it's now the widest window and
+  there's still no right/bottom drag clamp.
+- **`Window.tsx`**: dropped the `width?: number` prop entirely — size is
+  now fully context-owned, same as position already was. Added a
+  bottom-right resize grip (`cursor-nwse-resize`, small CSS diagonal
+  gradient, no new asset/dependency) whose pointer-gesture code
+  deliberately mirrors the existing drag implementation's style exactly —
+  fresh non-memoized `handleResizeMove`/`stopResizing` closures built per
+  gesture, a second `stopResizeRef` cleaned up alongside the existing
+  `stopDragRef` — per this file's own documented precedent that a
+  `useCallback`'d handler self-referencing before its own declaration is a
+  real bug class hit here before. The window's root `style` now sets an
+  explicit `height` from `meta.size.height` (previously purely
+  content-driven); the content area's existing `overflow-y-auto` already
+  handled the "content taller than the box" case, so this was a safe
+  change. `PomodoroWindow.tsx`/`MusicWindow.tsx` just dropped their now-gone
+  `width={340}`/`width={420}` props.
+- **Courses converted from a plain modal to a real OS window**, following
+  the exact Pomodoro/Music pattern. `ManageCoursesModal.tsx` renamed to
+  `components/CoursesPanel.tsx` with the `fixed inset-0`/backdrop/
+  centering modal chrome stripped out (redundant with `Window`'s own
+  border/background/sizing/scroll) and the trailing "Done" button removed
+  (the window's ✕ replaces it); props shrank from `{isOpen, onClose,
+  onChanged}` to just `{onChanged}` since mount/unmount now is the open/
+  close signal (matches Pomodoro/Music — confirmed only one real call site
+  existed before deleting the old file). New `components/os/
+  CoursesWindow.tsx` (thin wrapper, mirrors `PomodoroWindow.tsx`) and new
+  `components/os/CoursesRemoteContext.tsx` — a lighter one-way version-
+  counter context (`coursesVersion`/`bumpCoursesVersion`), not a full
+  publish/subscribe engine like `PomodoroRemoteContext.tsx`, since Courses
+  needs no live two-way state and has no World-panel equivalent (unlike
+  Pomodoro's Hourglass or Music's Bard). This solves the same cross-
+  boundary problem `PomodoroRemoteContext`/`MusicRemoteContext` already
+  solve: `CoursesWindow` mounts inside `LaptopFrame.tsx` (an ancestor),
+  but the `onChanged` refresh logic is owned by `WeeklyPlannerView.tsx` (a
+  descendant of `LaptopFrame`), so a prop can't flow directly — bumping a
+  version counter and having `WeeklyPlannerView` react to it in its own
+  effect bridges the gap. `LaptopFrame.tsx` nests `CoursesRemoteProvider`
+  alongside the other two remote providers and adds `<CoursesWindow />` as
+  a third sibling in the floating windows layer.
+  `Taskbar.tsx`'s pre-existing "Courses" button (previously wired to an
+  `onOpenCourses` prop that just flipped local modal-open boolean state in
+  `WeeklyPlannerView.tsx`) now calls `openWindow("courses")` with a
+  `running={windows.courses.isOpen}` dot, matching Focus/Radio exactly —
+  `onOpenCourses`/`isCourseManagerOpen` retired entirely (same precedent as
+  `onScrollToPomodoro`/`onScrollToMusic` in iteration 4).
+- Verified: `npx tsc --noEmit` clean, `npm run build` clean (all routes
+  generated). `npm run lint` at 19 problems vs. an 18-problem true baseline
+  (confirmed via `git stash -u`, since a plain `git stash` leaves new
+  untracked files in place and gives a misleading count) — the one new hit
+  is `WeeklyPlannerView.tsx`'s new `coursesVersion` effect calling `void
+  refetchCourses()`, the exact same "call an async function that
+  eventually calls setState, without wrapping" pattern already present and
+  already tolerated three lines below it in this same file (a pre-existing,
+  unsuppressed lint hit on the same `refetchCourses()` call from another
+  effect) — not a new category of problem, left unsuppressed for
+  consistency with how that sibling call is already handled.
+  **Live-verified via the Chrome extension against the real running dev
+  server**: opened Music and confirmed it renders wide-and-short with
+  tracks beside the player at the new default size; used
+  `getBoundingClientRect()` on the resize grip elements to drive precise
+  drag gestures (a plain visual-estimate click missed the 16×16px grip);
+  resized Music narrower and confirmed the track list correctly collapsed
+  back below the player, then resized it back out and confirmed it
+  re-expanded to side-by-side — proving the `@container` fix responds to
+  live resize, not just default width; resized the Courses window taller;
+  opened/dragged/minimized/restored Courses from the taskbar and confirmed
+  restoring from minimized does not refetch (stays mounted, same scroll
+  position, matching Music's stay-mounted-while-minimized precedent);
+  closed Courses and confirmed `os_window_manager` in localStorage recorded
+  `isOpen: false`; reloaded the page fully and confirmed Music/Pomodoro
+  reopened at their resized size/position and Courses correctly stayed
+  closed — full round-trip through real localStorage persistence, not just
+  in-memory state.
 
 ### 2026-09-11 (iteration 4) — Pomodoro/Music as real draggable OS windows + World equivalents
 

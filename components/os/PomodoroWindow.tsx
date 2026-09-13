@@ -17,7 +17,6 @@ export default function PomodoroWindow() {
             app="pomodoro"
             title="Ancient Time Magic"
             icon="⏳"
-            width={340}
             // Unlike Music (unmounting the player already stops audio for
             // free), Pomodoro's countdown would otherwise keep silently
             // ticking toward its endTime in the background after the

@@ -17,7 +17,6 @@ type Props = {
     currency: number;
     currentStreak: number;
     onAddTask: () => void;
-    onOpenCourses: () => void;
     userName?: string | null;
     userEmail?: string | null;
 };
@@ -53,7 +52,6 @@ export default function Taskbar({
     currency,
     currentStreak,
     onAddTask,
-    onOpenCourses,
     userName,
     userEmail,
 }: Props) {
@@ -96,7 +94,12 @@ export default function Taskbar({
             {/* Pinned quick-launch icons */}
             <div className="flex shrink-0 items-center gap-1">
                 <TaskbarIconButton label="Add Task" emoji="➕" onClick={onAddTask} />
-                <TaskbarIconButton label="Courses" emoji="📚" onClick={onOpenCourses} />
+                <TaskbarIconButton
+                    label="Courses"
+                    emoji="📚"
+                    onClick={() => openWindow("courses")}
+                    running={windows.courses.isOpen}
+                />
                 <TaskbarIconButton
                     label="Focus"
                     emoji="⏳"

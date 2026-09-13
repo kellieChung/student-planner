@@ -7,7 +7,6 @@ import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
-import ManageCoursesModal from "./ManageCoursesModal";
 import EditTaskModal from "./EditTaskModal";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
@@ -27,6 +26,7 @@ import TaskStatusToggle from "./TaskStatusToggle";
 import AIReviewPanel from "./AIReviewPanel";
 import Taskbar from "./os/Taskbar";
 import { usePomodoroRemote } from "./os/PomodoroRemoteContext";
+import { useCoursesRemote } from "./os/CoursesRemoteContext";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -109,7 +109,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [quickAddDueDate, setQuickAddDueDate] = useState<string | undefined>(undefined);
-    const [isCourseManagerOpen, setIsCourseManagerOpen] = useState(false);
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
@@ -143,6 +142,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const [estimatingCount, setEstimatingCount] = useState(0);
     const [awardingXp, setAwardingXp] = useState(false);
     const { focusTaskId, setFocusTask, setFocusTaskSummary } = usePomodoroRemote();
+    const { coursesVersion } = useCoursesRemote();
     const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
     const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
     const [theme, setTheme] = useState<"dark" | "light">(() => {
@@ -522,6 +522,19 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const handleCourseCreated = (course: Course) => {
         setCourses((current) => [...current, course]);
     };
+
+    // The Courses OS window (components/os/CoursesWindow.tsx) is mounted by
+    // LaptopFrame, an ancestor of this component, so it can't call back
+    // into this component's own onChanged handler directly — it bumps
+    // coursesVersion via CoursesRemoteContext instead, and this effect
+    // reacts to that the same way the old <ManageCoursesModal onChanged>
+    // prop used to.
+    useEffect(() => {
+        if (coursesVersion === 0) return;
+        router.refresh();
+        void refetchCourses();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [coursesVersion]);
 
     useEffect(() => {
         // Server-persisted (app/api/gamification/route.ts), unlike the
@@ -1449,15 +1462,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                 onAddTask = {handleAddTask}
             />
 
-            <ManageCoursesModal
-                isOpen={isCourseManagerOpen}
-                onClose={() => setIsCourseManagerOpen(false)}
-                onChanged={() => {
-                    router.refresh();
-                    void refetchCourses();
-                }}
-            />
-
             <EditTaskModal
                 task = {selectedTask}
                 isOpen = {selectedTask !== null}
@@ -1730,7 +1734,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             currency={townState.currency}
             currentStreak={townState.currentStreak}
             onAddTask={openAddTask}
-            onOpenCourses={() => setIsCourseManagerOpen(true)}
             userName={userName}
             userEmail={userEmail}
         />
