@@ -1,28 +1,30 @@
 "use client";
 
 import { BuildingKey } from "@/types/townState";
+import { TileRef } from "@/types/worldLayout";
 import { computeBuildingStage } from "@/lib/townGrowth";
-import PixelBlock from "./PixelBlock";
+import TileRefSprite from "./TileRefSprite";
 
 type Props = {
     buildingKey: BuildingKey;
     growth: number;
     label: string;
-    emoji: string;
-    top: string;
-    left: string;
+    top: number;
+    left: number;
+    stageSprites: [TileRef, TileRef, TileRef];
 };
 
-const STAGE_SIZE: Array<"sm" | "md" | "lg"> = ["sm", "md", "lg"];
 const STAGE_NAME = ["Empty Plot", "Basic Structure", "Upgraded"];
-const STAGE_DECOR_COUNT = [0, 1, 3];
+export const STAGE_SCALE = [3, 4, 3];
 
 const LABEL_SHADOW = "0 1px 3px rgba(0,0,0,0.85)";
 
 // A positioned sprite on TownMap's canvas, not a stat card — leveling up a
-// building is a visible change here (bigger block, a plaza base replacing
-// bare dirt, a flag topper at the final stage), not just a growth number.
-export default function Building({ buildingKey, growth, label, emoji, top, left }: Props) {
+// building is a visible change here, a real sprite swap per
+// `stageSprites` (user-configurable via /dev/map-editor, see
+// lib/worldLayout.ts's WorldLayoutData.buildingStageSprites), not just a
+// growth number.
+export default function Building({ buildingKey, growth, label, top, left, stageSprites }: Props) {
     const stage = computeBuildingStage(growth);
 
     return (
@@ -31,31 +33,7 @@ export default function Building({ buildingKey, growth, label, emoji, top, left 
             style={{ top, left }}
             data-building={buildingKey}
         >
-            {stage === 2 && <PixelBlock size="sm" emoji="🚩" tone="accent" className="-mb-1" />}
-
-            <div className="flex items-end gap-1">
-                <PixelBlock
-                    size={STAGE_SIZE[stage]}
-                    emoji={stage === 0 ? undefined : emoji}
-                    tone={stage === 2 ? "accent" : "muted"}
-                    faded={stage === 0}
-                />
-                {Array.from({ length: STAGE_DECOR_COUNT[stage] }).map((_, index) => (
-                    <PixelBlock key={index} size="sm" emoji="🌳" tone="muted" />
-                ))}
-            </div>
-
-            {/* Ground beneath the sprite: bare dirt at stage 0, a small plaza
-                base once anything's actually been built. */}
-            <div
-                className="rounded-full"
-                style={{
-                    width: stage === 0 ? 22 : 44,
-                    height: 6,
-                    background: stage === 0 ? "rgba(120,90,60,0.55)" : "var(--xp-bar)",
-                    opacity: stage === 0 ? 0.6 : 0.85,
-                }}
-            />
+            <TileRefSprite tile={stageSprites[stage]} scale={STAGE_SCALE[stage]} className={stage === 0 ? "opacity-60" : ""} />
 
             <span className="text-[11px] font-bold" style={{ color: "var(--heading)", textShadow: LABEL_SHADOW }}>
                 {label}

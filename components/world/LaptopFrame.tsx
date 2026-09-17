@@ -3,8 +3,10 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { TownState } from "@/types/townState";
 import { MascotTrigger } from "@/types/townState";
+import { WorldLayoutData } from "@/types/worldLayout";
 import { pickLine } from "@/lib/mascotDialogue";
 import { getTownState, saveOnboardingCompletion } from "@/lib/townState";
+import { getWorldLayout } from "@/lib/worldLayout";
 import WorldView from "./WorldView";
 import MascotBubble from "./MascotBubble";
 import OnboardingOverlay from "./OnboardingOverlay";
@@ -35,6 +37,7 @@ type Props = {
     children: ReactNode;
     initialView: ViewMode;
     townState: TownState;
+    layout: WorldLayoutData;
 };
 
 const DIALOGUE_DURATION_MS = 4500;
@@ -44,12 +47,13 @@ const DIALOGUE_DURATION_MS = 4500;
 type LidPhase = "idle" | "closing" | "opening";
 const LID_PHASE_MS = 280;
 
-export default function LaptopFrame({ children, initialView, townState: initialTownState }: Props) {
+export default function LaptopFrame({ children, initialView, townState: initialTownState, layout: initialLayout }: Props) {
     const [view, setView] = useState<ViewMode>(initialView);
     const [showTour, setShowTour] = useState(false);
     const [lidPhase, setLidPhase] = useState<LidPhase>("idle");
     const [dialogue, setDialogue] = useState<string | null>(null);
     const [worldTownState, setWorldTownState] = useState<TownState>(initialTownState);
+    const [worldLayout, setWorldLayout] = useState<WorldLayoutData>(initialLayout);
     const dialogueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const say = useCallback((trigger: MascotTrigger) => {
@@ -70,6 +74,7 @@ export default function LaptopFrame({ children, initialView, townState: initialT
 
         if (next === "world") {
             void getTownState().then(setWorldTownState);
+            void getWorldLayout().then(setWorldLayout);
         }
 
         setTimeout(() => {
@@ -213,7 +218,7 @@ export default function LaptopFrame({ children, initialView, townState: initialT
                                     )}
                                     {view === "world" && (
                                         <div className="absolute inset-0 overflow-y-auto">
-                                            <WorldView townState={worldTownState} onOpenLaptop={openLaptop} dialogue={dialogue} />
+                                            <WorldView townState={worldTownState} layout={worldLayout} onOpenLaptop={openLaptop} dialogue={dialogue} />
                                         </div>
                                     )}
                                 </div>

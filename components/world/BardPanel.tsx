@@ -21,6 +21,11 @@ export default function BardPanel({ onClose }: Props) {
         <div
             className="w-72 rounded-xl border p-4 shadow-2xl"
             style={{ borderColor: "var(--border)", background: "var(--panel)" }}
+            // This panel renders inside MapViewport's transformed frame
+            // (TownMap.tsx) — stop pointerdown here so a real click's
+            // incidental few px of movement never gets misread as a
+            // background pan-drag, which would swallow the click.
+            onPointerDown={(event) => event.stopPropagation()}
         >
             <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">

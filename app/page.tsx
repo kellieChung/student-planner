@@ -7,6 +7,8 @@ import {prisma} from "@/lib/prisma";
 import { getStartOfWeek } from "@/lib/utils";
 import LaptopFrame from "@/components/world/LaptopFrame";
 import { TownState } from "@/types/townState";
+import { WorldLayoutData } from "@/types/worldLayout";
+import { DEFAULT_WORLD_LAYOUT, isValidWorldLayoutData } from "@/lib/worldLayout";
 
 
 export default async function TestPage() {
@@ -42,18 +44,22 @@ export default async function TestPage() {
         trainingGroundsGrowth: townStateRow?.trainingGroundsGrowth ?? 0,
         watchtowerGrowth: townStateRow?.watchtowerGrowth ?? 0,
         townSquareGrowth: townStateRow?.townSquareGrowth ?? 0,
-        currentStreak: townStateRow?.currentStreak ?? 0,
-        longestStreak: townStateRow?.longestStreak ?? 0,
-        graceTokens: townStateRow?.graceTokens ?? 2,
-        lastGoodDay: townStateRow?.lastGoodDay ?? null,
+        kingdomStage: (townStateRow?.kingdomStage as TownState["kingdomStage"]) ?? "village",
         onboardingCompletedAt: townStateRow?.onboardingCompletedAt?.toISOString() ?? null,
     };
+
+    const worldLayoutRow = await prisma.worldLayout.findUnique({
+        where: { userId: user.id },
+    });
+
+    const layout: WorldLayoutData = isValidWorldLayoutData(worldLayoutRow?.data) ? worldLayoutRow.data : DEFAULT_WORLD_LAYOUT;
 
     return (
         <main className="h-screen w-screen overflow-hidden p-3 sm:p-4">
             <LaptopFrame
                 initialView={townState.onboardingCompletedAt ? "os" : "onboarding"}
                 townState={townState}
+                layout={layout}
             >
                 <div className="app-header w-full px-4 mx-auto">
                     <WeeklyPlannerView

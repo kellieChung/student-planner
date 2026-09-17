@@ -1,11 +1,15 @@
 "use client";
 
 import { TownState, KingdomStage } from "@/types/townState";
-import { computeKingdomStage, nextKingdomStage, STAGE_THRESHOLDS, totalTownGrowth } from "@/lib/townGrowth";
+import { WorldLayoutData } from "@/types/worldLayout";
+import { nextKingdomStage, STAGE_THRESHOLDS, totalTownGrowth } from "@/lib/townGrowth";
 import TownMap from "./TownMap";
+import MapViewport from "./MapViewport";
+import WorldToolbar from "./WorldToolbar";
 
 type Props = {
     townState: TownState;
+    layout: WorldLayoutData;
     onOpenLaptop: () => void;
     dialogue?: string | null;
 };
@@ -17,8 +21,13 @@ const STAGE_LABEL: Record<KingdomStage, string> = {
     kingdom: "Kingdom",
 };
 
-export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) {
-    const stage = computeKingdomStage(townState);
+export default function WorldView({ townState, layout, onOpenLaptop, dialogue }: Props) {
+    // The stage label/visual only advances at a milestone checkpoint
+    // (maybeAdvanceKingdomStage, lib/townGrowth.ts) — it's read directly
+    // from persisted state, not computed live from current growth, so the
+    // big jump reads as earned rather than an automatic side effect of any
+    // one task. The progress bar below stays live on purpose.
+    const stage = townState.kingdomStage;
     const next = nextKingdomStage(stage);
     const total = totalTownGrowth(townState);
     const nextThreshold = next ? STAGE_THRESHOLDS[next] : null;
@@ -43,14 +52,6 @@ export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) 
                         </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        {townState.currentStreak > 0 && (
-                            <div
-                                className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm font-bold"
-                                style={{ borderColor: "var(--border)", color: "var(--accent)" }}
-                            >
-                                🔥 {townState.currentStreak}
-                            </div>
-                        )}
                         <div
                             className="flex items-center gap-1 rounded-full border px-3 py-1 text-sm font-bold"
                             style={{ borderColor: "var(--border)", color: "var(--xp-bar)" }}
@@ -75,8 +76,12 @@ export default function WorldView({ townState, onOpenLaptop, dialogue }: Props) 
             </div>
 
             <div className="min-h-0 flex-1">
-                <TownMap townState={townState} onOpenLaptop={onOpenLaptop} dialogue={dialogue} />
+                <MapViewport>
+                    <TownMap townState={townState} layout={layout} />
+                </MapViewport>
             </div>
+
+            <WorldToolbar onOpenLaptop={onOpenLaptop} dialogue={dialogue} />
         </div>
     );
 }

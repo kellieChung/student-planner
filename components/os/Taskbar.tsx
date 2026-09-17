@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import Spinner from "@/components/Spinner";
 import UserMenu from "@/components/UserMenu";
 import { XpAward } from "@/types/gamification";
@@ -15,7 +16,6 @@ type Props = {
     awardingXp: boolean;
     latestXpAward: XpAward | null;
     currency: number;
-    currentStreak: number;
     onAddTask: () => void;
     userName?: string | null;
     userEmail?: string | null;
@@ -50,7 +50,6 @@ export default function Taskbar({
     awardingXp,
     latestXpAward,
     currency,
-    currentStreak,
     onAddTask,
     userName,
     userEmail,
@@ -137,11 +136,6 @@ export default function Taskbar({
                 <TrayPill>
                     <span>🪙 {currency}</span>
                 </TrayPill>
-                {currentStreak > 0 && (
-                    <TrayPill>
-                        <span>🔥 {currentStreak}</span>
-                    </TrayPill>
-                )}
                 <TrayPill>
                     <span className="tabular-nums" style={{ color: "var(--foreground)" }}>{clock}</span>
                 </TrayPill>
@@ -190,6 +184,14 @@ export default function Taskbar({
                                 Account
                             </p>
                             <UserMenu name={userName} email={userEmail} />
+
+                            <Link
+                                href="/credits"
+                                className="mt-3 block text-xs font-semibold underline"
+                                style={{ color: "var(--muted)" }}
+                            >
+                                Credits
+                            </Link>
                         </div>
                     )}
                 </div>

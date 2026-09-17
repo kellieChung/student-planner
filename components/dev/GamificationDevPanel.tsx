@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { GamificationState } from "@/types/gamification";
-import { TownState, MascotTrigger } from "@/types/townState";
+import { TownState, KingdomStage, MascotTrigger } from "@/types/townState";
 import { getGamificationState, saveGamificationState } from "@/lib/gamification";
 import { getTownState, saveTownGrowth } from "@/lib/townState";
 import { getTodayString } from "@/lib/utils";
 import { pickLine } from "@/lib/mascotDialogue";
+import { DEFAULT_WORLD_LAYOUT } from "@/lib/worldLayout";
 import WorldView from "@/components/world/WorldView";
 import Mascot from "@/components/world/Mascot";
 import OnboardingOverlay from "@/components/world/OnboardingOverlay";
@@ -137,7 +138,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
     const [previewTrainingGrounds, setPreviewTrainingGrounds] = useState(0);
     const [previewWatchtower, setPreviewWatchtower] = useState(0);
     const [previewTownSquare, setPreviewTownSquare] = useState(0);
-    const [previewStreak, setPreviewStreak] = useState(0);
+    const [previewKingdomStage, setPreviewKingdomStage] = useState<KingdomStage>("village");
     const [previewDialogue, setPreviewDialogue] = useState("");
 
     const [showIntroPreview, setShowIntroPreview] = useState(false);
@@ -172,7 +173,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
         runAction("XP reset to 0.", () => saveGamificationState({ totalXp: 0, awardedTaskIds: [] }));
 
     const resetTownGrowth = () =>
-        runAction("Town growth/currency/streak reset to 0.", () =>
+        runAction("Town growth/currency/kingdom stage reset to 0.", () =>
             saveTownGrowth({
                 ...townState,
                 currency: 0,
@@ -181,10 +182,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                 trainingGroundsGrowth: 0,
                 watchtowerGrowth: 0,
                 townSquareGrowth: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                graceTokens: 2,
-                lastGoodDay: null,
+                kingdomStage: "village",
             })
         );
 
@@ -212,10 +210,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                 trainingGroundsGrowth: 0,
                 watchtowerGrowth: 0,
                 townSquareGrowth: 0,
-                currentStreak: 0,
-                longestStreak: 0,
-                graceTokens: 2,
-                lastGoodDay: null,
+                kingdomStage: "village",
             });
             await fetch("/api/town-state", {
                 method: "PATCH",
@@ -284,10 +279,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
         trainingGroundsGrowth: previewTrainingGrounds,
         watchtowerGrowth: previewWatchtower,
         townSquareGrowth: previewTownSquare,
-        currentStreak: previewStreak,
-        longestStreak: previewStreak,
-        graceTokens: 2,
-        lastGoodDay: null,
+        kingdomStage: previewKingdomStage,
         onboardingCompletedAt: new Date().toISOString(),
     };
 
@@ -378,7 +370,6 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                         ["Training Grounds", previewTrainingGrounds, setPreviewTrainingGrounds],
                         ["Watchtower", previewWatchtower, setPreviewWatchtower],
                         ["Town Square", previewTownSquare, setPreviewTownSquare],
-                        ["Streak", previewStreak, setPreviewStreak],
                     ] as Array<[string, number, (value: number) => void]>).map(([label, value, setValue]) => (
                         <label key={label} className="flex flex-col gap-1 text-[10px]" style={{ color: "var(--muted)" }}>
                             {label}
@@ -391,10 +382,23 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                             />
                         </label>
                     ))}
+                    <label className="flex flex-col gap-1 text-[10px]" style={{ color: "var(--muted)" }}>
+                        Kingdom stage
+                        <select
+                            value={previewKingdomStage}
+                            onChange={(event) => setPreviewKingdomStage(event.target.value as KingdomStage)}
+                            className="rounded-md border px-2 py-1 text-xs"
+                            style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
+                        >
+                            {(["village", "town", "city", "kingdom"] as KingdomStage[]).map((stage) => (
+                                <option key={stage} value={stage}>{stage}</option>
+                            ))}
+                        </select>
+                    </label>
                 </div>
 
                 <div className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--border)" }}>
-                    <WorldView townState={previewTownState} onOpenLaptop={() => {}} dialogue={null} />
+                    <WorldView townState={previewTownState} layout={DEFAULT_WORLD_LAYOUT} onOpenLaptop={() => {}} dialogue={null} />
                 </div>
 
                 <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border p-4" style={{ borderColor: "var(--border)" }}>
