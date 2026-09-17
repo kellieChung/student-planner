@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import {
     getCanvasSyncUserId,
     upsertCanvasCourses,
@@ -8,7 +9,7 @@ import {
 // Re-pulls one (or a few) specific course(s) from Canvas without touching
 // anything else — unlike /api/canvas/sync, this never prunes, so it's safe
 // to call for a single course a user wants back after deleting it (see
-// components/ManageCoursesModal.tsx's delete confirmation copy).
+// components/CoursesPanel.tsx's delete confirmation copy).
 export async function POST(request: Request) {
     try {
         const userId = await getCanvasSyncUserId(request);
@@ -47,6 +48,26 @@ export async function POST(request: Request) {
                 { success: false, error: "Invalid Canvas data." },
                 { status: 400 }
             );
+        }
+
+        const canvasIds = (courses as RawCourseSyncPayload[])
+            .map((courseData) => courseData.course?.id)
+            .filter((id): id is string | number => id !== undefined)
+            .map((id) => String(id));
+
+        // Must run BEFORE upsertCanvasCourses below: that function checks
+        // DeletedCanvasCourse on every call (including this one) and skips
+        // any tombstoned canvasId, so the tombstone has to be gone first or
+        // this "restore" would silently no-op on the very course it's
+        // meant to bring back.
+        if (canvasIds.length > 0) {
+            await prisma.deletedCanvasCourse.deleteMany({
+                where: {
+                    userId,
+                    canvasOrigin,
+                    canvasId: { in: canvasIds },
+                },
+            });
         }
 
         const {

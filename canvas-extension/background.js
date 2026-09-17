@@ -1,5 +1,37 @@
 console.log("🚀 Student Planner background service worker loaded!");
 
+// Checked between courses in SYNC_CANVAS's loop, set by the CANCEL_SYNC
+// handler. One popup drives one sync at a time, so a single module-level
+// flag is enough — a second popup should see/cancel the same in-flight
+// sync, not race a separate one.
+let syncCancelled = false;
+
+// Single source of truth for sync progress, read by the popup both live
+// (while open) and on reopen (mid-sync or after). If the service worker is
+// killed/reloaded mid-sync, this is left at status:"running" forever with a
+// stale `updatedAt` — that's a known, disclosed limitation handled on the
+// popup side (staleness check in restoreSyncProgress), not solved here with
+// keep-alive machinery.
+async function setSyncProgress(progress) {
+    await chrome.storage.local.set({
+        canvasSyncProgress: { ...progress, updatedAt: Date.now() },
+    });
+}
+
+// Fire-and-forget: no popup listening is the common case (most of a sync
+// runs with the popup closed), and that's not an error — storage already
+// has the same data for when the popup reopens.
+function broadcastSyncProgress(progress) {
+    chrome.runtime.sendMessage(
+        { type: "SYNC_PROGRESS", ...progress },
+        () => {
+            if (chrome.runtime.lastError) {
+                // No popup open to receive it — expected.
+            }
+        }
+    );
+}
+
 // Follows Canvas's RFC 5988 `Link` header pagination (every call site here
 // requests per_page=100 and expects a flat array back) — without this, a
 // course with more than 100 assignments/discussions/announcements would
@@ -464,6 +496,11 @@ chrome.runtime.onMessage.addListener(
 
             (async () => {
 
+                // Reset at the start of every sync, not only on cancel —
+                // otherwise a past cancellation would permanently poison
+                // every sync after it.
+                syncCancelled = false;
+
                 try {
 
                     const canvasOrigin =
@@ -482,9 +519,25 @@ chrome.runtime.onMessage.addListener(
                         `📚 Found ${courses.length} courses`
                     );
 
+                    await setSyncProgress({
+                        status: "running",
+                        totalCourses: courses.length,
+                        completedCourses: 0,
+                        currentCourseName: null,
+                        startedAt: Date.now(),
+                        courseCount: null,
+                        errorMessage: null,
+                    });
+
                     const courseData = [];
+                    let wasCancelled = false;
 
                     for (const course of courses) {
+
+                        if (syncCancelled) {
+                            wasCancelled = true;
+                            break;
+                        }
 
                         console.log(
                             `🔍 Syncing: ${course.name}`
@@ -493,6 +546,57 @@ chrome.runtime.onMessage.addListener(
                         courseData.push(
                             await fetchCourseData(canvasOrigin, course)
                         );
+
+                        await setSyncProgress({
+                            status: "running",
+                            totalCourses: courses.length,
+                            completedCourses: courseData.length,
+                            currentCourseName: course.name,
+                            startedAt: Date.now(),
+                            courseCount: null,
+                            errorMessage: null,
+                        });
+
+                        broadcastSyncProgress({
+                            completedCourses: courseData.length,
+                            totalCourses: courses.length,
+                            currentCourseName: course.name,
+                        });
+                    }
+
+                    if (wasCancelled) {
+
+                        console.log(
+                            "🛑 Canvas sync cancelled by user."
+                        );
+
+                        await setSyncProgress({
+                            status: "cancelled",
+                            totalCourses: courses.length,
+                            completedCourses: courseData.length,
+                            currentCourseName: null,
+                            courseCount: null,
+                            errorMessage: null,
+                        });
+
+                        try {
+                            sendResponse({
+                                success: false,
+                                cancelled: true,
+                            });
+                        } catch {
+                            // Popup/port already gone — fine, storage has
+                            // the cancelled state for next time it opens.
+                        }
+
+                        // Deliberately return here, before ever reaching
+                        // the backend POST below: /api/canvas/sync treats
+                        // its payload as a full snapshot and prunes any
+                        // course missing from it, so POSTing a partial
+                        // courseData array would delete every not-yet-
+                        // synced course. A cancelled sync must never reach
+                        // that call.
+                        return;
                     }
 
                     console.log(
@@ -581,11 +685,25 @@ chrome.runtime.onMessage.addListener(
                         backendResult
                     );
 
-                    sendResponse({
-                        success: true,
-                        courseCount:
-                            courseData.length,
+                    await setSyncProgress({
+                        status: "success",
+                        totalCourses: courses.length,
+                        completedCourses: courseData.length,
+                        currentCourseName: null,
+                        courseCount: courseData.length,
+                        errorMessage: null,
                     });
+
+                    try {
+                        sendResponse({
+                            success: true,
+                            courseCount:
+                                courseData.length,
+                        });
+                    } catch {
+                        // Popup already gone — fine, storage has the
+                        // success state for next time it opens.
+                    }
 
                 } catch (error) {
 
@@ -594,13 +712,32 @@ chrome.runtime.onMessage.addListener(
                         error
                     );
 
-                    sendResponse({
-                        success: false,
-                        error: error.message,
+                    await setSyncProgress({
+                        status: "error",
+                        errorMessage: error.message,
                     });
+
+                    try {
+                        sendResponse({
+                            success: false,
+                            error: error.message,
+                        });
+                    } catch {
+                        // Popup already gone — fine, storage has the
+                        // error state for next time it opens.
+                    }
                 }
 
             })();
+
+            return true;
+        }
+
+        if (message.type === "CANCEL_SYNC") {
+
+            syncCancelled = true;
+
+            sendResponse({ success: true });
 
             return true;
         }

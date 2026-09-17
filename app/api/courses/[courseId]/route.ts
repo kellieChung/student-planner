@@ -180,12 +180,35 @@ export async function DELETE(
     }
 
     // Cascades to the course's assignments/discussions/announcements
-    // (onDelete: Cascade in prisma/schema.prisma). If Canvas still reports
-    // this course as active, the next sync will re-create it — use the
-    // "hidden" toggle instead for a course that should stay gone.
+    // (onDelete: Cascade in prisma/schema.prisma).
     await prisma.canvasCourse.delete({
         where: { id: courseId },
     });
+
+    // Tombstone it so a later sync doesn't silently recreate this row just
+    // because Canvas still reports the course active — upsertCanvasCourses
+    // (lib/canvasIngest.ts) checks DeletedCanvasCourse before ever creating
+    // a course. Not meaningful for a custom (non-Canvas) course: it has no
+    // real canvasId to ever re-sync, so its deletion is already permanent.
+    // Upsert, not create, so re-deleting an already-tombstoned canvasId
+    // (e.g. restore, then delete again) can't hit a unique-constraint error.
+    if (existingCourse.canvasOrigin !== CUSTOM_COURSE_ORIGIN) {
+        await prisma.deletedCanvasCourse.upsert({
+            where: {
+                userId_canvasOrigin_canvasId: {
+                    userId: user.id,
+                    canvasOrigin: existingCourse.canvasOrigin,
+                    canvasId: existingCourse.canvasId,
+                },
+            },
+            update: {},
+            create: {
+                userId: user.id,
+                canvasOrigin: existingCourse.canvasOrigin,
+                canvasId: existingCourse.canvasId,
+            },
+        });
+    }
 
     return NextResponse.json({ success: true });
 }

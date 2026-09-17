@@ -70,6 +70,12 @@ export async function POST(request: Request) {
          * (could be a real course-less term, could be something else) —
          * skip pruning rather than risk wiping everything.
          */
+        // This prune is NOT the same event as a user's explicit "Delete" in
+        // ManageCoursesModal/CoursesPanel (which writes a DeletedCanvasCourse
+        // tombstone — see lib/canvasIngest.ts's upsertCanvasCourses) — here a
+        // course just dropped off Canvas's own active list (unenrolled,
+        // concluded, etc.), which is reversible if it's re-added later, so
+        // this deliberately never writes a tombstone of its own.
         let removedCourseCount = 0;
 
         if (syncedCourseCanvasIds.size > 0) {

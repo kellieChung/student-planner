@@ -6,6 +6,10 @@ const loginButton = document.getElementById("loginButton");
 const loadCoursesButton = document.getElementById("loadCoursesButton");
 const restoreCourseSelect = document.getElementById("restoreCourseSelect");
 const restoreCourseButton = document.getElementById("restoreCourseButton");
+const syncProgress = document.getElementById("syncProgress");
+const syncProgressFill = document.getElementById("syncProgressFill");
+const syncProgressText = document.getElementById("syncProgressText");
+const cancelSyncButton = document.getElementById("cancelSyncButton");
 
 // Longest error string shown directly to the user — anything past this is
 // logged in full to the console instead, so a verbose backend/stack-trace
@@ -230,6 +234,95 @@ async function connectCanvas() {
 // CANVAS SYNC
 // ============================================================
 
+// A sync begun in one popup instance keeps running in the background
+// service worker even after that popup closes — this is the single render
+// function both the live SYNC_PROGRESS listener and the on-open storage
+// read call, so "resume showing progress" and "live update" never diverge.
+function renderSyncProgress(progress) {
+
+    if (!progress || progress.status !== "running") {
+        syncProgress.hidden = true;
+        cancelSyncButton.hidden = true;
+        syncButton.disabled = false;
+
+        return;
+    }
+
+    syncProgress.hidden = false;
+    cancelSyncButton.hidden = false;
+    syncButton.disabled = true;
+
+    const pct =
+        progress.totalCourses > 0
+            ? Math.round((progress.completedCourses / progress.totalCourses) * 100)
+            : 0;
+
+    syncProgressFill.style.width = `${pct}%`;
+
+    syncProgressText.textContent =
+        progress.currentCourseName
+            ? `Syncing ${progress.completedCourses}/${progress.totalCourses}: ${progress.currentCourseName}`
+            : `Syncing ${progress.completedCourses}/${progress.totalCourses} courses...`;
+}
+
+// Longest a "running" sync can go without a fresh progress write before
+// the popup treats it as abandoned (service worker killed/reloaded
+// mid-sync) rather than genuinely still in progress — without this, a
+// stale record would show a permanently disabled sync button forever.
+const STALE_SYNC_MS = 90_000;
+
+async function restoreSyncProgress() {
+
+    const result =
+        await chrome.storage.local.get(
+            "canvasSyncProgress"
+        );
+
+    const progress = result.canvasSyncProgress;
+
+    if (!progress) {
+        return;
+    }
+
+    if (
+        progress.status === "running" &&
+        Date.now() - progress.updatedAt > STALE_SYNC_MS
+    ) {
+        renderSyncProgress(null);
+        setStatus("⚠️ Sync was interrupted. Try again.", "error");
+
+        return;
+    }
+
+    if (progress.status === "running") {
+        renderSyncProgress(progress);
+
+        return;
+    }
+
+    renderSyncProgress(null);
+
+    if (progress.status === "success") {
+        setStatus(`✅ Synced ${progress.courseCount} courses!`, "success");
+    } else if (progress.status === "cancelled") {
+        setStatus("Cancelled — no changes were saved.");
+    } else if (progress.status === "error") {
+        setStatus(describeError("❌ Sync failed", progress.errorMessage), "error");
+    }
+}
+
+chrome.runtime.onMessage.addListener((message) => {
+
+    if (message.type === "SYNC_PROGRESS") {
+        renderSyncProgress({
+            status: "running",
+            completedCourses: message.completedCourses,
+            totalCourses: message.totalCourses,
+            currentCourseName: message.currentCourseName,
+        });
+    }
+});
+
 async function syncCanvas() {
 
     const result =
@@ -245,7 +338,7 @@ async function syncCanvas() {
     }
 
     syncButton.disabled = true;
-    setStatus("🔄 Syncing Canvas...");
+    setStatus("🔄 Starting Canvas sync...");
 
     chrome.runtime.sendMessage(
         {
@@ -255,11 +348,23 @@ async function syncCanvas() {
         },
         (response) => {
 
-            syncButton.disabled = false;
+            // Most UI state (bar/cancel button/button-disabled) is owned
+            // by renderSyncProgress/restoreSyncProgress now, since a
+            // reopened popup instance never runs this callback — only the
+            // popup that started the sync does. This callback just resets
+            // to the idle state and shows the terminal message.
+            renderSyncProgress(null);
 
             if (!response) {
 
                 setStatus("❌ No response from extension.", "error");
+
+                return;
+            }
+
+            if (response.cancelled) {
+
+                setStatus("Cancelled — no changes were saved.");
 
                 return;
             }
@@ -276,6 +381,26 @@ async function syncCanvas() {
             console.log(
                 "🎉 Canvas sync successfully sent to Student Planner!"
             );
+        }
+    );
+}
+
+function cancelSync() {
+
+    cancelSyncButton.disabled = true;
+
+    chrome.runtime.sendMessage(
+        { type: "CANCEL_SYNC" },
+        () => {
+
+            if (chrome.runtime.lastError) {
+                console.error(
+                    "❌ Runtime error cancelling sync:",
+                    chrome.runtime.lastError
+                );
+            }
+
+            cancelSyncButton.disabled = false;
         }
     );
 }
@@ -426,6 +551,11 @@ syncButton.addEventListener(
     syncCanvas
 );
 
+cancelSyncButton.addEventListener(
+    "click",
+    cancelSync
+);
+
 loadCoursesButton.addEventListener(
     "click",
     loadCourseOptions
@@ -507,3 +637,4 @@ loginButton.addEventListener(
 applyPlannerTheme();
 loadSavedCanvasUrl();
 updateAuthUI();
+restoreSyncProgress();

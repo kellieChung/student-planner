@@ -58,10 +58,27 @@ export async function upsertCanvasCourses(
 
     const syncedCourseCanvasIds = new Set<string>();
 
+    // A course the user explicitly deleted (app/api/courses/[courseId]/
+    // route.ts's DELETE handler) is tombstoned here so a routine sync
+    // doesn't silently recreate it just because Canvas still reports it
+    // active — only the explicit restore-course flow removes a tombstone.
+    const deletedCourses = await prisma.deletedCanvasCourse.findMany({
+        where: { userId, canvasOrigin },
+        select: { canvasId: true },
+    });
+
+    const deletedCanvasIds = new Set(
+        deletedCourses.map((deleted) => deleted.canvasId)
+    );
+
     for (const courseData of courses) {
         const canvasCourse = courseData.course;
 
         if (!canvasCourse?.id) {
+            continue;
+        }
+
+        if (deletedCanvasIds.has(String(canvasCourse.id))) {
             continue;
         }
 

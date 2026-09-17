@@ -169,3 +169,39 @@ button#syncButton:hover:not(:disabled) {
     border-color: var(--status-overdue-text);
     color: var(--status-overdue-text);
 }
+
+#syncProgress {
+    margin-top: 8px;
+}
+
+#syncProgressBar {
+    height: 8px;
+    border-radius: 999px;
+    background-color: var(--panel-raised);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+
+#syncProgressFill {
+    height: 100%;
+    width: 0%;
+    background-color: var(--accent);
+    transition: width 200ms ease;
+}
+
+#syncProgressText {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+button#cancelSyncButton {
+    margin-top: 8px;
+    background-color: transparent;
+    color: var(--status-overdue-text);
+    border: 1px solid var(--status-overdue-text);
+}
+
+button#cancelSyncButton:hover:not(:disabled) {
+    background-color: var(--status-overdue-bg);
+}
