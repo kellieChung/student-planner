@@ -2,7 +2,7 @@
 
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useRouter} from "next/navigation";
-import {CARD_HEIGHT_PX, calculateGridSpan, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate} from "@/lib/utils";
+import {CARD_HEIGHT_PX, calculateGridSpan, endOfDayInstant, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import AssignmentCard from "./AssignmentCard";
@@ -12,7 +12,7 @@ import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {getTownState, saveTownGrowth} from "@/lib/townState";
 import {TownState} from "@/types/townState";
-import {applyDailyCompletion, applyGrowthAward, computeGrowthAward, isCompletionOnTime} from "@/lib/townGrowth";
+import {applyGrowthAward, applyWatchtowerBonus, computeGrowthAward, isCompletionOnTime, maybeAdvanceKingdomStage} from "@/lib/townGrowth";
 import {useMascot} from "./world/LaptopFrame";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
@@ -119,12 +119,14 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         trainingGroundsGrowth: 0,
         watchtowerGrowth: 0,
         townSquareGrowth: 0,
-        currentStreak: 0,
-        longestStreak: 0,
-        graceTokens: 2,
-        lastGoodDay: null,
+        kingdomStage: "village",
         onboardingCompletedAt: null,
     });
+    // Scratch space for awardXpForTask's persistence calls — see the comment
+    // there for why the actual PATCHes must not live inside a setState
+    // updater body.
+    const latestGamificationRef = useRef<GamificationState | null>(null);
+    const latestTownStateRef = useRef<TownState | null>(null);
     const mascot = useMascot();
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
@@ -364,6 +366,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         return calculatePriority({
             name: task.name,
             due: task.due || null,
+            startAt: resolveStartAt(taskCustomizations[task.id]?.startAt ?? "") || null,
+            today: todayKey,
             importance: estimate?.importance ?? 5,
             difficulty: estimate?.difficulty ?? 5,
             consequence: estimate?.consequence ?? 5,
@@ -381,6 +385,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         for (const task of openTasks) {
             const priority = computeTaskPriority(task);
 
+            if (priority.notYetStartable) continue;
+
             if (!best || priority.score > best.priority.score) {
                 best = { task, priority };
             }
@@ -388,7 +394,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
 
         return best;
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [openTasks, taskPlanning, procrastinationIndexByType]);
+    }, [openTasks, taskPlanning, procrastinationIndexByType, todayKey, taskCustomizations]);
 
     const activeFocusTask = useMemo(() => {
         if (!focusTaskId) return null;
@@ -570,11 +576,17 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         let cancelled = false;
 
         void getGamificationState().then((savedGamification) => {
-            if (!cancelled) setGamification(savedGamification);
+            if (!cancelled) {
+                latestGamificationRef.current = savedGamification;
+                setGamification(savedGamification);
+            }
         });
 
         void getTownState().then((savedTownState) => {
-            if (!cancelled) setTownState(savedTownState);
+            if (!cancelled) {
+                latestTownStateRef.current = savedTownState;
+                setTownState(savedTownState);
+            }
         });
 
         return () => {
@@ -1126,6 +1138,18 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             }).catch((error) => {
                 console.error("Could not save custom task", error);
             });
+
+            // Type has no CustomTask column of its own — persist it the
+            // same way EditTaskModal does for any task, via
+            // TaskCustomization (see the read-side merge in effectiveTasks
+            // above). Only written when the user actually picked one in
+            // the review card, so a plain-accept without one skips this.
+            if (newTask.typeOverride) {
+                persistCustomization(newTask.id, {
+                    ...EMPTY_CUSTOMIZATION,
+                    typeOverride: newTask.typeOverride,
+                });
+            }
         };
 
         window.addEventListener(
@@ -1164,40 +1188,48 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             setAwardingXp(false);
         }
 
-        setGamification((current) => {
-            if (current.awardedTaskIds.includes(task.id)) return current;
-
-            const nextState = {
-                totalXp: current.totalXp + award.xp,
-                awardedTaskIds: [...current.awardedTaskIds, task.id],
-            };
-
-            saveGamificationState(nextState);
-
-            // Town growth is awarded inside this same updater, gated by the
-            // identical dedup check above — awardXpForTask's own early-return
-            // guard reads a stale `gamification` closure, so without this a
-            // rapid re-complete before that state commits would correctly
-            // no-op XP but still double-award currency/growth.
-            const taskCourse = courses.find((c) => c.name === task.course);
-            const typeCode = task.typeOverride || classifyLabelType({
-                name: task.name,
-                course: task.course,
-                isCustomCourse: taskCourse?.isCustom,
-            });
-            const growthAward = computeGrowthAward(typeCode, award.xp);
-            const onTime = completedAt !== null && isCompletionOnTime(task.due, completedAt);
-
-            setTownState((currentTown) => {
-                const withGrowth = applyGrowthAward(currentTown, growthAward);
-                const nextTown = applyDailyCompletion(withGrowth, onTime, completedAt ?? getTodayString());
-
-                void saveTownGrowth(nextTown);
-                return nextTown;
-            });
-
-            return nextState;
+        const taskCourse = courses.find((c) => c.name === task.course);
+        const typeCode = task.typeOverride || classifyLabelType({
+            name: task.name,
+            course: task.course,
+            isCustomCourse: taskCourse?.isCustom,
         });
+        const growthAward = computeGrowthAward(typeCode, award.xp);
+        const onTime = completedAt !== null && isCompletionOnTime(task.due, completedAt);
+
+        // Dedup and state computation happen synchronously against these
+        // refs (not via a setState updater function): React does not
+        // invoke a functional setState updater synchronously at the call
+        // site here (confirmed live — an updater's own side effects ran
+        // *after* the code following its setGamification/setTownState
+        // call), so gating this function's control flow on a variable an
+        // updater assigns silently made every award a no-op (the task-xp
+        // POST fired, but the gamification/town-state PATCHes never did).
+        // The refs are the single synchronous source of truth; plain state
+        // *values* (not updater functions) are pushed to React afterward
+        // purely to trigger a re-render.
+        const currentGamification = latestGamificationRef.current ?? gamification;
+
+        if (currentGamification.awardedTaskIds.includes(task.id)) return;
+
+        const nextGamification: GamificationState = {
+            totalXp: currentGamification.totalXp + award.xp,
+            awardedTaskIds: [...currentGamification.awardedTaskIds, task.id],
+        };
+
+        latestGamificationRef.current = nextGamification;
+        setGamification(nextGamification);
+
+        const currentTown = latestTownStateRef.current ?? townState;
+        const withGrowth = applyGrowthAward(currentTown, growthAward);
+        const withWatchtower = applyWatchtowerBonus(withGrowth, onTime);
+        const nextTown = maybeAdvanceKingdomStage(withWatchtower, nextGamification.awardedTaskIds.length);
+
+        latestTownStateRef.current = nextTown;
+        setTownState(nextTown);
+
+        saveGamificationState(nextGamification);
+        void saveTownGrowth(nextTown);
         setLatestXpAward(award);
     };
 
@@ -1376,15 +1408,29 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                 : (current?.nameOverride ?? "");
 
         const previousEffectiveDueAt = current?.dueAtOverride || rawTask?.dueAt || "";
+        const previousEffectiveDue = current?.dueAtOverride
+            ? toDateKey(new Date(current.dueAtOverride))
+            : rawTask?.due ?? "";
+
+        // updatedTask.dueAt is null whenever the modal was left in "End of
+        // day" mode — a raw-instant diff can't tell "date unchanged" from
+        // "date changed" once both collapse to null, silently dropping a
+        // date-only edit. Diff by date key in that case instead, and
+        // synthesize a concrete instant so the new date actually persists.
         const dueAtOverride = isCustomTask
             ? ""
-            : (updatedTask.dueAt ?? "") !== previousEffectiveDueAt
-                ? (updatedTask.dueAt ?? "")
-                : (current?.dueAtOverride ?? "");
+            : updatedTask.dueAt
+                ? (updatedTask.dueAt !== previousEffectiveDueAt ? updatedTask.dueAt : (current?.dueAtOverride ?? ""))
+                : (updatedTask.due !== previousEffectiveDue ? endOfDayInstant(updatedTask.due) : "");
 
         // EditTaskModal offers an explicit "Auto" option for type, so no
-        // diffing heuristic is needed here — trust it directly.
-        const typeOverride = isCustomTask ? "" : (updatedTask.typeOverride ?? "");
+        // diffing heuristic is needed here — trust it directly. Unlike
+        // course/name/due, a custom task has no CustomTask column of its
+        // own to hold a type, so typeOverride is never forced empty here
+        // even for custom tasks — TaskCustomization is its only storage
+        // (effectiveTasks's read-side merge above already applies it
+        // uniformly to Canvas-synced and custom tasks alike).
+        const typeOverride = updatedTask.typeOverride ?? "";
 
         // Status dropdown offers an explicit choice, same reasoning as
         // typeOverride above — trust it directly rather than diffing.
@@ -1747,7 +1793,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                 )}
             </section>
 
-            <AIReviewPanel />
+            <AIReviewPanel courses={courses} onCourseCreated={handleCourseCreated} />
         </div>
 
         <Taskbar
@@ -1759,7 +1805,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             awardingXp={awardingXp}
             latestXpAward={latestXpAward}
             currency={townState.currency}
-            currentStreak={townState.currentStreak}
             onAddTask={openAddTask}
             userName={userName}
             userEmail={userEmail}

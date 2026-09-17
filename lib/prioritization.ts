@@ -2,6 +2,19 @@ export type PriorityInput = {
     name: string;
     due: string | null;
 
+    // Resolved "YYYY-MM-DD" custom start date (caller resolves
+    // TaskCustomization/the expired-start-date auto-revert first — this
+    // module stays ignorant of that shape). Omit/null when there's no
+    // custom start date.
+    startAt?: string | null;
+
+    // Caller-supplied "today" as "YYYY-MM-DD", used only to evaluate the
+    // startAt gate below. Passed in rather than read via `new Date()` here,
+    // same convention as lib/utils.ts's hasCustomStartDatePassed — every
+    // call site in the same render should agree on "now." Omitted → the
+    // startAt gate never fires (existing callers unaffected).
+    today?: string;
+
     importance: number;
     difficulty: number;
     consequence: number;
@@ -19,6 +32,7 @@ export type PriorityResult = {
     frogScore: number;
     reason: string;
     historyAdjusted: boolean;
+    notYetStartable: boolean;
 };
 
 // A "healthy" lead time to treat as not needing any personalized nudge.
@@ -147,13 +161,34 @@ export function calculatePriority(
         frogScore * 0.10 +
         effortScore * 0.15;
 
-    const score =
-        urgencyScore +
-        secondaryScore / 100;
+    // A future custom start date means the user literally can't start this
+    // task yet, so it must never be auto-selected as Up Next/the frog, even
+    // if its due-date urgency would otherwise dominate. This gates the
+    // final score to 0 rather than touching the urgency/secondary
+    // weighting documented in prioritizationModule.md's "Scoring formula"
+    // section.
+    //
+    // An already-overdue due date wins regardless: if a due date later
+    // moves earlier than a previously-set startAt (e.g. via Canvas
+    // re-sync), treating the task as "not yet startable" would hide
+    // something now overdue — the opposite of the user's intent.
+    const notYetStartable = Boolean(
+        task.startAt &&
+        task.today &&
+        task.startAt > task.today &&
+        !(task.due && task.due < task.today)
+    );
+
+    const score = notYetStartable
+        ? 0
+        : urgencyScore + secondaryScore / 100;
 
     let reason = "";
 
-    if (rawUrgencyScore >= 95) {
+    if (notYetStartable) {
+        reason =
+            "This task's start date hasn't arrived yet.";
+    } else if (rawUrgencyScore >= 95) {
         reason =
             "This is due very soon, so it needs immediate attention.";
     } else if (historyAdjusted) {
@@ -182,5 +217,6 @@ export function calculatePriority(
         frogScore,
         reason,
         historyAdjusted,
+        notYetStartable,
     };
 }

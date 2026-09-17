@@ -27,8 +27,55 @@ function demonstrateProcrastinationAdjustment() {
     console.log(JSON.stringify(withChronicLateHistory, null, 2));
 }
 
+function demonstrateStartDateGate() {
+    const today = "2026-09-14";
+
+    const gated = calculatePriority({
+        name: "Term Paper (not startable yet)",
+        due: "2026-09-15",
+        importance: 9,
+        difficulty: 9,
+        consequence: 8,
+        estimatedMinutes: 180,
+        startAt: "2026-09-20",
+        today,
+    });
+
+    const ungatedOnceStartAtArrives = calculatePriority({
+        name: "Term Paper (start date reached)",
+        due: "2026-09-15",
+        importance: 9,
+        difficulty: 9,
+        consequence: 8,
+        estimatedMinutes: 180,
+        startAt: "2026-09-14",
+        today,
+    });
+
+    const overdueBeatsStaleStartAt = calculatePriority({
+        name: "Missed Assignment (stale future startAt)",
+        due: "2026-09-10",
+        importance: 5,
+        difficulty: 4,
+        consequence: 4,
+        estimatedMinutes: 30,
+        startAt: "2026-09-20",
+        today,
+    });
+
+    console.log("\nGATED (future startAt, expect score: 0, notYetStartable: true)");
+    console.log(JSON.stringify(gated, null, 2));
+
+    console.log("\nUNGATED (startAt === today, expect normal scoring)");
+    console.log(JSON.stringify(ungatedOnceStartAtArrives, null, 2));
+
+    console.log("\nOVERDUE BEATS STALE FUTURE startAt (expect notYetStartable: false)");
+    console.log(JSON.stringify(overdueBeatsStaleStartAt, null, 2));
+}
+
 async function main() {
     demonstrateProcrastinationAdjustment();
+    demonstrateStartDateGate();
 
     // Two assignments in one batch, to demonstrate/verify analyzeAssignments'
     // batched Ollama call (one round trip instead of two).

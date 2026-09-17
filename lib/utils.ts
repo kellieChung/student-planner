@@ -285,6 +285,18 @@ export function resolveDueTime(
     };
 }
 
+// Synthesizes a concrete end-of-day instant for a date-only override —
+// resolveDueTime's auto-mode dueAt:null is right for a fresh Assignment
+// (no override wanted yet), but a due-DATE edit made while in auto mode
+// still needs a real instant to persist as dueAtOverride, or the new date
+// is silently dropped.
+export function endOfDayInstant(dueDateKey: string): string {
+    const due = parseLocalDate(dueDateKey);
+    due.setHours(23, 59, 59, 999);
+
+    return due.toISOString();
+}
+
 // Inverse of resolveDueTime's time component, for hydrating an
 // <input type="time"> from an existing dueAt. Absent dueAt (or a task
 // with no time-of-day) means "end of day" — represented as "".

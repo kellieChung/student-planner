@@ -37,6 +37,26 @@ response, because importance/difficulty/consequence were weighted as
   flat weighted sum where the non-urgency terms can rival a one-bucket
   urgency swing.
 
+Start-date gate (2026-09-14) — a gate, not a weight, so it does not
+reopen the "Scoring formula" weighting above:
+
+- A task with a custom start date in the future (TaskCustomization.startAt
+  > today) cannot be worked on yet, so it must never be auto-selected as
+  Up Next/the frog, regardless of how urgent its due date is. This forces
+  the final score to 0 rather than adjusting the urgency/secondary
+  weights.
+- An overdue due date always wins over a stale future startAt (e.g. the
+  due date moved earlier via Canvas ingest after startAt was set) — never
+  hide something now overdue.
+- Only affects automatic ranking (Up Next / lib/prioritization.ts's
+  `score`). A user who explicitly focuses a not-yet-startable task (the
+  per-task Focus toggle, "Focus in Pomodoro") keeps that choice — a
+  direct user action, not auto-prioritization, out of scope for this gate.
+- lib/prioritization.ts stays framework-free: callers resolve
+  TaskCustomization/the expired-start-date auto-revert (see
+  hasCustomStartDatePassed in lib/utils.ts) into a plain "YYYY-MM-DD"
+  startAt/today pair before calling calculatePriority.
+
 Output: a ranked task list (the "frog" — top priority — clearly
 highlighted), re-sorted dynamically as new completions add data.
 
