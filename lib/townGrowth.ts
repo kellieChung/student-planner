@@ -1,5 +1,4 @@
 import { LabelType } from "@/lib/taskLabel";
-import { daysBetween, parseLocalDate } from "@/lib/utils";
 import { BuildingKey, GrowthAward, KingdomStage, TownState } from "@/types/townState";
 
 export const BUILDING_KEYS: BuildingKey[] = [
@@ -115,69 +114,48 @@ export function nextKingdomStage(stage: KingdomStage): KingdomStage | null {
     return index >= 0 && index < STAGE_ORDER.length - 1 ? STAGE_ORDER[index + 1] : null;
 }
 
-// "On-time" for the streak: completed on/before its due date, using the
-// same plain "YYYY-MM-DD" comparison convention Assignment.due already
-// uses elsewhere (no server-side timezone guessing).
+// Completed on/before its due date, using the same plain "YYYY-MM-DD"
+// comparison convention Assignment.due already uses elsewhere (no
+// server-side timezone guessing).
 export function isCompletionOnTime(due: string, completedDay: string): boolean {
     return completedDay <= due;
 }
 
-const GRACE_TOKEN_MAX_GAP_DAYS = 1;
+const WATCHTOWER_ON_TIME_BONUS = 5;
 
-// Extends the Watchtower streak on a consecutive good day (a day with at
-// least one on-time completion), spends one grace token to bridge exactly
-// one missed day if available, otherwise resets. Per gamificationSystem.md's
-// "avoid punishing streak mechanics" — a late completion simply doesn't
-// extend the streak, it doesn't break it either; only a fully missed day
-// (checked once, the next time a good day happens) risks breaking it.
-export function updateStreak(
-    state: Pick<TownState, "currentStreak" | "longestStreak" | "graceTokens" | "lastGoodDay">,
-    completedOnTime: boolean,
-    todayStr: string
-): Pick<TownState, "currentStreak" | "longestStreak" | "graceTokens" | "lastGoodDay"> {
+// Watchtower's trigger, deliberately not a streak: a flat bonus on every
+// on-time completion, no consecutive-day tracking, no reset, no grace
+// tokens. The previous streak-based version (updateStreak/
+// applyDailyCompletion, removed) was found to run against
+// gamificationSystem.md's own "avoid punishing mechanics" principle even
+// with grace tokens — any day-to-day consistency requirement still creates
+// pressure. A single late task now simply doesn't add anything; it can't
+// undo anything either.
+export function applyWatchtowerBonus(state: TownState, completedOnTime: boolean): TownState {
     if (!completedOnTime) return state;
-    if (state.lastGoodDay === todayStr) return state;
 
-    const gapDays = state.lastGoodDay
-        ? daysBetween(parseLocalDate(todayStr), parseLocalDate(state.lastGoodDay))
-        : null;
-
-    let currentStreak: number;
-    let graceTokens = state.graceTokens;
-
-    if (gapDays === null || gapDays <= 1) {
-        currentStreak = state.currentStreak + 1;
-    } else if (gapDays - 1 <= GRACE_TOKEN_MAX_GAP_DAYS && graceTokens > 0) {
-        graceTokens -= 1;
-        currentStreak = state.currentStreak + 1;
-    } else {
-        currentStreak = 1;
-    }
-
-    return {
-        currentStreak,
-        longestStreak: Math.max(state.longestStreak, currentStreak),
-        graceTokens,
-        lastGoodDay: todayStr,
-    };
+    return { ...state, watchtowerGrowth: state.watchtowerGrowth + WATCHTOWER_ON_TIME_BONUS };
 }
 
-const WATCHTOWER_GROWTH_PER_STREAK_DAY = 5;
+const MILESTONE_CHECK_INTERVAL = 5;
 
-// Composes updateStreak with the Watchtower's own growth counter — its
-// height/detail grows with consistency, so it only advances on a genuine
-// streak extension (including a grace-token save), not on a same-day repeat
-// or an unextended streak.
-export function applyDailyCompletion(state: TownState, completedOnTime: boolean, todayStr: string): TownState {
-    const streakFields = updateStreak(state, completedOnTime, todayStr);
+// The overall Village/Town/City/Kingdom stage is deliberately NOT derived
+// live from totalTownGrowth on every render — per-task growth should feel
+// continuous (each building updates immediately), but the big skyline-wide
+// jump is gated behind a checkpoint so it reads as earned rather than an
+// automatic side effect of any one task. Checkpoint = every Nth completed
+// task (completionCount is the caller's post-award GamificationState.
+// awardedTaskIds.length — no separate counter needed). computeKingdomStage
+// still does the actual threshold math; this just decides *when* the
+// persisted TownState.kingdomStage is allowed to catch up to it, and only
+// forward — a checkpoint after several quiet weeks can jump more than one
+// stage at once, but kingdomStage never regresses.
+export function maybeAdvanceKingdomStage(state: TownState, completionCount: number): TownState {
+    if (completionCount % MILESTONE_CHECK_INTERVAL !== 0) return state;
 
-    if (streakFields.currentStreak <= state.currentStreak) {
-        return { ...state, ...streakFields };
-    }
+    const eligible = computeKingdomStage(state);
+    const eligibleIndex = STAGE_ORDER.indexOf(eligible);
+    const currentIndex = STAGE_ORDER.indexOf(state.kingdomStage);
 
-    return {
-        ...state,
-        ...streakFields,
-        watchtowerGrowth: state.watchtowerGrowth + WATCHTOWER_GROWTH_PER_STREAK_DAY,
-    };
+    return eligibleIndex > currentIndex ? { ...state, kingdomStage: eligible } : state;
 }

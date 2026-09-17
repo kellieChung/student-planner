@@ -9,12 +9,11 @@ const SELECT = {
     trainingGroundsGrowth: true,
     watchtowerGrowth: true,
     townSquareGrowth: true,
-    currentStreak: true,
-    longestStreak: true,
-    graceTokens: true,
-    lastGoodDay: true,
+    kingdomStage: true,
     onboardingCompletedAt: true,
 } as const;
+
+const KINGDOM_STAGES = ["village", "town", "city", "kingdom"] as const;
 
 export async function GET() {
     try {
@@ -51,10 +50,7 @@ export async function GET() {
             trainingGroundsGrowth: state?.trainingGroundsGrowth ?? 0,
             watchtowerGrowth: state?.watchtowerGrowth ?? 0,
             townSquareGrowth: state?.townSquareGrowth ?? 0,
-            currentStreak: state?.currentStreak ?? 0,
-            longestStreak: state?.longestStreak ?? 0,
-            graceTokens: state?.graceTokens ?? 2,
-            lastGoodDay: state?.lastGoodDay ?? null,
+            kingdomStage: state?.kingdomStage ?? "village",
             onboardingCompletedAt: state?.onboardingCompletedAt?.toISOString() ?? null,
         });
     } catch (error) {
@@ -118,9 +114,6 @@ export async function PATCH(request: Request) {
             "trainingGroundsGrowth",
             "watchtowerGrowth",
             "townSquareGrowth",
-            "currentStreak",
-            "longestStreak",
-            "graceTokens",
         ] as const;
 
         const data: {
@@ -130,10 +123,7 @@ export async function PATCH(request: Request) {
             trainingGroundsGrowth?: number;
             watchtowerGrowth?: number;
             townSquareGrowth?: number;
-            currentStreak?: number;
-            longestStreak?: number;
-            graceTokens?: number;
-            lastGoodDay?: string | null;
+            kingdomStage?: string;
             onboardingCompletedAt?: Date | null;
         } = {};
 
@@ -149,14 +139,14 @@ export async function PATCH(request: Request) {
             }
         }
 
-        if ("lastGoodDay" in input) {
-            if (input.lastGoodDay !== null && typeof input.lastGoodDay !== "string") {
+        if ("kingdomStage" in input) {
+            if (!KINGDOM_STAGES.includes(input.kingdomStage as typeof KINGDOM_STAGES[number])) {
                 return NextResponse.json(
-                    { success: false, error: "'lastGoodDay' must be a string or null." },
+                    { success: false, error: "'kingdomStage' must be one of village/town/city/kingdom." },
                     { status: 400 }
                 );
             }
-            data.lastGoodDay = input.lastGoodDay as string | null;
+            data.kingdomStage = input.kingdomStage as string;
         }
 
         if ("onboardingCompletedAt" in input) {

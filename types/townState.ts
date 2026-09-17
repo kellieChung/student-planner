@@ -5,10 +5,7 @@ export type TownState = {
     trainingGroundsGrowth: number;
     watchtowerGrowth: number;
     townSquareGrowth: number;
-    currentStreak: number;
-    longestStreak: number;
-    graceTokens: number;
-    lastGoodDay: string | null;
+    kingdomStage: KingdomStage;
     onboardingCompletedAt: string | null;
 };
 

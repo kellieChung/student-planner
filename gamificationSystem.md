@@ -127,13 +127,15 @@ through a missed day rather than a hard reset (shipped: 2 grace tokens).
 
 ## Image Asset Specification
 
-Still needed — the current build uses `PixelBlock` (colored divs +
-emoji/label) as a placeholder for everything below; no real art has
-shipped yet.
+Town/building art is sourced (see below); `PixelBlock` (colored divs +
+emoji/label) is still what `Building.tsx` actually renders — wiring real
+tiles into it is a separate art-direction pass, not yet done.
 
 **Style guide:** pixel art, 16-bit/SNES-RPG era (Stardew Valley
-proportions, not 8-bit NES chunkiness). Base tile/sprite unit 32×32px
-(buildings/scenery as multiples, e.g. 64×64 or 96×96). Limited, warm,
+proportions, not 8-bit NES chunkiness). Base tile/sprite unit is the
+sourced pack's native 16×16px, rendered at an integer scale (2x, i.e.
+effectively 32px on screen) via `components/world/TileSprite.tsx` — see
+`lib/spriteSheet.ts`/`lib/spriteMap.ts`. Limited, warm,
 muted medieval palette (parchment beige, forest green, brick red/
 terracotta, slate blue, weathered wood brown) — reuse the same ~12-16
 colors across every asset. Consistent 1px dark outline. Transparent PNG
@@ -154,11 +156,11 @@ background on all sprites/icons.
 - *UI icons (~16-24px, flatter than world sprites):* clock, lute/note,
   scroll, coin/crown, book, quill, hammer/gear.
 
-**Sourcing real art faster than generating from scratch:** Kenney.nl
-publishes large, free, CC0-licensed pixel-art packs (RPG town/building
-tiles, UI icons, fantasy sprites) usable with no attribution — likely
-the fastest path to a cohesive style. itch.io has cheap "cozy"/
-"medieval town-builder" packs if Kenney's style doesn't fit. The mascot
-itself will likely need a custom design regardless (it's the app's
-unique character); generic building/terrain/UI assets are exactly what
-pre-made packs cover well.
+**Sourcing:** town/building/terrain/road tiles come from Toen's Medieval
+Strategy Sprite Pack (`public/tiles/toen-medieval-strategy.png`, a 7x52
+grid of 16×16 tiles), **CC-BY 4.0** — unlike Kenney's CC0 packs, this
+requires attribution, which lives on `/credits` (linked from the Taskbar's
+⚙️ menu). Don't add a new asset under this attribution requirement without
+also adding it to that page. The mascot itself still needs a custom design
+(it's the app's unique character); generic building/terrain/road tiles are
+covered by the sourced pack.

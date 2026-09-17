@@ -1,4 +1,6 @@
-import { TownState } from "@/types/townState";
+import { KingdomStage, TownState } from "@/types/townState";
+
+const KINGDOM_STAGES: KingdomStage[] = ["village", "town", "city", "kingdom"];
 
 const defaultState: TownState = {
     currency: 0,
@@ -7,10 +9,7 @@ const defaultState: TownState = {
     trainingGroundsGrowth: 0,
     watchtowerGrowth: 0,
     townSquareGrowth: 0,
-    currentStreak: 0,
-    longestStreak: 0,
-    graceTokens: 2,
-    lastGoodDay: null,
+    kingdomStage: "village",
     onboardingCompletedAt: null,
 };
 
@@ -22,10 +21,7 @@ function coerceState(data: Partial<TownState>): TownState {
         trainingGroundsGrowth: typeof data.trainingGroundsGrowth === "number" ? data.trainingGroundsGrowth : 0,
         watchtowerGrowth: typeof data.watchtowerGrowth === "number" ? data.watchtowerGrowth : 0,
         townSquareGrowth: typeof data.townSquareGrowth === "number" ? data.townSquareGrowth : 0,
-        currentStreak: typeof data.currentStreak === "number" ? data.currentStreak : 0,
-        longestStreak: typeof data.longestStreak === "number" ? data.longestStreak : 0,
-        graceTokens: typeof data.graceTokens === "number" ? data.graceTokens : 2,
-        lastGoodDay: typeof data.lastGoodDay === "string" ? data.lastGoodDay : null,
+        kingdomStage: KINGDOM_STAGES.includes(data.kingdomStage as KingdomStage) ? (data.kingdomStage as KingdomStage) : "village",
         onboardingCompletedAt: typeof data.onboardingCompletedAt === "string" ? data.onboardingCompletedAt : null,
     };
 }
@@ -63,10 +59,7 @@ export async function saveTownGrowth(state: TownState): Promise<void> {
         trainingGroundsGrowth: state.trainingGroundsGrowth,
         watchtowerGrowth: state.watchtowerGrowth,
         townSquareGrowth: state.townSquareGrowth,
-        currentStreak: state.currentStreak,
-        longestStreak: state.longestStreak,
-        graceTokens: state.graceTokens,
-        lastGoodDay: state.lastGoodDay,
+        kingdomStage: state.kingdomStage,
     };
 
     try {

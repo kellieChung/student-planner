@@ -44,10 +44,7 @@ export default async function GamificationDevPage() {
         trainingGroundsGrowth: townStateRow?.trainingGroundsGrowth ?? 0,
         watchtowerGrowth: townStateRow?.watchtowerGrowth ?? 0,
         townSquareGrowth: townStateRow?.townSquareGrowth ?? 0,
-        currentStreak: townStateRow?.currentStreak ?? 0,
-        longestStreak: townStateRow?.longestStreak ?? 0,
-        graceTokens: townStateRow?.graceTokens ?? 2,
-        lastGoodDay: townStateRow?.lastGoodDay ?? null,
+        kingdomStage: (townStateRow?.kingdomStage as TownState["kingdomStage"]) ?? "village",
         onboardingCompletedAt: townStateRow?.onboardingCompletedAt?.toISOString() ?? null,
     };
 
