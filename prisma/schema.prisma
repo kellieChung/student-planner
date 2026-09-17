@@ -8,26 +8,28 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  accounts      Account[]
-  sessions      Session[]
-  extensionSessions ExtensionSession[]
-  canvasCourses     CanvasCourse[]
-  assignments       Assignment[]
-  discussions       Discussion[]
-  announcements     Announcement[]
-  musicPlaylists MusicPlaylist[]
-  taskCustomizations TaskCustomization[]
-  gamificationState  GamificationState?
+  id                            String                         @id @default(cuid())
+  name                          String?
+  email                         String?                        @unique
+  emailVerified                 DateTime?
+  image                         String?
+  accounts                      Account[]
+  sessions                      Session[]
+  extensionSessions             ExtensionSession[]
+  canvasCourses                 CanvasCourse[]
+  deletedCanvasCourses          DeletedCanvasCourse[]
+  assignments                   Assignment[]
+  discussions                   Discussion[]
+  announcements                 Announcement[]
+  musicPlaylists                MusicPlaylist[]
+  taskCustomizations            TaskCustomization[]
+  gamificationState             GamificationState?
   announcementSuggestionReviews AnnouncementSuggestionReview[]
-  customTasks            CustomTask[]
-  taskPlanningEstimates  TaskPlanningEstimate[]
-  procrastinationRecords ProcrastinationRecord[]
-  townState              TownState?
+  customTasks                   CustomTask[]
+  taskPlanningEstimates         TaskPlanningEstimate[]
+  procrastinationRecords        ProcrastinationRecord[]
+  townState                     TownState?
+  worldLayout                   WorldLayout?
 }
 
 model Account {
@@ -70,95 +72,118 @@ model ExtensionSession {
 }
 
 model CanvasCourse {
-  id              String   @id @default(cuid())
-  canvasId        String
-  canvasOrigin    String
-  name            String
+  id           String   @id @default(cuid())
+  canvasId     String
+  canvasOrigin String
+  name         String
   // User-controlled: hide a course Canvas still reports as active (e.g. a
   // teacher never concluded it) without it reappearing on the next sync.
-  hidden          Boolean  @default(false)
+  hidden       Boolean  @default(false)
   // User rename override — sync (app/api/canvas/sync/route.ts) always
   // overwrites `name` from Canvas, so a rename has to live in a column
   // sync never touches, same reasoning as `hidden` above.
-  displayName     String?
+  displayName  String?
   // User-editable short code shown on planner cards (e.g. "MA" for a
   // course named "Calculus BC") — unset means "use the auto-derived
   // default" (lib/taskLabel.ts's courseAbbreviationDefault).
-  abbreviation    String?
+  abbreviation String?
   // User-editable hex color (e.g. "#3b82f6") for the course badge shown on
   // planner cards — unset means "use the auto-derived default"
   // (components/AssignmentCard.tsx's courseColorFor hash).
-  color           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  color        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  assignments     Assignment[]
-  discussions     Discussion[]
-  announcements   Announcement[]
+  assignments   Assignment[]
+  discussions   Discussion[]
+  announcements Announcement[]
+
+  @@unique([userId, canvasOrigin, canvasId])
+  @@index([userId])
+}
+
+// Tombstones a user's explicit "Delete" of a CanvasCourse (see
+// app/api/courses/[courseId]/route.ts's DELETE handler) so a later sync
+// doesn't silently recreate it just because Canvas still reports the
+// course active. Not a foreign key to CanvasCourse — the whole point is
+// that row no longer exists. Only the extension's explicit "Restore
+// Course" flow (app/api/canvas/restore-course/route.ts) removes a row
+// here; a routine sync's pruning step (app/api/canvas/sync/route.ts) never
+// writes one, since a course dropping off Canvas's active list is a
+// different event from the user rejecting it and shouldn't be permanently
+// blocked from ever syncing back in.
+model DeletedCanvasCourse {
+  id           String   @id @default(cuid())
+  canvasOrigin String
+  canvasId     String
+  deletedAt    DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, canvasOrigin, canvasId])
   @@index([userId])
 }
 
 model Assignment {
-  id              String   @id @default(cuid())
-  canvasId        String
-  name            String
-  description     String?
-  dueAt           DateTime?
-  htmlUrl         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id          String    @id @default(cuid())
+  canvasId    String
+  name        String
+  description String?
+  dueAt       DateTime?
+  htmlUrl     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  courseId        String
-  course          CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId String
+  course   CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, canvasId])
   @@index([userId])
 }
 
 model Discussion {
-  id          String        @id @default(cuid())
-  canvasId    String
-  title       String
-  message     String?
-  htmlUrl     String?
-  postedAt    DateTime?
-  dueAt       DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id        String    @id @default(cuid())
+  canvasId  String
+  title     String
+  message   String?
+  htmlUrl   String?
+  postedAt  DateTime?
+  dueAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  userId      String
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  courseId    String
-  course      CanvasCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId String
+  course   CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, canvasId])
   @@index([userId])
 }
 
 model Announcement {
-  id              String   @id @default(cuid())
-  canvasId        String
-  title           String
-  message         String?
-  htmlUrl         String?
-  postedAt        DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id        String    @id @default(cuid())
+  canvasId  String
+  title     String
+  message   String?
+  htmlUrl   String?
+  postedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  courseId        String
-  course          CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId String
+  course   CanvasCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([courseId, canvasId])
   @@index([userId])
@@ -177,27 +202,27 @@ model AnnouncementSuggestionReview {
   // id of its own, and a positional index isn't stable across re-runs of
   // the extraction prompt.
   suggestionKey        String
-  status               String   // "accepted" | "rejected"
+  status               String // "accepted" | "rejected"
   createdAt            DateTime @default(now())
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sourceAnnouncementId, suggestionKey])
   @@index([userId])
 }
 
 model TaskCustomization {
-  id        String    @id @default(cuid())
+  id            String    @id @default(cuid())
   // Free-form task id: either a Canvas-synced Assignment.id or a client-
   // generated "custom-<timestamp>" id. Not a foreign key — custom tasks
   // have no DB row of their own, so ownership is enforced purely by
   // scoping every query by userId, same as everywhere else in this file.
-  taskId    String
-  startAt   DateTime?
+  taskId        String
+  startAt       DateTime?
   // Only meaningfully set for Canvas-synced tasks — custom tasks already
   // store their own course directly on their localStorage object.
-  course    String?
+  course        String?
   // Full task-name override — Canvas sync (lib/canvasIngest.ts) would
   // otherwise overwrite Assignment.name on every resync. Also only
   // meaningfully set for Canvas-synced tasks, same reasoning as `course`.
@@ -208,27 +233,27 @@ model TaskCustomization {
   // Overrides the resolved due instant (UTC) — Canvas sync would
   // otherwise overwrite Assignment.dueAt on every resync.
   dueAtOverride DateTime?
-  notes     String?
+  notes         String?
   // Completion + deletion state, for ANY task (Canvas-synced or custom) —
   // was localStorage-only (task_states/deleted_task_ids), which is why it
   // never carried over between browser profiles for the same account.
   // `deleted` is only meaningful for a Canvas-synced task (a hidden-from-
   // planner tombstone); a deleted custom task is a real CustomTask row
   // delete instead, no tombstone needed.
-  completed   Boolean   @default(false)
-  completedAt DateTime?
+  completed     Boolean   @default(false)
+  completedAt   DateTime?
   // Set while a task has been started but not finished — cleared whenever
   // `completed` becomes true. No timestamp: nothing downstream needs
   // "when did I start it," and adding one to the startAt/completedAt
   // fallback chain in WeeklyPlannerView.tsx's grid-span calculation would
   // reopen the exact date-serialization NaN-column bug fixed there before.
-  inProgress  Boolean   @default(false)
-  deleted     Boolean   @default(false)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  inProgress    Boolean   @default(false)
+  deleted       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, taskId])
   @@index([userId])
@@ -254,7 +279,7 @@ model CustomTask {
   updatedAt            DateTime  @updatedAt
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -281,7 +306,7 @@ model TaskPlanningEstimate {
   updatedAt        DateTime @updatedAt
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, taskId])
   @@index([userId])
@@ -300,7 +325,7 @@ model ProcrastinationRecord {
   createdAt   DateTime @default(now())
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, taskType])
 }
@@ -327,9 +352,9 @@ model GamificationState {
 // GamificationState's existing PATCH validator/full-row-replace never has to
 // change and can't accidentally wipe real XP data.
 model TownState {
-  id      String @id @default(cuid())
-  userId  String @unique
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   currency Int @default(0)
 
@@ -341,15 +366,30 @@ model TownState {
   watchtowerGrowth      Int @default(0)
   townSquareGrowth      Int @default(0)
 
-  // On-time completion streak (Watchtower). lastGoodDay is a plain
-  // "YYYY-MM-DD" key, same convention as Assignment.due.
-  currentStreak  Int     @default(0)
-  longestStreak  Int     @default(0)
-  graceTokens    Int     @default(2)
-  lastGoodDay    String?
+  // Village/Town/City/Kingdom, gated by a completion-count milestone
+  // checkpoint rather than derived live from growth (see
+  // maybeAdvanceKingdomStage in lib/townGrowth.ts) — only ever advances
+  // forward.
+  kingdomStage String @default("village")
 
   onboardingCompletedAt DateTime?
   updatedAt             DateTime  @updatedAt
+}
+
+// The user-designed World map (ground theme, decorations, building-stage
+// art, growth-gated scatter houses, the wall) — edited via /dev/map-editor,
+// read by TownMap.tsx to render the real World view. A single JSON blob,
+// not relational rows like TaskCustomization: this is one artifact one
+// user designs in one sitting, so a full-row replace on save is the
+// expected behavior here, not the stale-snapshot hazard it would be for
+// concurrently-edited task data.
+model WorldLayout {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  data      Json
+  updatedAt DateTime @updatedAt
 }
 
 model MusicPlaylist {
@@ -360,7 +400,7 @@ model MusicPlaylist {
   updatedAt DateTime @updatedAt
 
   userId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   tracks MusicTrack[]
 
@@ -368,11 +408,11 @@ model MusicPlaylist {
 }
 
 model MusicTrack {
-  id         String   @id @default(cuid())
-  title      String
-  sourceUrl  String
-  thumbnail  String?
-  position   Int      @default(0)
+  id        String  @id @default(cuid())
+  title     String
+  sourceUrl String
+  thumbnail String?
+  position  Int     @default(0)
 
   playlistId String
   playlist   MusicPlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
