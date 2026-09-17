@@ -8,6 +8,11 @@ export type ProposedTask = {
     sourceAnnouncementId: string;
     confidence: "high" | "medium" | "low";
 
+    // Client-only: the AI pipeline never sets this. Populated when the
+    // user overrides the suggestion's classified type in the review card
+    // before accepting — mirrors Assignment["typeOverride"].
+    typeOverride?: "HW" | "R" | "EXAM" | "TODO" | null;
+
     // Stable content-derived identity for this suggestion (hash of
     // sourceAnnouncementId + normalized name) — used to persist an
     // accept/reject decision (AnnouncementSuggestionReview) since a

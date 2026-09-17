@@ -452,198 +452,267 @@ export async function POST(
             ANNOUNCEMENT_BATCH_SIZE
         );
 
-        const resultsByBatch = await mapWithConcurrency(
-            announcementBatches,
-            OLLAMA_CONCURRENCY,
-            async (batch) => {
-                let proposedTasksByAnnouncement;
+        // --------------------------------------------------
+        // From here on, this route deliberately deviates from the
+        // try{}catch{return NextResponse.json(...)} shape documented in
+        // CLAUDE.md: a batch of announcements can take a while (each is an
+        // Anthropic/Ollama call plus a duplicate check), and streaming each
+        // batch's result to the client as it resolves — instead of only
+        // after every batch finishes — is what lets the review UI show
+        // suggestions as soon as they're ready and show real progress
+        // otherwise. Once `new Response(stream, ...)` is returned below,
+        // response headers are already committed, so the outer try/catch
+        // wrapping this whole handler can no longer fall back to a JSON
+        // error response for anything that happens inside the stream — the
+        // stream's own start() has its own try/catch/finally for exactly
+        // that reason, and reports failure as a data frame instead.
+        //
+        // This is intentionally still ONE request, not one client-issued
+        // POST per batch: OLLAMA_CONCURRENCY (2) on this outer loop, plus
+        // the deliberate concurrency-1 cap on the nested per-announcement
+        // duplicate-check loop below, exists specifically to bound total
+        // concurrent local Ollama calls system-wide — see the 2026-09-07
+        // PROGRESS.md entry on the duplicate-check timeout cascade that cap
+        // fixed. N independent client-driven requests would each get their
+        // own concurrency pool server-side and silently reintroduce that
+        // exact bug.
+        // --------------------------------------------------
+
+        const encoder = new TextEncoder();
+
+        const stream = new ReadableStream({
+            async start(controller) {
+                function send(frame: Record<string, unknown>) {
+                    controller.enqueue(
+                        encoder.encode(JSON.stringify(frame) + "\n")
+                    );
+                }
 
                 try {
-                    console.log(
-                        `🤖 Analyzing ${batch.length} announcement(s): ${batch.map((a) => `"${a.title}"`).join(", ")}`
-                    );
+                    send({
+                        type: "start",
+                        totalAnnouncements: announcements.length,
+                        totalBatches: announcementBatches.length,
+                    });
 
-                    proposedTasksByAnnouncement =
-                        await analyzeAnnouncements(batch);
-                } catch (error) {
-                    console.error(
-                        "❌ Failed to analyze announcement batch:",
-                        error
-                    );
+                    let completedAnnouncements = 0;
 
-                    return batch.map((announcement) => ({
-                        announcement: toAnnouncementSummary(announcement),
-                        tasks: [],
-                        error: "Failed to analyze announcement.",
-                    }));
-                }
+                    await mapWithConcurrency(
+                        announcementBatches,
+                        OLLAMA_CONCURRENCY,
+                        async (batch) => {
+                            let proposedTasksByAnnouncement;
 
-                // Suggestions already accepted/rejected shouldn't
-                // resurface on a later automatic-mode run. Custom mode
-                // (an explicit re-selection of these announcements)
-                // still shows them — the user asked to re-review.
-                // Skipped for the duplicate check too, saving that
-                // second Ollama call's cost.
-                let alreadyDecidedKeys = new Set<string>();
-
-                if (!isCustomSelection) {
-                    const reviews =
-                        await prisma.announcementSuggestionReview.findMany({
-                            where: {
-                                userId: user.id,
-                                sourceAnnouncementId: {
-                                    in: batch.map((a) => a.id),
-                                },
-                            },
-                            select: {
-                                sourceAnnouncementId: true,
-                                suggestionKey: true,
-                            },
-                        });
-
-                    alreadyDecidedKeys = new Set(
-                        reviews.map(
-                            (r) => `${r.sourceAnnouncementId}::${r.suggestionKey}`
-                        )
-                    );
-                }
-
-                // Bounded to 1: each batch worker's duplicate checks run
-                // strictly one-at-a-time, so combined with the outer
-                // mapWithConcurrency's OLLAMA_CONCURRENCY cap on concurrent
-                // batches, total concurrent local Ollama duplicate-check
-                // calls across the whole request stay at OLLAMA_CONCURRENCY
-                // — previously unbounded here (up to
-                // ANNOUNCEMENT_BATCH_SIZE per batch on top of
-                // OLLAMA_CONCURRENCY concurrent batches), which is what was
-                // overloading the local Ollama server and causing the
-                // duplicate-check timeouts.
-                return mapWithConcurrency(
-                    batch.map((announcement, i) => ({ announcement, i })),
-                    1,
-                    async ({ announcement, i }) => {
-                        const proposedTasks = proposedTasksByAnnouncement[
-                            i
-                        ].filter(
-                            (task) =>
-                                !alreadyDecidedKeys.has(
-                                    `${task.sourceAnnouncementId}::${task.suggestionKey}`
-                                )
-                        );
-
-                        const nearbyAssignments =
-                            nearbyAssignmentsFor(announcement);
-
-                        console.log(
-                            `🔎 ${nearbyAssignments.length} nearby assignments for "${announcement.title}"`
-                        );
-
-                        let tasksWithDuplicates;
-
-                        try {
-                            const duplicateChecks =
-                                await findDuplicateTasks(
-                                    proposedTasks.map((task) => task.name),
-                                    nearbyAssignments
+                            try {
+                                console.log(
+                                    `🤖 Analyzing ${batch.length} announcement(s): ${batch.map((a) => `"${a.title}"`).join(", ")}`
                                 );
 
-                            tasksWithDuplicates = proposedTasks.map(
-                                (task, taskIndex) => {
-                                    const duplicateCheck =
-                                        duplicateChecks[taskIndex];
+                                proposedTasksByAnnouncement =
+                                    await analyzeAnnouncements(batch);
+                            } catch (error) {
+                                console.error(
+                                    "❌ Failed to analyze announcement batch:",
+                                    error
+                                );
 
-                                    const matchedAssignment =
-                                        duplicateCheck.matchingAssignmentId
-                                            ? nearbyAssignments.find(
-                                                  (assignment) =>
-                                                      assignment.id ===
-                                                      duplicateCheck.matchingAssignmentId
-                                              ) ?? null
-                                            : null;
+                                return batch.map((announcement) => ({
+                                    announcement: toAnnouncementSummary(announcement),
+                                    tasks: [],
+                                    error: "Failed to analyze announcement.",
+                                }));
+                            }
 
-                                    console.log(
-                                        `🔍 "${task.name}" →`,
-                                        duplicateCheck
+                            // Suggestions already accepted/rejected shouldn't
+                            // resurface on a later automatic-mode run. Custom mode
+                            // (an explicit re-selection of these announcements)
+                            // still shows them — the user asked to re-review.
+                            // Skipped for the duplicate check too, saving that
+                            // second Ollama call's cost.
+                            let alreadyDecidedKeys = new Set<string>();
+
+                            if (!isCustomSelection) {
+                                const reviews =
+                                    await prisma.announcementSuggestionReview.findMany({
+                                        where: {
+                                            userId: user.id,
+                                            sourceAnnouncementId: {
+                                                in: batch.map((a) => a.id),
+                                            },
+                                        },
+                                        select: {
+                                            sourceAnnouncementId: true,
+                                            suggestionKey: true,
+                                        },
+                                    });
+
+                                alreadyDecidedKeys = new Set(
+                                    reviews.map(
+                                        (r) => `${r.sourceAnnouncementId}::${r.suggestionKey}`
+                                    )
+                                );
+                            }
+
+                            // Bounded to 1: each batch worker's duplicate checks run
+                            // strictly one-at-a-time, so combined with the outer
+                            // mapWithConcurrency's OLLAMA_CONCURRENCY cap on concurrent
+                            // batches, total concurrent local Ollama duplicate-check
+                            // calls across the whole request stay at OLLAMA_CONCURRENCY
+                            // — previously unbounded here (up to
+                            // ANNOUNCEMENT_BATCH_SIZE per batch on top of
+                            // OLLAMA_CONCURRENCY concurrent batches), which is what was
+                            // overloading the local Ollama server and causing the
+                            // duplicate-check timeouts.
+                            return mapWithConcurrency(
+                                batch.map((announcement, i) => ({ announcement, i })),
+                                1,
+                                async ({ announcement, i }) => {
+                                    const proposedTasks = proposedTasksByAnnouncement[
+                                        i
+                                    ].filter(
+                                        (task) =>
+                                            !alreadyDecidedKeys.has(
+                                                `${task.sourceAnnouncementId}::${task.suggestionKey}`
+                                            )
                                     );
 
-                                    const status =
-                                        duplicateCheck.checkStatus === "degraded"
-                                            ? "unavailable"
-                                            : duplicateCheck.isDuplicate
-                                            ? duplicateCheck.confidence === "high"
-                                                ? "definite"
-                                                : "possible"
-                                            : "none";
+                                    const nearbyAssignments =
+                                        nearbyAssignmentsFor(announcement);
+
+                                    console.log(
+                                        `🔎 ${nearbyAssignments.length} nearby assignments for "${announcement.title}"`
+                                    );
+
+                                    let tasksWithDuplicates;
+
+                                    try {
+                                        const duplicateChecks =
+                                            await findDuplicateTasks(
+                                                proposedTasks.map((task) => task.name),
+                                                nearbyAssignments
+                                            );
+
+                                        tasksWithDuplicates = proposedTasks.map(
+                                            (task, taskIndex) => {
+                                                const duplicateCheck =
+                                                    duplicateChecks[taskIndex];
+
+                                                const matchedAssignment =
+                                                    duplicateCheck.matchingAssignmentId
+                                                        ? nearbyAssignments.find(
+                                                              (assignment) =>
+                                                                  assignment.id ===
+                                                                  duplicateCheck.matchingAssignmentId
+                                                          ) ?? null
+                                                        : null;
+
+                                                console.log(
+                                                    `🔍 "${task.name}" →`,
+                                                    duplicateCheck
+                                                );
+
+                                                const status =
+                                                    duplicateCheck.checkStatus === "degraded"
+                                                        ? "unavailable"
+                                                        : duplicateCheck.isDuplicate
+                                                        ? duplicateCheck.confidence === "high"
+                                                            ? "definite"
+                                                            : "possible"
+                                                        : "none";
+
+                                                return {
+                                                    ...task,
+                                                    canvasMatch: {
+                                                        status,
+                                                        assignmentId:
+                                                            duplicateCheck.matchingAssignmentId,
+                                                        reason: duplicateCheck.reason,
+                                                        assignment: matchedAssignment,
+                                                    },
+                                                };
+                                            }
+                                        );
+                                    } catch (error) {
+                                        console.error(
+                                            `❌ Duplicate check failed for announcement "${announcement.title}":`,
+                                            error
+                                        );
+
+                                        // Do NOT let a malformed Ollama response
+                                        // destroy the entire announcement.
+                                        tasksWithDuplicates = proposedTasks.map((task) => ({
+                                            ...task,
+                                            canvasMatch: {
+                                                status: "unavailable",
+                                                assignmentId: null,
+                                                reason: "Duplicate checking failed.",
+                                                assignment: null,
+                                            },
+                                        }));
+                                    }
 
                                     return {
-                                        ...task,
-                                        canvasMatch: {
-                                            status,
-                                            assignmentId:
-                                                duplicateCheck.matchingAssignmentId,
-                                            reason: duplicateCheck.reason,
-                                            assignment: matchedAssignment,
-                                        },
+                                        announcement: toAnnouncementSummary(announcement),
+                                        tasks: tasksWithDuplicates,
                                     };
                                 }
                             );
-                        } catch (error) {
-                            console.error(
-                                `❌ Duplicate check failed for announcement "${announcement.title}":`,
-                                error
-                            );
+                        },
+                        // Fires once per resolved batch, in arrival order
+                        // (not necessarily input order, since
+                        // OLLAMA_CONCURRENCY batches run concurrently) — the
+                        // seam that turns "wait for every batch" into
+                        // "stream each batch as it finishes."
+                        (batchResults) => {
+                            completedAnnouncements += batchResults.length;
 
-                            // Do NOT let a malformed Ollama response
-                            // destroy the entire announcement.
-                            tasksWithDuplicates = proposedTasks.map((task) => ({
-                                ...task,
-                                canvasMatch: {
-                                    status: "unavailable",
-                                    assignmentId: null,
-                                    reason: "Duplicate checking failed.",
-                                    assignment: null,
-                                },
-                            }));
+                            send({
+                                type: "batch",
+                                results: batchResults,
+                                completedAnnouncements,
+                                totalAnnouncements: announcements.length,
+                            });
                         }
+                    );
 
-                        return {
-                            announcement: toAnnouncementSummary(announcement),
-                            tasks: tasksWithDuplicates,
-                        };
-                    }
-                );
-            }
-        );
+                    send({
+                        type: "done",
+                        announcementCount: announcements.length,
+                        totalAnnouncementCount: allAnnouncements.length,
+                        filtering: {
+                            mode: isCustomSelection ? "custom" : "automatic",
+                            bufferDays: ANNOUNCEMENT_BUFFER_DAYS,
+                            rangeStart: resolvedWindow?.windowStart.toISOString() ?? null,
+                            rangeEnd: resolvedWindow?.windowEnd.toISOString() ?? null,
+                            isDefaultRange: resolvedWindow?.isDefaultRange ?? null,
+                        },
+                    });
+                } catch (error) {
+                    console.error(
+                        "❌ Announcement analysis stream failed:",
+                        error
+                    );
 
-        const results = resultsByBatch.flat();
-
-        // --------------------------------------------------
-        // 9. Return results
-        // --------------------------------------------------
-
-        return NextResponse.json({
-            success: true,
-
-            announcementCount:
-                announcements.length,
-
-            totalAnnouncementCount:
-                allAnnouncements.length,
-
-            filtering: {
-                mode: isCustomSelection
-                    ? "custom"
-                    : "automatic",
-
-                bufferDays:
-                    ANNOUNCEMENT_BUFFER_DAYS,
-
-                rangeStart: resolvedWindow?.windowStart.toISOString() ?? null,
-                rangeEnd: resolvedWindow?.windowEnd.toISOString() ?? null,
-                isDefaultRange: resolvedWindow?.isDefaultRange ?? null,
+                    // A per-batch failure is already handled above (sent
+                    // as a normal "batch" frame with each task's `error`
+                    // set) — this catch is only for a genuinely unexpected
+                    // exception. Sent as a data frame rather than
+                    // controller.error(), which would surface client-side
+                    // as a bare TypeError with no usable message.
+                    send({
+                        type: "error",
+                        message: "Failed to analyze announcements.",
+                    });
+                } finally {
+                    controller.close();
+                }
             },
+        });
 
-            results,
+        return new Response(stream, {
+            headers: {
+                "Content-Type": "application/x-ndjson",
+            },
         });
     } catch (error) {
         console.error(

@@ -2,11 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
+import { Course } from "@/types/course";
 import AIReviewCard from "@/components/AIReviewCard";
 import { Assignment } from "@/types/assignment";
 import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString } from "@/lib/utils";
 import { useMascot } from "@/components/world/LaptopFrame";
+
+type AIReviewPanelProps = {
+    courses: Course[];
+    onCourseCreated: (course: Course) => void;
+};
 
 type RangePreset = "thisWeek" | "thisAndLastWeek" | "last30Days" | "custom";
 
@@ -26,6 +32,12 @@ type AnnouncementResult = {
         message: string;
     };
     tasks: ProposedTask[];
+    error?: string;
+};
+
+type AnalysisProgress = {
+    completed: number;
+    total: number;
 };
 
 // A lot to review in one sitting, and — now that extraction runs on the
@@ -84,11 +96,18 @@ function resolvePresetRange(
     return null;
 }
 
-export default function AIReviewPanel() {
+export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPanelProps) {
     const [results, setResults] = useState<AnnouncementResult[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [loading, setLoading] = useState(false);
     const [started, setStarted] = useState(false);
+    const [progress, setProgress] = useState<AnalysisProgress | null>(null);
+
+    // True only if the stream ended (network drop, server crash, etc.)
+    // without ever sending a "done" frame — distinct from a clean finish,
+    // so a truncated analysis doesn't render the same "all caught up"
+    // screen as a genuinely complete one.
+    const [streamIncomplete, setStreamIncomplete] = useState(false);
 
     const [preset, setPreset] = useState<RangePreset>("thisWeek");
     const [customFrom, setCustomFrom] = useState(getTodayString());
@@ -194,6 +213,10 @@ export default function AIReviewPanel() {
     async function analyzeAnnouncements() {
         setLoading(true);
         setStarted(true);
+        setResults([]);
+        setCurrentIndex(0);
+        setProgress(null);
+        setStreamIncomplete(false);
 
         const range = currentRange();
 
@@ -206,6 +229,9 @@ export default function AIReviewPanel() {
                   }
                 : range ?? {};
 
+        let mascotFired = false;
+        let receivedDone = false;
+
         try {
             const response = await fetch(
                 "/api/ai/analyze-announcements",
@@ -216,27 +242,84 @@ export default function AIReviewPanel() {
                 }
             );
 
-            const data = await response.json();
-
-            if (!response.ok || !data.success) {
-                throw new Error(
-                    data.error ||
-                        "Failed to analyze announcements."
-                );
+            if (!response.ok || !response.body) {
+                throw new Error("Failed to analyze announcements.");
             }
 
-            const newResults = data.results ?? [];
-            setResults(newResults);
-            setCurrentIndex(0);
+            // The route streams one NDJSON frame per line (a "start", one
+            // "batch" per resolved batch, a final "done") instead of one
+            // JSON body — this is what lets suggestions from the first
+            // batch show up for review before later batches finish. A
+            // batch frame can carry tens of KB (full announcement HTML,
+            // matched-assignment descriptions), so a frame can legitimately
+            // split across two reader.read() calls — buffer and only parse
+            // complete lines, keeping any trailing partial line for the
+            // next chunk.
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
 
-            if (newResults.some((result: AnnouncementResult) => result.tasks.length > 0)) {
-                say("announcementFound");
+            while (true) {
+                const { done, value } = await reader.read();
+
+                if (value) {
+                    buffer += decoder.decode(value, { stream: true });
+                }
+
+                let newlineIndex;
+
+                while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+                    const line = buffer.slice(0, newlineIndex).trim();
+                    buffer = buffer.slice(newlineIndex + 1);
+
+                    if (!line) {
+                        continue;
+                    }
+
+                    const frame = JSON.parse(line);
+
+                    if (frame.type === "start") {
+                        setProgress({ completed: 0, total: frame.totalAnnouncements });
+                    } else if (frame.type === "batch") {
+                        const batchResults = frame.results as AnnouncementResult[];
+
+                        setResults((current) => [...current, ...batchResults]);
+                        setProgress({
+                            completed: frame.completedAnnouncements,
+                            total: frame.totalAnnouncements,
+                        });
+
+                        if (
+                            !mascotFired &&
+                            batchResults.some((result) => result.tasks.length > 0)
+                        ) {
+                            mascotFired = true;
+                            say("announcementFound");
+                        }
+                    } else if (frame.type === "done") {
+                        receivedDone = true;
+                    } else if (frame.type === "error") {
+                        console.error(
+                            "❌ Announcement analysis stream error:",
+                            frame.message
+                        );
+                    }
+                }
+
+                if (done) {
+                    break;
+                }
+            }
+
+            if (!receivedDone) {
+                setStreamIncomplete(true);
             }
         } catch (error) {
             console.error(
                 "❌ Failed to analyze announcements:",
                 error
             );
+            setStreamIncomplete(true);
         } finally {
             setLoading(false);
         }
@@ -289,6 +372,7 @@ export default function AIReviewPanel() {
             due: acceptedTask.due ?? "",
             completed: false,
             sourceAnnouncementId: acceptedTask.sourceAnnouncementId,
+            typeOverride: acceptedTask.typeOverride ?? undefined,
         };
 
         console.log(
@@ -326,15 +410,6 @@ export default function AIReviewPanel() {
         nextTask();
     }
 
-    function handleEdit() {
-        console.log(
-            "✏️ Edit:",
-            queue[currentIndex]
-        );
-
-        // We'll build the editor next.
-    }
-
     const currentTask = queue[currentIndex];
 
     const currentGroup = currentTask
@@ -360,6 +435,7 @@ export default function AIReviewPanel() {
     const finished =
         started &&
         !loading &&
+        !streamIncomplete &&
         queue.length > 0 &&
         currentIndex >= queue.length;
 
@@ -501,19 +577,42 @@ export default function AIReviewPanel() {
             )}
 
             {loading && (
-                <div className="theme-surface mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-6">
+                <div className="theme-surface mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
                     <p className="flex items-center gap-2 font-semibold">
                         <Spinner className="h-4 w-4" />
-                        🤖 Analyzing announcements...
+                        🤖 Analyzing announcements
+                        {progress ? `... ${progress.completed} of ${progress.total}` : "..."}
                     </p>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                        Reading through your Canvas announcements.
+                        {progress
+                            ? "New suggestions appear below as each batch finishes."
+                            : "Reading through your Canvas announcements."}
+                    </p>
+
+                    {progress && (
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--border)]/30">
+                            <div
+                                className="h-full rounded-full bg-[var(--accent)] transition-all"
+                                style={{
+                                    width: `${progress.total > 0 ? (progress.completed / progress.total) * 100 : 0}%`,
+                                }}
+                            />
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {loading && !currentTask && results.length > 0 && (
+                <div className="theme-surface mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
+                    <p className="text-sm text-[var(--muted)]">
+                        You&apos;re caught up on what&apos;s arrived so far —
+                        still analyzing the rest.
                     </p>
                 </div>
             )}
 
-            {currentTask && !loading && (
+            {currentTask && (
                 <div>
                     {showGroupHeader && currentGroup && (
                         <p className="mb-2 text-sm font-semibold">
@@ -533,10 +632,26 @@ export default function AIReviewPanel() {
                     <AIReviewCard
                         key={currentTask.suggestionKey}
                         task={currentTask}
+                        courses={courses}
+                        onCourseCreated={onCourseCreated}
                         onAccept={handleAccept}
                         onReject={handleReject}
-                        onEdit={handleEdit}
                     />
+                </div>
+            )}
+
+            {started && !loading && streamIncomplete && (
+                <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
+                    <p className="font-semibold text-[var(--status-overdue-text)]">
+                        ⚠️ Analysis stopped early
+                    </p>
+
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                        The connection dropped before every announcement
+                        could be checked. Suggestions already shown above are
+                        safe to review — try analyzing again to check the
+                        rest.
+                    </p>
                 </div>
             )}
 
@@ -575,6 +690,7 @@ export default function AIReviewPanel() {
 
             {started &&
                 !loading &&
+                !streamIncomplete &&
                 queue.length === 0 && (
                     <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                         <p className="font-semibold">

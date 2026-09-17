@@ -1,24 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
+import { Course } from "@/types/course";
 import { stripHtmlForDisplay } from "@/lib/htmlText";
 import { findEvidenceRange } from "@/lib/evidenceHighlight";
 import { resolveDueTextToDate } from "@/lib/dueText";
+import { classifyLabelType, LabelType } from "@/lib/taskLabel";
+import CourseSelect from "@/components/CourseSelect";
 
 type AIReviewCardProps = {
     task: ProposedTask;
+    courses: Course[];
+    onCourseCreated: (course: Course) => void;
     onAccept: (updatedTask?: ProposedTask) => void;
     onReject: () => void;
-    onEdit: () => void;
 };
 
 export default function AIReviewCard({
     task,
+    courses,
+    onCourseCreated,
     onAccept,
     onReject,
-    onEdit,
 }: AIReviewCardProps) {
+    const [isEditing, setIsEditing] = useState(false);
+    const [name, setName] = useState(task.name);
+    const [course, setCourse] = useState(task.course);
+    const [typeOverride, setTypeOverride] = useState(task.typeOverride ?? "");
+    const markRef = useRef<HTMLElement | null>(null);
+
     const [dueDate, setDueDate] = useState(() => {
         if (task.due) {
             return task.due;
@@ -68,9 +79,28 @@ export default function AIReviewCard({
         ? stripHtmlForDisplay(task.canvasMatch.assignment.description)
         : null;
 
+    const autoTypeCode = classifyLabelType({
+        name,
+        course,
+        isCustomCourse: courses.find((c) => c.name === course)?.isCustom,
+    });
+
+    useEffect(() => {
+        if (evidenceRange) {
+            markRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        // Only re-run when a new suggestion is shown (this component is
+        // remounted per-suggestion via a `key`, so this effectively fires
+        // once per task anyway) — not on every evidenceRange recompute.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [task.suggestionKey]);
+
     function handleAccept() {
         onAccept({
             ...task,
+            name,
+            course,
+            typeOverride: (typeOverride || null) as ProposedTask["typeOverride"],
             due: dueDate || null,
         });
     }
@@ -90,11 +120,11 @@ export default function AIReviewCard({
                         </p>
 
                         <h2 className="mt-2 text-3xl font-bold tracking-tight">
-                            {task.name}
+                            {name}
                         </h2>
 
                         <p className="mt-1 text-sm text-[var(--muted)]">
-                            {task.course}
+                            {course}{typeOverride ? ` · ${typeOverride}` : ` · ${autoTypeCode}`}
                         </p>
                     </div>
 
@@ -118,9 +148,66 @@ export default function AIReviewCard({
                     </p>
 
                     <div className="rounded-2xl border border-[var(--border)] p-5">
-                        <p className="text-xl font-bold">
-                            {task.name}
-                        </p>
+                        {isEditing ? (
+                            <div className="flex flex-col gap-3">
+                                <div>
+                                    <label
+                                        htmlFor="ai-task-name"
+                                        className="mb-1 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]"
+                                    >
+                                        Name
+                                    </label>
+                                    <input
+                                        id="ai-task-name"
+                                        type="text"
+                                        value={name}
+                                        onChange={(event) => setName(event.target.value)}
+                                        className="w-full rounded-xl border border-[var(--border)] bg-transparent px-4 py-3 text-base font-semibold outline-none transition focus:ring-2 focus:ring-current/20"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
+                                            Course
+                                        </label>
+                                        <CourseSelect
+                                            courses={courses}
+                                            value={course}
+                                            onChange={setCourse}
+                                            onCourseCreated={onCourseCreated}
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label
+                                            htmlFor="ai-task-type"
+                                            className="mb-1 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]"
+                                        >
+                                            Type
+                                        </label>
+                                        <select
+                                            id="ai-task-type"
+                                            value={typeOverride}
+                                            onChange={(event) =>
+                                                setTypeOverride(event.target.value as LabelType | "")
+                                            }
+                                            className="w-full rounded-xl border border-[var(--border)] bg-transparent px-4 py-3 text-sm outline-none transition focus:ring-2 focus:ring-current/20"
+                                        >
+                                            <option value="">Auto ({autoTypeCode})</option>
+                                            <option value="HW">HW</option>
+                                            <option value="R">R (Reading)</option>
+                                            <option value="EXAM">EXAM</option>
+                                            <option value="TODO">TODO</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-xl font-bold">
+                                {name}
+                            </p>
+                        )}
 
                         {task.description && (
                             <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
@@ -209,7 +296,10 @@ export default function AIReviewCard({
                                                     0,
                                                     evidenceRange.start
                                                 )}
-                                                <mark className="rounded bg-[var(--accent-soft)] px-0.5 text-inherit">
+                                                <mark
+                                                    ref={markRef}
+                                                    className="rounded bg-[var(--accent)] px-1 font-bold text-white"
+                                                >
                                                     {announcementText.slice(
                                                         evidenceRange.start,
                                                         evidenceRange.end
@@ -422,12 +512,12 @@ export default function AIReviewCard({
                 </button>
 
                 <button
-                    onClick={onEdit}
+                    onClick={() => setIsEditing((editing) => !editing)}
                     className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-yellow-500/10"
                 >
-                    ✏️
+                    {isEditing ? "✓" : "✏️"}
                     <span className="ml-2">
-                        Edit
+                        {isEditing ? "Done" : "Edit"}
                     </span>
                 </button>
 
