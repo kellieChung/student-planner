@@ -17,6 +17,7 @@ type Props = {
     latestXpAward: XpAward | null;
     currency: number;
     onAddTask: () => void;
+    onManageRecurring: () => void;
     userName?: string | null;
     userEmail?: string | null;
 };
@@ -51,6 +52,7 @@ export default function Taskbar({
     latestXpAward,
     currency,
     onAddTask,
+    onManageRecurring,
     userName,
     userEmail,
 }: Props) {
@@ -93,6 +95,7 @@ export default function Taskbar({
             {/* Pinned quick-launch icons */}
             <div className="flex shrink-0 items-center gap-1">
                 <TaskbarIconButton label="Add Task" emoji="➕" onClick={onAddTask} />
+                <TaskbarIconButton label="Recurring" emoji="🔁" onClick={onManageRecurring} />
                 <TaskbarIconButton
                     label="Courses"
                     emoji="📚"

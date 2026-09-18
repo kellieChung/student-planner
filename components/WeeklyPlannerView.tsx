@@ -2,12 +2,16 @@
 
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useRouter} from "next/navigation";
-import {CARD_HEIGHT_PX, calculateGridSpan, endOfDayInstant, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate} from "@/lib/utils";
+import {CARD_HEIGHT_PX, calculateGridSpan, endOfDayInstant, formatTimeInputValue, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate, resolveDueTime} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
+import {RecurringTask} from "@/types/recurringTask";
+import {expandOccurrences, shiftDateKey} from "@/lib/recurrence";
+import {RecurrenceFieldValue} from "./RecurrenceField";
 import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
-import EditTaskModal from "./EditTaskModal";
+import EditTaskModal, {RecurrenceScope} from "./EditTaskModal";
+import RecurringTasksPanel from "./RecurringTasksPanel";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {getTownState, saveTownGrowth} from "@/lib/townState";
@@ -31,6 +35,14 @@ import { useCoursesRemote } from "./os/CoursesRemoteContext";
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+
+// How far ahead of today recurring-task occurrences get materialized on
+// each load. There's no background job anywhere in this app (see
+// PROGRESS.md), so this is a fixed rolling window re-extended every time
+// the planner mounts, not a per-week fetch — navigating further ahead than
+// this in one sitting shows empty weeks for a series until the next reload
+// pushes the window forward again.
+const RECURRENCE_HORIZON_WEEKS = 8;
 
 /*
  * Canvas-synced tasks carry a real createdAt. Manually/AI-added tasks don't
@@ -143,6 +155,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const [pulsingIds, setPulsingIds] = useState<Set<string>>(new Set());
     const [customTasksLoaded, setCustomTasksLoaded] = useState(false);
     const [customizationsLoaded, setCustomizationsLoaded] = useState(false);
+    const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
+    const [isRecurringPanelOpen, setIsRecurringPanelOpen] = useState(false);
     const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
     const [courses, setCourses] = useState<Course[]>([]);
     const [estimatingCount, setEstimatingCount] = useState(0);
@@ -630,55 +644,172 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             }
         };
 
-        const loadCustomizations = async () => {
-            try {
-                const response = await fetch("/api/task-customizations");
-                if (!response.ok) return;
-
-                const data = await response.json() as {
-                    customizations: Array<{
-                        taskId: string;
-                        startAt: string | null;
-                        course: string | null;
-                        nameOverride: string | null;
-                        typeOverride: string | null;
-                        dueAtOverride: string | null;
-                        notes: string | null;
-                        completed: boolean;
-                        completedAt: string | null;
-                        inProgress: boolean;
-                        deleted: boolean;
-                    }>;
-                };
-
-                const next: Record<string, TaskCustomizationState> = {};
-                for (const customization of data.customizations) {
-                    next[customization.taskId] = {
-                        startAt: customization.startAt ?? "",
-                        course: customization.course ?? "",
-                        nameOverride: customization.nameOverride ?? "",
-                        typeOverride: customization.typeOverride ?? "",
-                        dueAtOverride: customization.dueAtOverride ?? "",
-                        notes: customization.notes ?? "",
-                        completed: customization.completed,
-                        completedAt: customization.completedAt ?? "",
-                        inProgress: customization.inProgress,
-                        deleted: customization.deleted,
-                    };
-                }
-
-                setTaskCustomizations(next);
-            } catch (error) {
-                console.error("Could not load task customizations", error);
-            } finally {
-                setCustomizationsLoaded(true);
-            }
-        };
-
         void loadCustomTasks();
-        void loadCustomizations();
+        void loadTaskCustomizations();
         void refetchCourses();
     }, [assignments]);
+
+    // Hoisted out of the mount effect above so a recurring-series change
+    // (pause/resume/edit-pattern/delete via RecurringTasksPanel, which
+    // tombstones occurrences server-side through TaskCustomization) can
+    // re-pull the latest completed/deleted state on demand too, not just
+    // once at mount.
+    async function loadTaskCustomizations() {
+        try {
+            const response = await fetch("/api/task-customizations");
+            if (!response.ok) return;
+
+            const data = await response.json() as {
+                customizations: Array<{
+                    taskId: string;
+                    startAt: string | null;
+                    course: string | null;
+                    nameOverride: string | null;
+                    typeOverride: string | null;
+                    dueAtOverride: string | null;
+                    notes: string | null;
+                    completed: boolean;
+                    completedAt: string | null;
+                    inProgress: boolean;
+                    deleted: boolean;
+                }>;
+            };
+
+            const next: Record<string, TaskCustomizationState> = {};
+            for (const customization of data.customizations) {
+                next[customization.taskId] = {
+                    startAt: customization.startAt ?? "",
+                    course: customization.course ?? "",
+                    nameOverride: customization.nameOverride ?? "",
+                    typeOverride: customization.typeOverride ?? "",
+                    dueAtOverride: customization.dueAtOverride ?? "",
+                    notes: customization.notes ?? "",
+                    completed: customization.completed,
+                    completedAt: customization.completedAt ?? "",
+                    inProgress: customization.inProgress,
+                    deleted: customization.deleted,
+                };
+            }
+
+            setTaskCustomizations(next);
+        } catch (error) {
+            console.error("Could not load task customizations", error);
+        } finally {
+            setCustomizationsLoaded(true);
+        }
+    }
+
+    // Fetches the user's recurring-task templates and, for each active one,
+    // materializes any occurrence dates within the rolling horizon that
+    // don't already have a CustomTask row — purely additive (see
+    // app/api/recurring-tasks/[id]/occurrences/route.ts), so a completed,
+    // deleted, or individually-edited occurrence is never touched. Must run
+    // client-side (not folded into a server route) because dueAt/dueFraction
+    // resolution needs the browser's own timezone, same as every other
+    // due-time computation in this app (lib/utils.ts's resolveDueTime).
+    async function materializeRecurringTasks() {
+        try {
+            const response = await fetch("/api/recurring-tasks");
+            if (!response.ok) return;
+
+            const data = await response.json() as { recurringTasks?: RecurringTask[] };
+            const series = data.recurringTasks ?? [];
+            setRecurringTasks(series);
+
+            const activeSeries = series.filter((rule) => rule.active);
+            if (activeSeries.length === 0) return;
+
+            const today = getTodayString();
+            const horizonEnd = shiftDateKey(today, RECURRENCE_HORIZON_WEEKS * 7);
+
+            const perSeriesResults = await Promise.all(
+                activeSeries.map(async (rule) => {
+                    const dates = expandOccurrences(rule, today, horizonEnd);
+                    if (dates.length === 0) return [] as Assignment[];
+
+                    const occurrences = dates.map((due) => ({
+                        due,
+                        ...resolveDueTime(due, rule.dueTime ?? ""),
+                    }));
+
+                    try {
+                        const res = await fetch(`/api/recurring-tasks/${rule.id}/occurrences`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ occurrences }),
+                        });
+                        if (!res.ok) return [];
+
+                        const resData = await res.json() as { customTasks?: Assignment[] };
+                        return resData.customTasks ?? [];
+                    } catch (error) {
+                        console.error("Could not materialize a recurring task's occurrences", error);
+                        return [];
+                    }
+                })
+            );
+
+            const materialized = perSeriesResults.flat();
+            if (materialized.length === 0) return;
+
+            setTasks((current) => {
+                const existingIds = new Set(current.map((task) => task.id));
+                const updatesById = new Map(materialized.map((task) => [task.id, task]));
+
+                return [
+                    ...current.map((task) => updatesById.get(task.id) ?? task),
+                    ...materialized.filter((task) => !existingIds.has(task.id)),
+                ];
+            });
+        } catch (error) {
+            console.error("Could not load recurring tasks", error);
+        }
+    }
+
+    const hasMaterializedRecurring = useRef(false);
+
+    useEffect(() => {
+        if (hasMaterializedRecurring.current || !customTasksLoaded) return;
+        hasMaterializedRecurring.current = true;
+
+        void materializeRecurringTasks();
+    }, [customTasksLoaded]);
+
+    // Re-syncs existing tasks' own fields (not just customizations) against
+    // the server — specifically `recurrenceId`/`recurrenceOverridden`,
+    // which live on the CustomTask row itself. A whole-series delete nulls
+    // a completed occurrence's `recurrenceId` server-side (it survives as a
+    // standalone task) without adding/removing/tombstoning anything that
+    // loadTaskCustomizations or materializeRecurringTasks would catch, so
+    // without this the stale local copy keeps showing a "this
+    // occurrence/this and following" prompt for a series that no longer
+    // exists. Only updates fields on tasks already in local state — new
+    // occurrences are additive via materializeRecurringTasks instead.
+    async function refreshCustomTasks() {
+        try {
+            const response = await fetch("/api/custom-tasks");
+            if (!response.ok) return;
+
+            const data = await response.json() as { customTasks?: Assignment[] };
+            const byId = new Map((data.customTasks ?? []).map((task) => [task.id, task]));
+
+            setTasks((current) => current.map((task) => byId.get(task.id) ?? task));
+        } catch (error) {
+            console.error("Could not refresh custom tasks", error);
+        }
+    }
+
+    // Triggered by RecurringTasksPanel after a pause/resume, pattern edit,
+    // or series delete — all of which change server-side state
+    // (TaskCustomization tombstones for purged occurrences, a possibly-
+    // unlinked completed occurrence, freshly materialized ones for a
+    // resumed/widened series) that this component's own local state
+    // doesn't otherwise know about.
+    const handleRecurringSeriesChanged = () => {
+        void loadTaskCustomizations();
+        void refreshCustomTasks();
+        void materializeRecurringTasks();
+    };
 
     useEffect(() => {
         void getTaskPlanningEstimates().then((estimates) => {
@@ -1330,6 +1461,97 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         }
     }
 
+    // Shared by AddTaskModal's fresh "Repeat" flow and EditTaskModal's
+    // "Make this repeat" conversion — `anchorTaskId` set means "attach this
+    // existing custom task as the series' first occurrence" instead of
+    // creating a new row for it (see app/api/recurring-tasks/route.ts).
+    const createRecurringTask = async (
+        name: string,
+        course: string,
+        due: string,
+        dueTime: string,
+        recurrence: RecurrenceFieldValue,
+        notes: string,
+        anchorTaskId?: string
+    ) => {
+        try {
+            const response = await fetch("/api/recurring-tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name,
+                    course,
+                    frequency: recurrence.frequency,
+                    interval: recurrence.interval,
+                    weekdays: recurrence.weekdays,
+                    startDate: due,
+                    endDate: recurrence.endDate || null,
+                    dueTime: dueTime || null,
+                    ...resolveDueTime(due, dueTime),
+                    anchorTaskId: anchorTaskId ?? null,
+                }),
+            });
+
+            if (!response.ok) {
+                console.error("Could not create recurring task", await response.text());
+                return;
+            }
+
+            const data = await response.json() as { customTask?: Assignment };
+
+            if (data.customTask) {
+                setTasks((current) => {
+                    const withoutDuplicate = current.filter((task) => task.id !== data.customTask!.id);
+                    return [...withoutDuplicate, data.customTask!];
+                });
+            }
+
+            if (notes) {
+                const taskId = data.customTask?.id ?? anchorTaskId;
+                if (taskId) {
+                    persistCustomization(taskId, {
+                        ...(taskCustomizations[taskId] ?? EMPTY_CUSTOMIZATION),
+                        notes,
+                    });
+                }
+            }
+
+            // Backfills every occurrence beyond the first for this (and
+            // every other active) series, so the grid shows the whole
+            // pattern without waiting for the next full reload.
+            void materializeRecurringTasks();
+        } catch (error) {
+            console.error("Could not create recurring task", error);
+        }
+    };
+
+    const handleAddRecurringTask = (
+        name: string,
+        course: string,
+        due: string,
+        dueTime: string,
+        recurrence: RecurrenceFieldValue,
+        notes: string
+    ) => {
+        void createRecurringTask(name, course, due, dueTime, recurrence, notes);
+    };
+
+    const handleConvertToRecurring = (
+        task: Assignment,
+        recurrence: RecurrenceFieldValue,
+        startDate: string,
+        notes: string,
+        status: TaskStatus
+    ) => {
+        if (!task.due) return;
+
+        // The occurrence's own name/course/due/type edits (if any were made
+        // in the same save) still go through the normal per-task path —
+        // only the "start repeating" side is special-cased here.
+        handleSaveTask(task, startDate, notes, status, "this");
+        void createRecurringTask(task.name, task.course, task.due, formatTimeInputValue(task.dueAt), recurrence, "", task.id);
+    };
+
     const openAddTask = () => {
         setQuickAddDueDate(undefined);
         setIsModalOpen(true);
@@ -1340,12 +1562,46 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         setIsModalOpen(true);
     };
 
-    const handleDelete = (id:string) => {
-        setTasks((current) => current.filter((task) => task.id !== id));
+    const handleDelete = (id: string, recurrenceScope: RecurrenceScope = "this") => {
+        const rawTask = tasks.find((task) => task.id === id);
+        const deleteFollowing = Boolean(rawTask?.recurrenceId) && recurrenceScope === "following" && Boolean(rawTask?.due);
+
+        setTasks((current) =>
+            deleteFollowing
+                ? current.filter((task) => !(task.recurrenceId === rawTask!.recurrenceId && task.due && task.due >= rawTask!.due!))
+                : current.filter((task) => task.id !== id)
+        );
+
+        if (deleteFollowing) {
+            // Shrinks the series' endDate to the day before this occurrence
+            // and tombstones every occurrence from here forward — see
+            // app/api/recurring-tasks/[id]/route.ts's "deleteFrom" mode.
+            fetch(`/api/recurring-tasks/${rawTask!.recurrenceId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ deleteFrom: rawTask!.due }),
+            }).catch((error) => {
+                console.error("Could not delete future occurrences", error);
+            });
+            return;
+        }
+
+        if (rawTask?.recurrenceId) {
+            // A single occurrence of a series is tombstoned, not hard-
+            // deleted, even though its id starts with "custom-" — a hard
+            // delete would just get resurrected by the next materialization
+            // pass, which only checks whether a row still exists.
+            persistCustomization(id, {
+                ...(taskCustomizations[id] ?? EMPTY_CUSTOMIZATION),
+                deleted: true,
+            });
+            return;
+        }
 
         if (id.startsWith("custom-")) {
-            // Real row delete — a custom task needs no tombstone, unlike
-            // a Canvas-synced one (which would just reappear on resync).
+            // Real row delete — a plain custom task needs no tombstone,
+            // unlike a Canvas-synced one (which would just reappear on
+            // resync).
             fetch(`/api/custom-tasks/${id}`, { method: "DELETE" }).catch((error) => {
                 console.error("Could not delete custom task", error);
             });
@@ -1358,7 +1614,13 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         });
     }
 
-    const handleSaveTask = (updatedTask: Assignment, startDate: string, notes: string, status: TaskStatus) => {
+    const handleSaveTask = (
+        updatedTask: Assignment,
+        startDate: string,
+        notes: string,
+        status: TaskStatus,
+        recurrenceScope: RecurrenceScope = "this"
+    ) => {
         setTasks((current) =>
             current.map((task) => (task.id === updatedTask.id ? updatedTask : task))
         );
@@ -1366,6 +1628,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         // Custom tasks already keep their edited course on the DB row
         // above; only Canvas-synced tasks need a course override.
         const isCustomTask = updatedTask.id.startsWith("custom-");
+        const rawTaskBefore = tasks.find((task) => task.id === updatedTask.id);
+        const isRecurringOccurrence = Boolean(rawTaskBefore?.recurrenceId);
 
         if (isCustomTask) {
             fetch(`/api/custom-tasks/${updatedTask.id}`, {
@@ -1377,13 +1641,52 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                     due: updatedTask.due ?? null,
                     dueAt: updatedTask.dueAt ?? null,
                     dueFraction: updatedTask.dueFraction ?? null,
+                    // "This occurrence only" on a series member marks it as
+                    // a deliberate exception, so a later "this and
+                    // following" series edit skips it instead of silently
+                    // overwriting what was just saved here.
+                    ...(isRecurringOccurrence ? { recurrenceOverridden: recurrenceScope === "this" } : {}),
                 }),
             }).catch((error) => {
                 console.error("Could not save custom task", error);
             });
         }
+
+        // "This and following": propagate name/course/type to every future,
+        // non-overridden, non-completed sibling occurrence. Due date/time
+        // changes never propagate (EditTaskModal only offers this choice
+        // when the due date didn't change) — see the route for why.
+        if (isRecurringOccurrence && recurrenceScope === "following" && rawTaskBefore?.recurrenceId && updatedTask.due) {
+            fetch(`/api/recurring-tasks/${rawTaskBefore.recurrenceId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applyFromDate: updatedTask.due,
+                    name: updatedTask.name,
+                    course: updatedTask.course,
+                    typeOverride: updatedTask.typeOverride ?? null,
+                }),
+            }).then(async (response) => {
+                if (!response.ok) return;
+
+                const data = await response.json() as { updatedOccurrenceIds?: string[] };
+                const ids = new Set(data.updatedOccurrenceIds ?? []);
+                if (ids.size === 0) return;
+
+                setTasks((current) =>
+                    current.map((task) =>
+                        ids.has(task.id)
+                            ? { ...task, name: updatedTask.name, course: updatedTask.course, typeOverride: updatedTask.typeOverride }
+                            : task
+                    )
+                );
+            }).catch((error) => {
+                console.error("Could not apply the series edit to future occurrences", error);
+            });
+        }
+
         const current = taskCustomizations[updatedTask.id];
-        const rawTask = tasks.find((task) => task.id === updatedTask.id);
+        const rawTask = rawTaskBefore;
 
         // Only freeze a course override when the user actually picked a
         // different course than what's currently shown — otherwise saving
@@ -1533,6 +1836,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                 onCourseCreated = {handleCourseCreated}
                 onClose = {() => setIsModalOpen(false)}
                 onAddTask = {handleAddTask}
+                onAddRecurringTask = {handleAddRecurringTask}
             />
 
             <EditTaskModal
@@ -1545,11 +1849,22 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                     taskCustomizations[selectedTask?.id ?? ""]?.inProgress ?? false
                 )}
                 estimatedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
+                recurringTaskRule = {recurringTasks.find((rule) => rule.id === selectedTask?.recurrenceId) ?? null}
                 courses = {courses}
                 onCourseCreated = {handleCourseCreated}
                 onClose = {() => setSelectedTask(null)}
                 onSaveTask = {handleSaveTask}
                 onDeleteTask = {handleDelete}
+                onConvertToRecurring = {handleConvertToRecurring}
+                onManageSeries = {() => { setSelectedTask(null); setIsRecurringPanelOpen(true); }}
+            />
+
+            <RecurringTasksPanel
+                isOpen = {isRecurringPanelOpen}
+                onClose = {() => setIsRecurringPanelOpen(false)}
+                courses = {courses}
+                onCourseCreated = {handleCourseCreated}
+                onSeriesChanged = {handleRecurringSeriesChanged}
             />
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -1806,6 +2121,7 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             latestXpAward={latestXpAward}
             currency={townState.currency}
             onAddTask={openAddTask}
+            onManageRecurring={() => setIsRecurringPanelOpen(true)}
             userName={userName}
             userEmail={userEmail}
         />

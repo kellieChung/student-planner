@@ -25,4 +25,11 @@ export type Assignment = {
     // means "use the live classification." Inlined rather than imported
     // from lib/taskLabel.ts, which imports Assignment from here.
     typeOverride?: "HW" | "R" | "EXAM" | "TODO" | null;
+    // Set when this task is a materialized occurrence of a RecurringTask
+    // (id shape "custom-r<recurringTaskId>-<due>"). Absent for a plain
+    // custom task or a Canvas-synced assignment.
+    recurrenceId?: string | null;
+    // Set when this single occurrence was edited via the "this occurrence
+    // only" scope — a later "this and following" series edit skips it.
+    recurrenceOverridden?: boolean;
 }

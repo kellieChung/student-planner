@@ -253,6 +253,30 @@ export function shiftLayout(layout: WorldLayoutData, deltaRow: number, deltaCol:
     };
 }
 
+// Anchor-cell collision check — true if some existing decoration, extra
+// building, scatter house, fixed building, or the wall already sits at
+// this exact (row, col). Used by the map editor's random-pool brushes
+// (terrain/scatter-house) so an automatic fill never stacks a new item
+// directly on top of something already placed; a manual click/drag is
+// unaffected by this (it never called this function before and still
+// doesn't), so overriding by hand afterward still works exactly as
+// before. This checks anchor points only, not each sprite's real pixel
+// footprint at its stored `scale` — a scale>1 item can still visually
+// extend past a neighboring "free" cell; a simple, deliberate scope
+// match for "don't place directly on top of," not full bounding-box
+// collision.
+export function isCellOccupied(layout: WorldLayoutData, row: number, col: number): boolean {
+    const hits = (items: PlacedTile[]) => items.some((item) => item.row === row && item.col === col);
+
+    if (hits(layout.decorations)) return true;
+    if (hits(layout.extraBuildings)) return true;
+    if (hits(layout.scatterHouses)) return true;
+    if (Object.values(layout.buildingPositions).some((pos) => pos.row === row && pos.col === col)) return true;
+    if (layout.wall && layout.wall.row === row && layout.wall.col === col) return true;
+
+    return false;
+}
+
 export async function getWorldLayout(): Promise<WorldLayoutData> {
     try {
         const response = await fetch("/api/world-layout");

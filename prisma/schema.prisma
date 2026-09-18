@@ -26,6 +26,7 @@ model User {
   gamificationState             GamificationState?
   announcementSuggestionReviews AnnouncementSuggestionReview[]
   customTasks                   CustomTask[]
+  recurringTasks                RecurringTask[]
   taskPlanningEstimates         TaskPlanningEstimate[]
   procrastinationRecords        ProcrastinationRecord[]
   townState                     TownState?
@@ -280,6 +281,63 @@ model CustomTask {
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Set when this row is a materialized occurrence of a RecurringTask
+  // (id shape "custom-r<recurringTaskId>-<due>", see lib/recurrence.ts).
+  // onDelete: SetNull so deleting a whole series never deletes historical/
+  // completed occurrences, only unlinks them.
+  recurrenceId String?
+  recurringTask RecurringTask? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
+  // Set when this single occurrence was edited via the "this occurrence
+  // only" scope on a field the series would otherwise control (name/course/
+  // type/due date/time) — a later "this and following" bulk edit on the
+  // series must skip any row with this flag set, or it silently clobbers a
+  // deliberate per-occurrence customization.
+  recurrenceOverridden Boolean @default(false)
+
+  @@index([userId])
+  @@index([recurrenceId])
+}
+
+// Template a recurring task's occurrences are generated from. Occurrences
+// themselves are real CustomTask rows (see recurrenceId above) generated
+// client-side (components/WeeklyPlannerView.tsx) rather than expanded
+// virtually at render time — dueAt/dueFraction resolution must stay
+// client-side per lib/utils.ts's resolveDueTime (no server-side timezone
+// guessing anywhere in this app), and materializing real rows means every
+// occurrence gets full AssignmentCard/grid-packing/TaskCustomization/
+// priority/XP behavior for free, with zero special-casing of
+// id.startsWith("custom-") call sites elsewhere in the app.
+model RecurringTask {
+  id           String  @id @default(cuid())
+  name         String
+  course       String
+  // HW/R/EXAM/TODO, same domain as Assignment.typeOverride — no enum in
+  // this schema (see TaskCustomization.typeOverride), validated in-route.
+  typeOverride String?
+  // "daily" | "weekly" | "monthly" — validated in-route, see lib/recurrence.ts.
+  frequency String
+  // Every N days/weeks/months, >= 1.
+  interval  Int    @default(1)
+  // 0=Sun..6=Sat (app's Sunday-start convention, lib/utils.ts's
+  // getStartOfWeek) — only consulted when frequency === "weekly".
+  weekdays Int[] @default([])
+  // "YYYY-MM-DD" — first occurrence / recurrence anchor, same plain-date
+  // convention as CustomTask.due.
+  startDate String
+  // "YYYY-MM-DD" inclusive, null = no end (rolling-horizon generation).
+  endDate String?
+  // "HH:MM", null = end of day — fed into resolveDueTime per occurrence.
+  dueTime String?
+  // Paused = stop generating new occurrences, keep existing history.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  occurrences CustomTask[]
 
   @@index([userId])
 }

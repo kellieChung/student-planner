@@ -72,12 +72,19 @@ export async function PATCH(request: Request, { params }: Params) {
             due = existing.due,
             dueAt = existing.dueAt ? existing.dueAt.toISOString() : null,
             dueFraction = existing.dueFraction,
+            // Set true when this single occurrence of a recurring series is
+            // edited via the "this occurrence only" scope, so a later
+            // "this and following" series edit skips it. Defaults to the
+            // existing value (like every other field here) — an unrelated
+            // save never resets it back to false on its own.
+            recurrenceOverridden = existing.recurrenceOverridden,
         } = body as {
             name?: unknown;
             course?: unknown;
             due?: unknown;
             dueAt?: unknown;
             dueFraction?: unknown;
+            recurrenceOverridden?: unknown;
         } | null ?? {};
 
         if (typeof name !== "string" || !name.trim()) {
@@ -121,6 +128,13 @@ export async function PATCH(request: Request, { params }: Params) {
             );
         }
 
+        if (typeof recurrenceOverridden !== "boolean") {
+            return NextResponse.json(
+                { success: false, error: "'recurrenceOverridden' must be a boolean." },
+                { status: 400 }
+            );
+        }
+
         const customTask = await prisma.customTask.update({
             where: { id: taskId },
             data: {
@@ -129,6 +143,7 @@ export async function PATCH(request: Request, { params }: Params) {
                 due,
                 dueAt: dueAtDate,
                 dueFraction,
+                recurrenceOverridden,
             },
         });
 
@@ -143,6 +158,8 @@ export async function PATCH(request: Request, { params }: Params) {
                 dueFraction: customTask.dueFraction,
                 sourceAnnouncementId: customTask.sourceAnnouncementId,
                 createdAt: customTask.createdAt.toISOString(),
+                recurrenceId: customTask.recurrenceId,
+                recurrenceOverridden: customTask.recurrenceOverridden,
             },
         });
     } catch (error) {

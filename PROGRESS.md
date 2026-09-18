@@ -6,6 +6,85 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Recurring tasks** (2026-09-17)
+- New `RecurringTask` model is the template (frequency/interval/weekdays/
+  startDate/endDate/dueTime/typeOverride, all plain strings — no enums
+  anywhere in this schema, matches `TaskCustomization`). Occurrences are
+  **materialized as real `CustomTask` rows** (`CustomTask.recurrenceId` FK,
+  `onDelete: SetNull`), not expanded virtually at render time — the
+  planner loads all tasks once on mount and never refetches per week
+  (`changeWeek` just re-filters the already-loaded `tasks` array), so a
+  virtual-occurrence design would have forced every `id.startsWith(
+  "custom-")` call site (save/delete/status/priority/XP) to special-case
+  "is this a real row." Materializing real rows means every occurrence
+  gets full `AssignmentCard`/grid-packing/`TaskCustomization`/priority/XP
+  behavior for free. Occurrence ids are deterministic
+  (`custom-r<recurringTaskId>-<due>`), which is what makes repeated
+  materialization passes (mount, a second tab, a resumed series) safe
+  no-ops — see `app/api/recurring-tasks/[id]/occurrences/route.ts`.
+- **Materialization runs client-side**, not in a server route —
+  `lib/utils.ts`'s `resolveDueTime` (dueAt/dueFraction from a time-of-day)
+  is explicitly documented as a client-only, browser-timezone-dependent
+  computation ("no server-side timezone guessing anywhere"). A server-side
+  generator computing "9:00 AM" instants days/weeks ahead would have no
+  timezone to use. `WeeklyPlannerView.tsx`'s `materializeRecurringTasks()`
+  (mount effect, gated on `customTasksLoaded`) computes missing occurrence
+  dates via `lib/recurrence.ts`'s pure `expandOccurrences`, resolves each
+  via `resolveDueTime` client-side, then POSTs the results — the server
+  route only re-validates and persists, never computes times itself.
+  Horizon is a fixed rolling window (`RECURRENCE_HORIZON_WEEKS = 8`,
+  re-extended on every mount) — there's no background job anywhere in this
+  app, so navigating further ahead than that in one sitting shows empty
+  weeks for a series until the next reload pushes the window forward.
+- **Deleting a single occurrence is a `TaskCustomization` tombstone, not a
+  hard delete**, even though its id starts with `"custom-"` (which would
+  normally mean a real row delete) — a hard delete would get silently
+  resurrected by the next materialization pass, since that pass's only
+  idempotency check is "does a row already exist for this id."
+  `WeeklyPlannerView.tsx`'s `handleDelete` branches on `task.recurrenceId`
+  *before* the `custom-` prefix check for this reason.
+- **"This occurrence" vs "this and following"** (`EditTaskModal.tsx`'s
+  `RecurrenceScope`): a scope prompt only appears when name/course/type
+  actually changed and the due *date* didn't (a date shift is always
+  "this occurrence only" — propagating a date shift across a series isn't
+  well-defined via this UI). "This and following" hits
+  `PATCH /api/recurring-tasks/:id` with `applyFromDate`, which updates the
+  template's mutable display fields and bulk-updates every future
+  occurrence except ones already completed or individually marked
+  `recurrenceOverridden` (set when a single occurrence is edited via
+  "this occurrence only" on a series-controlled field). Deleting "this and
+  following" reuses the same endpoint's `deleteFrom` mode — it shrinks the
+  rule's `endDate` to the day before the anchor date and bulk-tombstones
+  forward, rather than being a separate code path.
+- **Real bug found and fixed during live testing this session**: deleting
+  a whole series (`DELETE /api/recurring-tasks/:id`) correctly nulls
+  `CustomTask.recurrenceId` server-side for a *completed* occurrence
+  (survives as a standalone task, per `onDelete: SetNull`), but nothing
+  refetched `/api/custom-tasks` afterward, so the client's local `tasks`
+  copy kept the stale `recurrenceId` — reopening that completed task in
+  the same session (no reload) still showed a "this occurrence / this and
+  following" delete prompt for a series that no longer existed. Fixed by
+  adding `refreshCustomTasks()` (re-syncs existing local tasks' own fields
+  against the server, additive-only — new occurrences still come from
+  `materializeRecurringTasks`) to `handleRecurringSeriesChanged`, called
+  after every pause/resume/edit-pattern/delete from `RecurringTasksPanel`.
+  Live-verified: create series → complete one occurrence → delete whole
+  series → reopen the completed occurrence in the same session → no
+  repeat UI, plain standalone task, matches DB state.
+- Live-verified end-to-end (weekly Tue/Thu series): occurrences materialize
+  across multiple weeks of navigation; completing/deleting/renaming a
+  single occurrence persists correctly across reload and doesn't get
+  resurrected by a later materialization pass; "this and following" rename
+  propagated to future occurrences while leaving an already-completed past
+  occurrence untouched; whole-series delete removed future occurrences and
+  left the completed one as a standalone task. Not separately verified:
+  monthly-frequency materialization end-to-end in the browser (unit-level
+  only, via `lib/recurrence.test.ts`), the AI-estimate-cloning-instead-of-
+  re-Ollama-calling simplification (the actual per-task estimate-trigger
+  call site wasn't identified/wired — see Active TODOs), pause/resume's
+  effect on materialization (pause verified only via the panel's own state
+  toggle, not by confirming no new occurrences generate while paused).
+
 **AI / Ollama pipeline**
 - Shared Ollama config in `lib/ollamaConfig.ts` (`OLLAMA_CHAT_URL`/`MODEL`/
   `NUM_CTX=8192` — added after a real outage where unbounded Canvas HTML
@@ -932,6 +1011,27 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- Recurring tasks: the "AI estimate cloning" simplification described in
+  the architecture-decisions entry was never actually wired up — the real
+  per-task `TaskPlanningEstimate`-trigger call site wasn't identified
+  during this session. As written, creating a recurring series with many
+  materialized occurrences will currently fire one Ollama estimate call
+  per occurrence rather than cloning the first occurrence's estimate.
+  Locate the trigger (likely in `WeeklyPlannerView.tsx`'s estimate-loading
+  effect or `app/api/task-planning/route.ts`) and wire the clone-instead-
+  of-recompute branch before this matters for a real many-occurrence
+  series.
+- Recurring tasks: monthly-frequency materialization is only verified at
+  the `lib/recurrence.ts` unit level (`lib/recurrence.test.ts`), not
+  clicked through in the browser. Same for confirming a *paused* series
+  genuinely produces zero new occurrences on the next mount (verified via
+  the panel's own `active` toggle state, not by re-triggering
+  materialization and checking nothing new appeared).
+- Recurring tasks: `EditTaskModal`'s "this and following" scope only
+  propagates name/course/type — a `dueTime` change on an existing series
+  is always scoped to "this occurrence only" (no UI path offers
+  propagating a time-of-day change across future occurrences). Deliberate
+  v1 scope-cut, not a bug, but worth reconsidering if requested.
 - Sprite pipeline: all 5 `BuildingKey`s have real stage art, now stored
   in `WorldLayoutData.buildingStageSprites` (user-editable via
   `/dev/map-editor`) rather than the old static `BUILDING_STAGE_SPRITES`
@@ -1030,6 +1130,35 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   shrink with the window's own resize. Low-priority polish.
 
 ## Session log
+
+### 2026-09-17 — add recurring tasks to the planner
+
+Implemented full recurring-task support (daily/weekly-on-weekdays/monthly,
+every-N-units, end-date-or-indefinite, "this occurrence" vs "this and
+following" edit/delete scope, converting an existing task into a series).
+New Prisma model `RecurringTask` + `CustomTask.recurrenceId`/
+`recurrenceOverridden` columns (migration
+`20260918022850_add_recurring_tasks`); new `lib/recurrence.ts` (pure
+occurrence-date math, exercised via `lib/recurrence.test.ts`); new routes
+`app/api/recurring-tasks/route.ts`, `.../[id]/route.ts`,
+`.../[id]/occurrences/route.ts`; new `components/RecurrenceField.tsx` and
+`components/RecurringTasksPanel.tsx`; `AddTaskModal.tsx`/`EditTaskModal.tsx`
+extended for the repeat toggle/conversion/scope-prompt flows;
+`WeeklyPlannerView.tsx` gained the client-side materialization effect and
+updated `handleDelete`/`handleSaveTask`. See the "Recurring tasks"
+architecture-decisions entry above for the full design reasoning (why
+occurrences are materialized real rows, why materialization must run
+client-side, the this-and-following scoping rules) and the real bug found
+and fixed live (`refreshCustomTasks` after a series change). Also fixed a
+pre-existing-pattern issue the new Repeat section exposed: `AddTaskModal`/
+`EditTaskModal` had no `max-h`/`overflow-y-auto` on their modal panel, so
+the now-taller form could overflow the viewport with no way to scroll to
+the submit button — both gained `max-h-[90vh] overflow-y-auto`.
+Live-verified end-to-end in the browser against the real account (see the
+architecture-decisions entry's "Live-verified" note); all test data
+created during verification was deleted afterward. `npx tsc --noEmit`,
+`npm run lint` (unchanged from this repo's pre-existing 20-problem
+baseline — nothing new introduced), and `npm run build` all pass.
 
 ### 2026-09-16 (twelfth session) — Fix the real Fit-button bug: measuring the container mid-animation
 

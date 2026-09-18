@@ -41,6 +41,8 @@ export async function GET() {
                 dueFraction: task.dueFraction,
                 sourceAnnouncementId: task.sourceAnnouncementId,
                 createdAt: task.createdAt.toISOString(),
+                recurrenceId: task.recurrenceId,
+                recurrenceOverridden: task.recurrenceOverridden,
             })),
         });
     } catch (error) {
@@ -199,6 +201,8 @@ export async function POST(request: Request) {
                 dueFraction: customTask.dueFraction,
                 sourceAnnouncementId: customTask.sourceAnnouncementId,
                 createdAt: customTask.createdAt.toISOString(),
+                recurrenceId: customTask.recurrenceId,
+                recurrenceOverridden: customTask.recurrenceOverridden,
             },
         });
     } catch (error) {

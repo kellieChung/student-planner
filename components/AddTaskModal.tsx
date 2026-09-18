@@ -6,6 +6,7 @@ import {Course} from "@/types/course";
 import StartDateField from "./StartDateField";
 import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
+import RecurrenceField, {DEFAULT_RECURRENCE_VALUE, RecurrenceFieldValue} from "./RecurrenceField";
 import {resolveDueTime} from "@/lib/utils";
 
 type AddTaskModalProps = {
@@ -17,42 +18,58 @@ type AddTaskModalProps = {
     onCourseCreated: (course: Course) => void;
     onClose: () => void;
     onAddTask: (newTask: Assignment, startDate: string, notes: string) => void;
+    onAddRecurringTask: (
+        name: string,
+        course: string,
+        due: string,
+        dueTime: string,
+        recurrence: RecurrenceFieldValue,
+        notes: string
+    ) => void;
 };
 
-export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreated, onClose, onAddTask}: AddTaskModalProps) {
+export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreated, onClose, onAddTask, onAddRecurringTask}: AddTaskModalProps) {
     const [name, setName] = useState("");
     const [course, setCourse] = useState("Personal");
     const [due, setDue] = useState("");
     const [dueTime, setDueTime] = useState("");
     const [start, setStart] = useState("");
     const [notes, setNotes] = useState("");
+    const [recurrence, setRecurrence] = useState<RecurrenceFieldValue>(DEFAULT_RECURRENCE_VALUE);
 
     useEffect(() => {
         if (isOpen) {
             setDue(defaultDue ?? "");
             setDueTime("");
+            setRecurrence(DEFAULT_RECURRENCE_VALUE);
         }
     }, [isOpen, defaultDue]);
 
     if (!isOpen) return null;
 
     const startAfterDue = Boolean(start && due && start > due);
+    const recurrenceInvalid = recurrence.enabled && recurrence.frequency === "weekly" && recurrence.weekdays.length === 0;
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if(!name) return;
         if (startAfterDue) return;
+        if (recurrenceInvalid) return;
 
-        const newTask: Assignment = {
-            id: `custom-${Date.now()}`,
-            name,
-            course,
-            due,
-            completed: false,
-            ...resolveDueTime(due, dueTime),
-        };
+        if (recurrence.enabled && due) {
+            onAddRecurringTask(name, course, due, dueTime, recurrence, notes);
+        } else {
+            const newTask: Assignment = {
+                id: `custom-${Date.now()}`,
+                name,
+                course,
+                due,
+                completed: false,
+                ...resolveDueTime(due, dueTime),
+            };
 
-        onAddTask(newTask, start, notes);
+            onAddTask(newTask, start, notes);
+        }
 
         setName("");
         setCourse("Personal");
@@ -60,6 +77,7 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
         setDueTime("");
         setStart("");
         setNotes("");
+        setRecurrence(DEFAULT_RECURRENCE_VALUE);
 
         onClose();
     }
@@ -67,7 +85,7 @@ return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-[var(--overlay)] backdrop-blur-sm p-4">
         <form
             onSubmit = {handleSubmit}
-            className = "theme-surface planner-shell bg-slate-900 rounded-xl p-6 w-[90vw] max-w-[400px] space-y-4 border border-slate-700 shadow-2xl"
+            className = "theme-surface planner-shell bg-slate-900 rounded-xl p-6 w-[90vw] max-w-[400px] max-h-[90vh] overflow-y-auto space-y-4 border border-slate-700 shadow-2xl"
         >
             <h2 className = "text-xl font-semibold">
                 Add Task
@@ -116,6 +134,8 @@ return (
                 </p>
             )}
 
+            <RecurrenceField value={recurrence} onChange={setRecurrence} anchorDue={due} />
+
             <div>
                 <label className = "block text-sm mb-1">
                     Notes
@@ -141,7 +161,7 @@ return (
 
                 <button
                     type = "submit"
-                    disabled = {startAfterDue}
+                    disabled = {startAfterDue || recurrenceInvalid}
                     className = "px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     Add Task
