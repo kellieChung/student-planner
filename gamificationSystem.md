@@ -18,8 +18,8 @@ Two visually distinct modes:
   brought with it.
 
 (Status: built and shipped — see `PROGRESS.md`'s "Gamification / World
-layer" architecture decisions and session log for what actually landed
-and what's still deferred.)
+layer" architecture decisions for what actually landed and what's still
+deferred.)
 
 ---
 
@@ -56,12 +56,12 @@ Hall are natural options, not needed for the current 3-category taxonomy.
 - Stages: Village → Town → City → Kingdom (~4-5 major visual stages).
   Thresholds scale up per stage so highly active users don't exhaust
   content instantly, roughly mapping to a semester/school year.
-- Major visual jumps (new building types, skyline changes) should be
-  gated by real milestones (finishing a semester, surviving finals week,
-  a personal on-time-completion record), not raw task count — day-to-day
-  completions feed *incremental* per-building growth; milestones trigger
-  the *big* visible changes. **Not yet built** — currently a threshold-math-only
-  progression, per Active TODOs.
+- Major visual jumps (kingdom-wide stage changes) are milestone-gated, not
+  raw-task-count-live: day-to-day completions feed *incremental*
+  per-building growth immediately, but the persisted kingdom-wide stage
+  only advances at a checkpoint (currently every 5th completed task),
+  jumping straight to whatever stage is eligible. See `PROGRESS.md`'s
+  "Kingdom-wide stage is milestone-gated" note for the exact mechanism.
 
 ---
 
@@ -119,17 +119,27 @@ Single currency earned through real productive behavior (task
 completion, on-time finishing per the personalized timing signal,
 consistent usage) — not arbitrary login streaks disconnected from actual
 schoolwork. Spendable on town decorations, building cosmetics, laptop
-stickers/case cosmetics (shop UI not yet built). Avoid punishing streak
-mechanics — a limited number of "grace"/rest tokens preserve a streak
-through a missed day rather than a hard reset (shipped: 2 grace tokens).
+stickers/case cosmetics (shop UI not yet built). **The streak/grace-token
+mechanic described in earlier drafts of this doc was built, then removed
+entirely** (per explicit user instruction — "goes against the principles
+of the game," see `PROGRESS.md`). Currency/growth now come from a flat
+on-time-completion bonus with no consecutive-day tracking; don't
+reintroduce streak mechanics without re-litigating with the user first.
 
 ---
 
 ## Image Asset Specification
 
-Town/building art is sourced (see below); `PixelBlock` (colored divs +
-emoji/label) is still what `Building.tsx` actually renders — wiring real
-tiles into it is a separate art-direction pass, not yet done.
+Town/building art is sourced (see below) and **fully wired in** — real
+sprite art renders for every building stage (`Building.tsx`, driven by
+`WorldLayoutData.buildingStageSprites`, not a static constant);
+`PixelBlock` (colored divs + emoji/label) is gone from building rendering,
+still used for a couple of decorations with no sprite equivalent. The
+World map itself is now user-designed data, hand-edited via `/dev/map-
+editor` (a real in-app tool: sprite picker, drag-to-place, pan/zoom
+preview) rather than hardcoded terrain arrays — see `PROGRESS.md`'s
+"Gamification / World layer" section for the full design and gotchas
+before touching map-rendering code.
 
 **Style guide:** pixel art, 16-bit/SNES-RPG era (Stardew Valley
 proportions, not 8-bit NES chunkiness). Base tile/sprite unit is the
