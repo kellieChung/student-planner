@@ -4,8 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { analyzeAnnouncements } from "@/lib/ai/analyzeAnnouncement";
 import { findDuplicateTasks } from "@/lib/ai/findDuplicateTask";
 import { Announcement } from "@/types/announcement";
+import { ProposedTask } from "@/types/proposedTask";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getStartOfWeek, parseLocalDate } from "@/lib/utils";
+import { checkDetectionPassRateLimit } from "@/lib/aiRateLimit";
+import { logAiTaskEvent } from "@/lib/aiTaskEvents";
+import { classifyAutoAction } from "@/lib/rundownAutoAccept";
 
 // Days before the (Sunday) start of the current week that the window
 // reaches back to — 4 days before a Sunday lands on the Wednesday of the
@@ -199,6 +203,13 @@ export async function POST(
                 { status: 404 }
             );
         }
+
+        // Captured once, outside any closure: TypeScript's null-narrowing
+        // of `user` above doesn't carry into the `finalizeCandidates`
+        // function declaration defined later in this handler (a hoisted
+        // declaration, unlike an inline arrow callback), so every use
+        // inside it goes through this instead of `user.id`.
+        const userId = user.id;
 
         // --------------------------------------------------
         // 3. Read optional custom selection / range / dry-run flag
@@ -405,6 +416,55 @@ export async function POST(
         }
 
         // --------------------------------------------------
+        // 7c. Rate limit — a real (non-dry-run) run is a real Anthropic/
+        // Ollama cost, capped at 2/week per user (see AutoTaskCreation.md)
+        // except for DEV_ACCOUNT_EMAILS. Placed after the dry-run
+        // short-circuit above so a date-range preview never consumes or is
+        // blocked by the weekly quota.
+        // --------------------------------------------------
+
+        const rateLimit = await checkDetectionPassRateLimit(
+            user.id,
+            session.user.email
+        );
+
+        if (!rateLimit.allowed) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: rateLimit.resetsAt
+                        ? `You've used your 2 checks for this week. Resets ${new Date(rateLimit.resetsAt).toLocaleDateString()}.`
+                        : "You've used your 2 checks for this week.",
+                    resetsAt: rateLimit.resetsAt,
+                },
+                { status: 429 }
+            );
+        }
+
+        // Logged before the streaming Response is returned below, so an
+        // attempt counts against the weekly limit even if the client
+        // disconnects mid-stream (cost control is the intent) — response
+        // headers for the stream aren't committed yet at this point.
+        try {
+            await logAiTaskEvent(user.id, "detection_pass_triggered", {
+                data: {
+                    mode: isCustomSelection ? "custom" : "automatic",
+                    rangeFrom,
+                    rangeTo,
+                },
+            });
+        } catch (error) {
+            console.error("❌ Failed to log detection pass trigger:", error);
+        }
+
+        const plannerSettings = await prisma.plannerSettings.findUnique({
+            where: { userId: user.id },
+            select: { autoAcceptAiTasks: true },
+        });
+
+        const autoAcceptEnabled = plannerSettings?.autoAcceptAiTasks ?? false;
+
+        // --------------------------------------------------
         // 8. Analyze announcements
         // --------------------------------------------------
 
@@ -451,6 +511,172 @@ export async function POST(
             announcements,
             ANNOUNCEMENT_BATCH_SIZE
         );
+
+        // --------------------------------------------------
+        // Persists every detected candidate (AutoTaskCreation.md's rundown
+        // model requires a "pending" candidate to survive between
+        // sessions, not just accepted/rejected ones) and, when
+        // autoAcceptEnabled, applies the auto-accept setting: a
+        // high-confidence non-duplicate is inserted directly as a real
+        // CustomTask and excluded from the stream; a high-confidence
+        // duplicate is suppressed and excluded; everything else is
+        // persisted as "pending" and included. Shared by both the normal
+        // and duplicate-check-failed paths below so the persistence
+        // behavior can't drift between them.
+        // --------------------------------------------------
+
+        async function finalizeCandidates(
+            sourceAnnouncementId: string,
+            tasks: ProposedTask[]
+        ): Promise<ProposedTask[]> {
+            const visibleTasks: ProposedTask[] = [];
+
+            for (const task of tasks) {
+                const action = autoAcceptEnabled
+                    ? classifyAutoAction(task)
+                    : "surface";
+
+                if (action === "auto-suppress") {
+                    await prisma.announcementSuggestionReview.upsert({
+                        where: {
+                            userId_sourceAnnouncementId_suggestionKey: {
+                                userId,
+                                sourceAnnouncementId,
+                                suggestionKey: task.suggestionKey,
+                            },
+                        },
+                        create: {
+                            userId,
+                            sourceAnnouncementId,
+                            suggestionKey: task.suggestionKey,
+                            status: "rejected",
+                            resolvedAt: new Date(),
+                            taskSnapshot: task,
+                        },
+                        update: {
+                            status: "rejected",
+                            resolvedAt: new Date(),
+                            taskSnapshot: task,
+                        },
+                    });
+
+                    try {
+                        await logAiTaskEvent(userId, "candidate_decided", {
+                            sourceAnnouncementId,
+                            suggestionKey: task.suggestionKey,
+                            data: { decision: "rejected", auto: true },
+                        });
+                    } catch (error) {
+                        console.error("❌ Failed to log auto-suppress:", error);
+                    }
+
+                    continue;
+                }
+
+                if (action === "auto-insert") {
+                    await prisma.announcementSuggestionReview.upsert({
+                        where: {
+                            userId_sourceAnnouncementId_suggestionKey: {
+                                userId,
+                                sourceAnnouncementId,
+                                suggestionKey: task.suggestionKey,
+                            },
+                        },
+                        create: {
+                            userId,
+                            sourceAnnouncementId,
+                            suggestionKey: task.suggestionKey,
+                            status: "accepted",
+                            resolvedAt: new Date(),
+                            taskSnapshot: task,
+                        },
+                        update: {
+                            status: "accepted",
+                            resolvedAt: new Date(),
+                            taskSnapshot: task,
+                        },
+                    });
+
+                    // Same "custom-ai-<timestamp>-<suffix>" id convention
+                    // as a manual Yes on the Rundown screen (see
+                    // components/WeeklyPlannerView.tsx's handleAIPlannerTask/
+                    // handleRundownYes), so every existing
+                    // id.startsWith("custom-") call site treats an
+                    // auto-inserted task identically to a manually-accepted
+                    // one.
+                    const customTaskId = `custom-ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+                    await prisma.customTask.create({
+                        data: {
+                            id: customTaskId,
+                            name: task.name,
+                            course: task.course,
+                            due: task.due,
+                            sourceAnnouncementId,
+                            userId,
+                        },
+                    });
+
+                    if (task.typeOverride) {
+                        await prisma.taskCustomization.upsert({
+                            where: {
+                                userId_taskId: {
+                                    userId,
+                                    taskId: customTaskId,
+                                },
+                            },
+                            create: {
+                                userId,
+                                taskId: customTaskId,
+                                typeOverride: task.typeOverride,
+                            },
+                            update: { typeOverride: task.typeOverride },
+                        });
+                    }
+
+                    try {
+                        await logAiTaskEvent(userId, "candidate_decided", {
+                            sourceAnnouncementId,
+                            suggestionKey: task.suggestionKey,
+                            taskId: customTaskId,
+                            data: { decision: "accepted", auto: true },
+                        });
+                    } catch (error) {
+                        console.error("❌ Failed to log auto-insert:", error);
+                    }
+
+                    continue;
+                }
+
+                // "surface": persist as pending on create only — the
+                // update branch never touches `status`, so a re-run can't
+                // downgrade an already-decided row back to pending (also
+                // unreachable here for maybe/accepted/rejected rows,
+                // already filtered out of `tasks` by alreadyDecidedKeys
+                // below).
+                await prisma.announcementSuggestionReview.upsert({
+                    where: {
+                        userId_sourceAnnouncementId_suggestionKey: {
+                            userId,
+                            sourceAnnouncementId,
+                            suggestionKey: task.suggestionKey,
+                        },
+                    },
+                    create: {
+                        userId,
+                        sourceAnnouncementId,
+                        suggestionKey: task.suggestionKey,
+                        status: "pending",
+                        taskSnapshot: task,
+                    },
+                    update: { taskSnapshot: task },
+                });
+
+                visibleTasks.push(task);
+            }
+
+            return visibleTasks;
+        }
 
         // --------------------------------------------------
         // From here on, this route deliberately deviates from the
@@ -523,35 +749,44 @@ export async function POST(
                                 }));
                             }
 
-                            // Suggestions already accepted/rejected shouldn't
-                            // resurface on a later automatic-mode run. Custom mode
-                            // (an explicit re-selection of these announcements)
-                            // still shows them — the user asked to re-review.
-                            // Skipped for the duplicate check too, saving that
-                            // second Ollama call's cost.
-                            let alreadyDecidedKeys = new Set<string>();
-
-                            if (!isCustomSelection) {
-                                const reviews =
-                                    await prisma.announcementSuggestionReview.findMany({
-                                        where: {
-                                            userId: user.id,
-                                            sourceAnnouncementId: {
-                                                in: batch.map((a) => a.id),
-                                            },
+                            // A candidate already accepted/rejected/maybe'd
+                            // must never re-enter the pipeline, in EITHER
+                            // mode — "maybe" lives only in the Still-
+                            // Deciding surface, not back in this stream,
+                            // and an already-decided item flowing back
+                            // through here would let auto-accept (when on)
+                            // silently re-decide it, flipping a user's
+                            // explicit "No" into an auto-inserted task with
+                            // zero visibility. This used to be skipped only
+                            // for automatic-mode runs, on the theory that
+                            // custom mode's explicit re-selection was an
+                            // implicit "let me re-review" — but that
+                            // shortcut predates auto-accept and is no
+                            // longer safe to take. A "pending" row (or no
+                            // row at all) is exactly what should re-stream,
+                            // so it isn't skipped here. Checked unconditionally
+                            // now, which also saves the duplicate-check
+                            // Ollama call's cost for custom-mode reruns.
+                            const reviews =
+                                await prisma.announcementSuggestionReview.findMany({
+                                    where: {
+                                        userId: user.id,
+                                        sourceAnnouncementId: {
+                                            in: batch.map((a) => a.id),
                                         },
-                                        select: {
-                                            sourceAnnouncementId: true,
-                                            suggestionKey: true,
-                                        },
-                                    });
+                                        status: { in: ["accepted", "rejected", "maybe"] },
+                                    },
+                                    select: {
+                                        sourceAnnouncementId: true,
+                                        suggestionKey: true,
+                                    },
+                                });
 
-                                alreadyDecidedKeys = new Set(
-                                    reviews.map(
-                                        (r) => `${r.sourceAnnouncementId}::${r.suggestionKey}`
-                                    )
-                                );
-                            }
+                            const alreadyDecidedKeys = new Set(
+                                reviews.map(
+                                    (r) => `${r.sourceAnnouncementId}::${r.suggestionKey}`
+                                )
+                            );
 
                             // Bounded to 1: each batch worker's duplicate checks run
                             // strictly one-at-a-time, so combined with the outer
@@ -583,7 +818,7 @@ export async function POST(
                                         `🔎 ${nearbyAssignments.length} nearby assignments for "${announcement.title}"`
                                     );
 
-                                    let tasksWithDuplicates;
+                                    let tasksWithDuplicates: ProposedTask[];
 
                                     try {
                                         const duplicateChecks =
@@ -611,11 +846,23 @@ export async function POST(
                                                     duplicateCheck
                                                 );
 
+                                                // "unresolved": the model flagged this
+                                                // as a likely duplicate but returned an
+                                                // out-of-range/unresolvable match number
+                                                // (lib/ai/findDuplicateTask.ts's
+                                                // uncertainDuplicateResult, the only
+                                                // producer of isDuplicate:true with a
+                                                // null matchingAssignmentId) — routed to
+                                                // the rundown as its own case per
+                                                // AutoTaskCreation.md step 3, rather
+                                                // than collapsed into "possible".
                                                 const status =
                                                     duplicateCheck.checkStatus === "degraded"
                                                         ? "unavailable"
                                                         : duplicateCheck.isDuplicate
-                                                        ? duplicateCheck.confidence === "high"
+                                                        ? duplicateCheck.matchingAssignmentId === null
+                                                            ? "unresolved"
+                                                            : duplicateCheck.confidence === "high"
                                                             ? "definite"
                                                             : "possible"
                                                         : "none";
@@ -624,6 +871,7 @@ export async function POST(
                                                     ...task,
                                                     canvasMatch: {
                                                         status,
+                                                        checkConfidence: duplicateCheck.confidence,
                                                         assignmentId:
                                                             duplicateCheck.matchingAssignmentId,
                                                         reason: duplicateCheck.reason,
@@ -644,6 +892,7 @@ export async function POST(
                                             ...task,
                                             canvasMatch: {
                                                 status: "unavailable",
+                                                checkConfidence: "low",
                                                 assignmentId: null,
                                                 reason: "Duplicate checking failed.",
                                                 assignment: null,
@@ -651,9 +900,14 @@ export async function POST(
                                         }));
                                     }
 
+                                    const visibleTasks = await finalizeCandidates(
+                                        announcement.id,
+                                        tasksWithDuplicates
+                                    );
+
                                     return {
                                         announcement: toAnnouncementSummary(announcement),
-                                        tasks: tasksWithDuplicates,
+                                        tasks: visibleTasks,
                                     };
                                 }
                             );

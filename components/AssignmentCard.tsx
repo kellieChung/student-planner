@@ -45,6 +45,13 @@ type AssignmentCardProps = {
     isCompleting?: boolean;
     estimatedMinutes?: number;
     isFocused?: boolean;
+    // True when this task came from an AI-detected candidate
+    // (sourceAnnouncementId set) and its badge hasn't been dismissed yet
+    // (aiTagDismissedAt still null) — see AutoTaskCreation.md's logging
+    // section: dismissing this is an implicit "yes, this was correct,"
+    // distinct from deleting the task outright.
+    isAiDetected?: boolean;
+    onDismissAiTag?: (id: string) => void;
     onSetStatus: (status: TaskStatus) => void;
     onDelete?: (id: string) => void;
     onFocus?: (id: string) => void;
@@ -70,6 +77,8 @@ export default function AssignmentCard({
     isCompleting,
     estimatedMinutes,
     isFocused,
+    isAiDetected,
+    onDismissAiTag,
     onSetStatus,
     onDelete,
     onFocus,
@@ -191,6 +200,19 @@ export default function AssignmentCard({
             </div>
 
             <div className="absolute top-1 right-1 flex items-center gap-1">
+                {isAiDetected && !completed && onDismissAiTag && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onDismissAiTag(id);
+                        }}
+                        className="text-xs px-1.5 py-0.5 rounded text-indigo-300 opacity-80 hover:opacity-100"
+                        title="AI-detected — click to dismiss this tag"
+                    >
+                        🤖
+                    </button>
+                )}
+
                 {onFocus && !completed && (
                     <button
                         onClick={(e) => {

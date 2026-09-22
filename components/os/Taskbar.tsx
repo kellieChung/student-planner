@@ -20,6 +20,11 @@ type Props = {
     onManageRecurring: () => void;
     userName?: string | null;
     userEmail?: string | null;
+    onOpenRundown: () => void;
+    onOpenStillDeciding: () => void;
+    stillDecidingCount: number;
+    autoAcceptAiTasks: boolean;
+    onSetAutoAcceptAiTasks: (value: boolean) => void;
 };
 
 function useClock(): string {
@@ -55,6 +60,11 @@ export default function Taskbar({
     onManageRecurring,
     userName,
     userEmail,
+    onOpenRundown,
+    onOpenStillDeciding,
+    stillDecidingCount,
+    autoAcceptAiTasks,
+    onSetAutoAcceptAiTasks,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const settingsRootRef = useRef<HTMLDivElement>(null);
@@ -114,6 +124,15 @@ export default function Taskbar({
                     onClick={() => openWindow("music")}
                     running={windows.music.isOpen}
                 />
+                <TaskbarIconButton label="Rundown" emoji="📋" onClick={onOpenRundown} />
+                {stillDecidingCount > 0 && (
+                    <TaskbarIconButton
+                        label="Still deciding"
+                        emoji="🤔"
+                        onClick={onOpenStillDeciding}
+                        badgeCount={stillDecidingCount}
+                    />
+                )}
             </div>
 
             {/* System tray */}
@@ -184,6 +203,18 @@ export default function Taskbar({
                             </div>
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                                AI Detection
+                            </p>
+                            <label className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
+                                <span>Auto-accept AI-detected tasks</span>
+                                <input
+                                    type="checkbox"
+                                    checked={autoAcceptAiTasks}
+                                    onChange={(event) => onSetAutoAcceptAiTasks(event.target.checked)}
+                                />
+                            </label>
+
+                            <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
                                 Account
                             </p>
                             <UserMenu name={userName} email={userEmail} />
@@ -208,29 +239,43 @@ function TaskbarIconButton({
     emoji,
     onClick,
     running,
+    badgeCount,
 }: {
     label: string;
     emoji: string;
     onClick: () => void;
     running?: boolean;
+    badgeCount?: number;
 }) {
+    const badgeLabel = badgeCount ? (running ? `${label} (running)` : `${label} (${badgeCount})`) : running ? `${label} (running)` : label;
+
     return (
         <button
             type="button"
             onClick={onClick}
-            aria-label={running ? `${label} (running)` : label}
-            title={running ? `${label} (running)` : label}
+            aria-label={badgeLabel}
+            title={badgeLabel}
             className="relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
             style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
         >
             <span aria-hidden="true">{emoji}</span>
             <span className="hidden md:inline">{label}</span>
-            {running && (
+            {badgeCount ? (
                 <span
-                    className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full"
+                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
                     style={{ background: "var(--accent)" }}
                     aria-hidden="true"
-                />
+                >
+                    {badgeCount}
+                </span>
+            ) : (
+                running && (
+                    <span
+                        className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full"
+                        style={{ background: "var(--accent)" }}
+                        aria-hidden="true"
+                    />
+                )
             )}
         </button>
     );

@@ -22,9 +22,10 @@ type MascotContextValue = {
     say: (trigger: MascotTrigger) => void;
 };
 
-// Nano's dialogue channel — WeeklyPlannerView and AIReviewPanel are
-// siblings under this frame, not nested in each other, so a shared context
-// (rather than prop drilling) is what lets both trigger the same bubble.
+// Nano's dialogue channel — WeeklyPlannerView and the Rundown screen's
+// detection-trigger controls are siblings under this frame, not nested in
+// each other, so a shared context (rather than prop drilling) is what lets
+// both trigger the same bubble.
 const MascotContext = createContext<MascotContextValue>({ say: () => {} });
 
 export function useMascot(): MascotContextValue {

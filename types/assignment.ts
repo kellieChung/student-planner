@@ -16,10 +16,17 @@ export type Assignment = {
     // day). Absent means "treat as end of day" for grid-span rendering.
     dueFraction?: number;
     // Set only for a custom task created by accepting an AI announcement
-    // suggestion (components/AIReviewPanel.tsx) — the Announcement.id it
-    // came from. Absent for every other task (Canvas-synced or manually
-    // added).
+    // suggestion (the Rundown screen's "AI found these" section) — the
+    // Announcement.id it came from. Absent for every other task
+    // (Canvas-synced or manually added). Doubles as the "AI-detected"
+    // provenance marker for the card badge below.
     sourceAnnouncementId?: string | null;
+    // Set when the user has dismissed the "AI-detected" badge on this
+    // card (implicit confirmation the task is correct) — distinct from
+    // later deleting the task outright (implicit signal it was wrong),
+    // both logged for AutoTaskCreation.md's accuracy tracking. Only
+    // meaningful when sourceAnnouncementId is also set.
+    aiTagDismissedAt?: string | null;
     // Manual override for the card's type code (lib/taskLabel.ts's
     // LabelType) — set when classifyLabelType guessed wrong. Absent/null
     // means "use the live classification." Inlined rather than imported

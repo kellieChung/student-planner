@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAiTaskEvent } from "@/lib/aiTaskEvents";
 
 type Params = {
     params: Promise<{
@@ -78,6 +79,13 @@ export async function PATCH(request: Request, { params }: Params) {
             // existing value (like every other field here) — an unrelated
             // save never resets it back to false on its own.
             recurrenceOverridden = existing.recurrenceOverridden,
+            // Set when the user dismisses the "AI-detected" badge on this
+            // card. Defaults to the existing value like every other field
+            // here — an unrelated save (e.g. a due-date edit) never resets
+            // it back to null.
+            aiTagDismissedAt = existing.aiTagDismissedAt
+                ? existing.aiTagDismissedAt.toISOString()
+                : null,
         } = body as {
             name?: unknown;
             course?: unknown;
@@ -85,6 +93,7 @@ export async function PATCH(request: Request, { params }: Params) {
             dueAt?: unknown;
             dueFraction?: unknown;
             recurrenceOverridden?: unknown;
+            aiTagDismissedAt?: unknown;
         } | null ?? {};
 
         if (typeof name !== "string" || !name.trim()) {
@@ -135,6 +144,19 @@ export async function PATCH(request: Request, { params }: Params) {
             );
         }
 
+        const aiTagDismissedAtDate = aiTagDismissedAt === null
+            ? null
+            : typeof aiTagDismissedAt === "string" && !Number.isNaN(new Date(aiTagDismissedAt).getTime())
+                ? new Date(aiTagDismissedAt)
+                : undefined;
+
+        if (aiTagDismissedAtDate === undefined) {
+            return NextResponse.json(
+                { success: false, error: "'aiTagDismissedAt' must be null or a valid ISO datetime string." },
+                { status: 400 }
+            );
+        }
+
         const customTask = await prisma.customTask.update({
             where: { id: taskId },
             data: {
@@ -144,8 +166,20 @@ export async function PATCH(request: Request, { params }: Params) {
                 dueAt: dueAtDate,
                 dueFraction,
                 recurrenceOverridden,
+                aiTagDismissedAt: aiTagDismissedAtDate,
             },
         });
+
+        // Only a genuine null -> timestamp transition counts as "the user
+        // dismissed it just now" — re-sending an already-dismissed value
+        // on an unrelated save (the default above) must not re-log it.
+        if (!existing.aiTagDismissedAt && customTask.aiTagDismissedAt) {
+            try {
+                await logAiTaskEvent(user.id, "ai_tag_dismissed", { taskId: customTask.id });
+            } catch (error) {
+                console.error("❌ Failed to log AI tag dismissal:", error);
+            }
+        }
 
         return NextResponse.json({
             success: true,
@@ -160,6 +194,7 @@ export async function PATCH(request: Request, { params }: Params) {
                 createdAt: customTask.createdAt.toISOString(),
                 recurrenceId: customTask.recurrenceId,
                 recurrenceOverridden: customTask.recurrenceOverridden,
+                aiTagDismissedAt: customTask.aiTagDismissedAt ? customTask.aiTagDismissedAt.toISOString() : null,
             },
         });
     } catch (error) {
@@ -205,6 +240,23 @@ export async function DELETE(_request: Request, { params }: Params) {
         }
 
         await prisma.customTask.delete({ where: { id: taskId } });
+
+        // Only meaningful for a task that came from an AI-detected
+        // candidate — carries both signals AutoTaskCreation.md's logging
+        // section wants for an auto-inserted task: deleted after
+        // dismissing the tag (implicit "it was fine, just done with it")
+        // vs. deleted without ever dismissing it (implicit "it was wrong").
+        if (existing.sourceAnnouncementId) {
+            try {
+                await logAiTaskEvent(user.id, "ai_task_deleted", {
+                    taskId: existing.id,
+                    sourceAnnouncementId: existing.sourceAnnouncementId,
+                    data: { wasTagDismissed: existing.aiTagDismissedAt !== null },
+                });
+            } catch (error) {
+                console.error("❌ Failed to log AI task deletion:", error);
+            }
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {

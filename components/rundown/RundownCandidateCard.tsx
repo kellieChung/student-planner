@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
 import { Course } from "@/types/course";
 import { stripHtmlForDisplay } from "@/lib/htmlText";
@@ -9,26 +9,38 @@ import { resolveDueTextToDate } from "@/lib/dueText";
 import { classifyLabelType, LabelType } from "@/lib/taskLabel";
 import CourseSelect from "@/components/CourseSelect";
 
-type AIReviewCardProps = {
+// Ported from the retired components/AIReviewPanel.tsx's one-at-a-time
+// carousel (components/AIReviewCard.tsx) into the Rundown screen's
+// "AI found these" / Still-Deciding list renderer — editing UI, evidence
+// highlighting, and the Canvas-comparison block are unchanged; the footer
+// is Yes/No/Maybe instead of Accept/Reject (mode="resolve" drops Maybe,
+// for the Still-Deciding panel where only a final call makes sense). The
+// carousel-only auto-scrollIntoView mount effect from AIReviewCard is
+// intentionally dropped here — it would fight itself across cards in a
+// scrollable list.
+type RundownCandidateCardProps = {
     task: ProposedTask;
     courses: Course[];
     onCourseCreated: (course: Course) => void;
-    onAccept: (updatedTask?: ProposedTask) => void;
-    onReject: () => void;
+    onYes: (updatedTask?: ProposedTask) => void;
+    onNo: () => void;
+    onMaybe?: () => void;
+    mode?: "default" | "resolve";
 };
 
-export default function AIReviewCard({
+export default function RundownCandidateCard({
     task,
     courses,
     onCourseCreated,
-    onAccept,
-    onReject,
-}: AIReviewCardProps) {
+    onYes,
+    onNo,
+    onMaybe,
+    mode = "default",
+}: RundownCandidateCardProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [name, setName] = useState(task.name);
     const [course, setCourse] = useState(task.course);
     const [typeOverride, setTypeOverride] = useState(task.typeOverride ?? "");
-    const markRef = useRef<HTMLElement | null>(null);
 
     const [dueDate, setDueDate] = useState(() => {
         if (task.due) {
@@ -47,25 +59,23 @@ export default function AIReviewCard({
         return "";
     });
 
-    const matchIsDefinite =
-        task.canvasMatch.status === "definite";
-
-    const matchIsPossible =
-        task.canvasMatch.status === "possible";
+    const matchIsDefinite = task.canvasMatch.status === "definite";
+    const matchIsPossible = task.canvasMatch.status === "possible";
+    const matchIsUnresolved = task.canvasMatch.status === "unresolved";
 
     // A duplicate can be flagged (isDuplicate: true) without a resolvable
     // Canvas assignment to point at — e.g. the AI's matchingAssignmentId
-    // didn't resolve. That still needs to render as a flagged result, not
-    // silently fall through to the "no duplicate" clean state the badge
-    // above would then contradict.
-    const isFlagged = matchIsDefinite || matchIsPossible;
+    // didn't resolve (matchIsUnresolved) or resolved to a low-confidence
+    // guess. That still needs to render as a flagged result, not silently
+    // fall through to the "no duplicate" clean state the badge above would
+    // then contradict.
+    const isFlagged = matchIsDefinite || matchIsPossible || matchIsUnresolved;
 
     const hasMatch = isFlagged && task.canvasMatch.assignment !== null;
 
     const isFlaggedWithoutMatch = isFlagged && task.canvasMatch.assignment === null;
 
-    const checkUnavailable =
-        task.canvasMatch.status === "unavailable";
+    const checkUnavailable = task.canvasMatch.status === "unavailable";
 
     const announcementText = task.sourceAnnouncement
         ? stripHtmlForDisplay(task.sourceAnnouncement.message)
@@ -85,18 +95,8 @@ export default function AIReviewCard({
         isCustomCourse: courses.find((c) => c.name === course)?.isCustom,
     });
 
-    useEffect(() => {
-        if (evidenceRange) {
-            markRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-        // Only re-run when a new suggestion is shown (this component is
-        // remounted per-suggestion via a `key`, so this effectively fires
-        // once per task anyway) — not on every evidenceRange recompute.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [task.suggestionKey]);
-
-    function handleAccept() {
-        onAccept({
+    function handleYes() {
+        onYes({
             ...task,
             name,
             course,
@@ -229,18 +229,13 @@ export default function AIReviewCard({
                                 id="ai-due-date"
                                 type="date"
                                 value={dueDate}
-                                onChange={(event) =>
-                                    setDueDate(
-                                        event.target.value
-                                    )
-                                }
+                                onChange={(event) => setDueDate(event.target.value)}
                                 className="w-full rounded-xl border border-[var(--border)] bg-transparent px-4 py-3 text-base font-semibold outline-none transition focus:ring-2 focus:ring-current/20"
                             />
 
                             {task.dueText && (
                                 <p className="mt-2 text-xs text-[var(--muted)]">
-                                    AI detected:{" "}
-                                    {task.dueText}
+                                    AI detected: {task.dueText}
                                 </p>
                             )}
                         </div>
@@ -273,41 +268,25 @@ export default function AIReviewCard({
                         {task.sourceAnnouncement ? (
                             <>
                                 <p className="text-xl font-bold">
-                                    {
-                                        task
-                                            .sourceAnnouncement
-                                            .title
-                                    }
+                                    {task.sourceAnnouncement.title}
                                 </p>
 
                                 <p className="mt-1 text-sm text-[var(--muted)]">
-                                    {
-                                        task
-                                            .sourceAnnouncement
-                                            .course
-                                    }
+                                    {task.sourceAnnouncement.course}
                                 </p>
 
                                 <div className="mt-4 max-h-80 overflow-y-auto pr-2">
                                     <p className="whitespace-pre-wrap text-sm leading-7">
                                         {evidenceRange ? (
                                             <>
-                                                {announcementText.slice(
-                                                    0,
-                                                    evidenceRange.start
-                                                )}
-                                                <mark
-                                                    ref={markRef}
-                                                    className="rounded bg-[var(--accent)] px-1 font-bold text-white"
-                                                >
+                                                {announcementText.slice(0, evidenceRange.start)}
+                                                <mark className="rounded bg-[var(--accent)] px-1 font-bold text-white">
                                                     {announcementText.slice(
                                                         evidenceRange.start,
                                                         evidenceRange.end
                                                     )}
                                                 </mark>
-                                                {announcementText.slice(
-                                                    evidenceRange.end
-                                                )}
+                                                {announcementText.slice(evidenceRange.end)}
                                             </>
                                         ) : (
                                             announcementText
@@ -346,6 +325,12 @@ export default function AIReviewCard({
                             Possible Duplicate
                         </span>
                     )}
+
+                    {matchIsUnresolved && (
+                        <span className="rounded-full border border-yellow-500/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-yellow-400">
+                            Unresolved Match
+                        </span>
+                    )}
                 </div>
 
                 {hasMatch ? (
@@ -377,11 +362,7 @@ export default function AIReviewCard({
                             </p>
 
                             <h3 className="mt-3 text-lg font-bold">
-                                {
-                                    task.canvasMatch
-                                        .assignment
-                                        ?.name
-                                }
+                                {task.canvasMatch.assignment?.name}
                             </h3>
 
                             {assignmentDescription && (
@@ -390,16 +371,9 @@ export default function AIReviewCard({
                                 </p>
                             )}
 
-                            {task.canvasMatch
-                                .assignment
-                                ?.dueDate && (
+                            {task.canvasMatch.assignment?.dueDate && (
                                 <p className="mt-4 text-xs text-[var(--muted)]">
-                                    Due:{" "}
-                                    {
-                                        task.canvasMatch
-                                            .assignment
-                                            .dueDate
-                                    }
+                                    Due: {task.canvasMatch.assignment.dueDate}
                                 </p>
                             )}
                         </div>
@@ -407,20 +381,19 @@ export default function AIReviewCard({
                 ) : isFlaggedWithoutMatch ? (
                     <div className="rounded-2xl border border-amber-500/40 p-6">
                         <div className="flex items-start gap-4">
-                            <span className="text-2xl">
-                                ⚠️
-                            </span>
+                            <span className="text-2xl">⚠️</span>
 
                             <div>
                                 <p className="font-semibold">
-                                    Possible duplicate
+                                    {matchIsUnresolved
+                                        ? "Possibly already covered"
+                                        : "Possible duplicate"}
                                 </p>
 
                                 <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                                    The AI flagged this task as a
-                                    possible duplicate but
-                                    couldn&apos;t point to a
-                                    specific Canvas assignment.
+                                    {matchIsUnresolved
+                                        ? "The AI flagged this as possibly already covered by an existing assignment, but couldn't confirm which one."
+                                        : "The AI flagged this task as a possible duplicate but couldn't point to a specific Canvas assignment."}
                                 </p>
 
                                 {task.canvasMatch.reason && (
@@ -434,9 +407,7 @@ export default function AIReviewCard({
                 ) : checkUnavailable ? (
                     <div className="rounded-2xl border border-[var(--border)] bg-[var(--muted)]/10 p-6">
                         <div className="flex items-start gap-4">
-                            <span className="text-2xl">
-                                ❓
-                            </span>
+                            <span className="text-2xl">❓</span>
 
                             <div>
                                 <p className="font-semibold">
@@ -444,9 +415,7 @@ export default function AIReviewCard({
                                 </p>
 
                                 <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                                    The AI couldn&apos;t verify
-                                    this task against your
-                                    Canvas assignments.
+                                    The AI couldn&apos;t verify this task against your Canvas assignments.
                                 </p>
 
                                 {task.canvasMatch.reason && (
@@ -460,9 +429,7 @@ export default function AIReviewCard({
                 ) : (
                     <div className="rounded-2xl border border-[var(--border)] p-6">
                         <div className="flex items-start gap-4">
-                            <span className="text-2xl">
-                                ✅
-                            </span>
+                            <span className="text-2xl">✅</span>
 
                             <div>
                                 <p className="font-semibold">
@@ -470,10 +437,7 @@ export default function AIReviewCard({
                                 </p>
 
                                 <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                                    The AI did not find an
-                                    existing assignment that
-                                    appears to represent this
-                                    task.
+                                    The AI did not find an existing assignment that appears to represent this task.
                                 </p>
                             </div>
                         </div>
@@ -482,33 +446,30 @@ export default function AIReviewCard({
 
                 {/* AI duplicate reasoning */}
 
-                {hasMatch &&
-                    task.canvasMatch.reason && (
-                        <div className="mt-5 rounded-2xl border border-[var(--border)] p-5">
-                            <p className="text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                                Why AI Flagged This
-                            </p>
+                {hasMatch && task.canvasMatch.reason && (
+                    <div className="mt-5 rounded-2xl border border-[var(--border)] p-5">
+                        <p className="text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
+                            Why AI Flagged This
+                        </p>
 
-                            <p className="mt-2 text-sm leading-6">
-                                {task.canvasMatch.reason}
-                            </p>
-                        </div>
-                    )}
+                        <p className="mt-2 text-sm leading-6">
+                            {task.canvasMatch.reason}
+                        </p>
+                    </div>
+                )}
             </div>
 
             {/* ================================================== */}
             {/* ACTIONS */}
             {/* ================================================== */}
 
-            <div className="grid grid-cols-3 gap-3 p-7">
+            <div className={`grid gap-3 p-7 ${mode === "resolve" ? "grid-cols-3" : "grid-cols-4"}`}>
                 <button
-                    onClick={onReject}
+                    onClick={onNo}
                     className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-red-500/10"
                 >
                     ❌
-                    <span className="ml-2">
-                        Reject
-                    </span>
+                    <span className="ml-2">No</span>
                 </button>
 
                 <button
@@ -516,19 +477,25 @@ export default function AIReviewCard({
                     className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-yellow-500/10"
                 >
                     {isEditing ? "✓" : "✏️"}
-                    <span className="ml-2">
-                        {isEditing ? "Done" : "Edit"}
-                    </span>
+                    <span className="ml-2">{isEditing ? "Done" : "Edit"}</span>
                 </button>
 
+                {mode !== "resolve" && onMaybe && (
+                    <button
+                        onClick={onMaybe}
+                        className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-yellow-500/10"
+                    >
+                        🤔
+                        <span className="ml-2">Maybe</span>
+                    </button>
+                )}
+
                 <button
-                    onClick={handleAccept}
+                    onClick={handleYes}
                     className="rounded-2xl bg-[var(--accent)] px-4 py-4 font-semibold text-white transition hover:bg-[var(--accent-hover)]"
                 >
                     ✅
-                    <span className="ml-2">
-                        Accept
-                    </span>
+                    <span className="ml-2">Yes</span>
                 </button>
             </div>
         </div>

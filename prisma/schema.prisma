@@ -31,6 +31,8 @@ model User {
   procrastinationRecords        ProcrastinationRecord[]
   townState                     TownState?
   worldLayout                   WorldLayout?
+  plannerSettings               PlannerSettings?
+  aiTaskEvents                  AiTaskEvent[]
 }
 
 model Account {
@@ -190,27 +192,41 @@ model Announcement {
   @@index([userId])
 }
 
-// Persists an accept/reject decision on an AI-proposed announcement task
-// so it isn't re-suggested identically on every future analysis run. Not
-// a foreign key to Announcement (same free-form-id precedent as
-// TaskCustomization below) — a review decision shouldn't evaporate if an
-// announcement row is ever deleted by some future cleanup feature, even
-// though sync currently only upserts and never deletes.
+// Persists every AI-proposed announcement task detected by a manual
+// "Check for new announcements" pass (see AutoTaskCreation.md's "rundown"
+// model), not just decided ones — a ProposedTask is otherwise fully
+// ephemeral, so without this a "pending" candidate couldn't survive
+// between sessions to reappear in the Rundown screen. Not a foreign key
+// to Announcement (same free-form-id precedent as TaskCustomization
+// below) — a review decision shouldn't evaporate if an announcement row
+// is ever deleted by some future cleanup feature, even though sync
+// currently only upserts and never deletes.
 model AnnouncementSuggestionReview {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   sourceAnnouncementId String
   // Content-derived hash (lib/suggestionKey.ts) — a ProposedTask has no
   // id of its own, and a positional index isn't stable across re-runs of
   // the extraction prompt.
   suggestionKey        String
-  status               String // "accepted" | "rejected"
-  createdAt            DateTime @default(now())
+  status               String // "pending" | "accepted" | "rejected" | "maybe"
+  // Full ProposedTask as detected, so the Rundown/Still-Deciding screens
+  // can render a "pending"/"maybe" candidate without re-running the AI
+  // pipeline. Null for legacy accepted/rejected rows written before this
+  // existed — callers must treat null as "nothing to render," never
+  // re-derive it.
+  taskSnapshot         Json?
+  // Set only when status transitions into "accepted"/"rejected" — lets a
+  // "maybe" item's time-parked duration be read directly off this row.
+  resolvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sourceAnnouncementId, suggestionKey])
   @@index([userId])
+  @@index([userId, status])
 }
 
 model TaskCustomization {
@@ -276,6 +292,12 @@ model CustomTask {
   dueAt                DateTime?
   dueFraction          Float?
   sourceAnnouncementId String?
+  // Set when this task was inserted/accepted from an AI-detected candidate
+  // and the user has dismissed the "AI-detected" badge on its card
+  // (implicit confirmation it's correct) — distinct from the task later
+  // being deleted outright (implicit signal it was wrong), both logged via
+  // AiTaskEvent for the accuracy-tracking work in AutoTaskCreation.md.
+  aiTagDismissedAt     DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -286,14 +308,14 @@ model CustomTask {
   // (id shape "custom-r<recurringTaskId>-<due>", see lib/recurrence.ts).
   // onDelete: SetNull so deleting a whole series never deletes historical/
   // completed occurrences, only unlinks them.
-  recurrenceId String?
-  recurringTask RecurringTask? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
+  recurrenceId         String?
+  recurringTask        RecurringTask? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
   // Set when this single occurrence was edited via the "this occurrence
   // only" scope on a field the series would otherwise control (name/course/
   // type/due date/time) — a later "this and following" bulk edit on the
   // series must skip any row with this flag set, or it silently clobbers a
   // deliberate per-occurrence customization.
-  recurrenceOverridden Boolean @default(false)
+  recurrenceOverridden Boolean        @default(false)
 
   @@index([userId])
   @@index([recurrenceId])
@@ -309,30 +331,30 @@ model CustomTask {
 // priority/XP behavior for free, with zero special-casing of
 // id.startsWith("custom-") call sites elsewhere in the app.
 model RecurringTask {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   name         String
   course       String
   // HW/R/EXAM/TODO, same domain as Assignment.typeOverride — no enum in
   // this schema (see TaskCustomization.typeOverride), validated in-route.
   typeOverride String?
   // "daily" | "weekly" | "monthly" — validated in-route, see lib/recurrence.ts.
-  frequency String
+  frequency    String
   // Every N days/weeks/months, >= 1.
-  interval  Int    @default(1)
+  interval     Int      @default(1)
   // 0=Sun..6=Sat (app's Sunday-start convention, lib/utils.ts's
   // getStartOfWeek) — only consulted when frequency === "weekly".
-  weekdays Int[] @default([])
+  weekdays     Int[]    @default([])
   // "YYYY-MM-DD" — first occurrence / recurrence anchor, same plain-date
   // convention as CustomTask.due.
-  startDate String
+  startDate    String
   // "YYYY-MM-DD" inclusive, null = no end (rolling-horizon generation).
-  endDate String?
+  endDate      String?
   // "HH:MM", null = end of day — fed into resolveDueTime per occurrence.
-  dueTime String?
+  dueTime      String?
   // Paused = stop generating new occurrences, keep existing history.
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -476,4 +498,48 @@ model MusicTrack {
   playlist   MusicPlaylist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
 
   @@index([playlistId])
+}
+
+// One row per user (TownState/GamificationState singleton pattern) —
+// deliberately separate from both, since this is neither gamification nor
+// world-layout state. Backs AutoTaskCreation.md's "auto-accept" setting and
+// the Rundown screen's "anything new since last visit" gate.
+model PlannerSettings {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Default OFF per AutoTaskCreation.md: skips Yes/No/Maybe specifically
+  // for high-confidence AI-detected candidates (see lib/rundownAutoAccept.ts)
+  // — never affects the "Added from Canvas" section.
+  autoAcceptAiTasks   Boolean   @default(false)
+  // Null = never viewed — everything currently pending/added counts as
+  // "new," which is also the correct behavior for a first-ever login.
+  lastRundownViewedAt DateTime?
+  updatedAt           DateTime  @updatedAt
+}
+
+// Durable event log for the Rundown/auto-task-creation feature's accuracy
+// tracking (AutoTaskCreation.md's "Logging" section) and for the manual
+// detection-pass rate limit (lib/aiRateLimit.ts counts
+// "detection_pass_triggered" rows) — deliberately not a console.log, since
+// the whole point is answering "is this feature pulling its weight" with
+// real numbers later. `data` is a free-form per-`type` payload rather than
+// a wide sparse column set, since each event type carries different fields.
+model AiTaskEvent {
+  id                   String   @id @default(cuid())
+  // "detection_pass_triggered" | "candidate_decided" | "maybe_resolved" |
+  // "ai_tag_dismissed" | "ai_task_deleted"
+  type                 String
+  sourceAnnouncementId String?
+  suggestionKey        String?
+  // CustomTask.id, for ai_tag_dismissed/ai_task_deleted events.
+  taskId               String?
+  data                 Json?
+  createdAt            DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type, createdAt])
 }

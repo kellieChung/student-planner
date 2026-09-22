@@ -2,16 +2,22 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
-import { Course } from "@/types/course";
-import AIReviewCard from "@/components/AIReviewCard";
-import { Assignment } from "@/types/assignment";
 import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString } from "@/lib/utils";
 import { useMascot } from "@/components/world/LaptopFrame";
 
-type AIReviewPanelProps = {
-    courses: Course[];
-    onCourseCreated: (course: Course) => void;
+// Ports the manual "Check for new announcements" trigger from the retired
+// components/AIReviewPanel.tsx: the range-preset picker, custom dates, dry-
+// run preview, and the NDJSON-streaming call to
+// /api/ai/analyze-announcements. Deliberately does NOT run automatically —
+// AutoTaskCreation.md requires the AI detection pass (a real Anthropic/
+// Ollama cost, rate-limited to 2/week) stay an explicit user action, never
+// fired just by opening the Rundown. New candidates stream straight into
+// the parent's pending list via onNewCandidates instead of a local
+// one-at-a-time carousel queue.
+type DetectionTriggerControlsProps = {
+    onNewCandidates: (tasks: ProposedTask[]) => void;
+    onRunFinished?: () => void;
 };
 
 type RangePreset = "thisWeek" | "thisAndLastWeek" | "last30Days" | "custom";
@@ -54,11 +60,9 @@ function formatLocalDate(date: Date): string {
 }
 
 // Mirrors app/api/ai/analyze-announcements/route.ts's ANNOUNCEMENT_BUFFER_
-// DAYS (4) for the "this + last week" preset's older boundary, so the
-// "announcements post by the Wednesday before" heuristic still holds for
-// the earlier week too. "thisWeek" deliberately does NOT duplicate the
-// server's default window math — it sends no from/to at all so the server
-// stays the single source of truth for the default range.
+// DAYS (4) for the "this + last week" preset's older boundary. "thisWeek"
+// deliberately sends no from/to at all so the server stays the single
+// source of truth for the default range.
 const WEEKLY_POST_BUFFER_DAYS = 4;
 
 function resolvePresetRange(
@@ -79,9 +83,6 @@ function resolvePresetRange(
     }
 
     if (preset === "thisAndLastWeek") {
-        // Sunday-start, matching lib/utils.ts's getStartOfWeek (the same
-        // convention the planner grid itself uses for "this week") — not
-        // a Monday-based re-derivation, which previously disagreed with it.
         const weekStart = getStartOfWeek(today);
 
         const from = new Date(weekStart);
@@ -96,29 +97,24 @@ function resolvePresetRange(
     return null;
 }
 
-export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPanelProps) {
-    const [results, setResults] = useState<AnnouncementResult[]>([]);
-    const [currentIndex, setCurrentIndex] = useState(0);
+export default function DetectionTriggerControls({
+    onNewCandidates,
+    onRunFinished,
+}: DetectionTriggerControlsProps) {
     const [loading, setLoading] = useState(false);
     const [started, setStarted] = useState(false);
     const [progress, setProgress] = useState<AnalysisProgress | null>(null);
-
-    // True only if the stream ended (network drop, server crash, etc.)
-    // without ever sending a "done" frame — distinct from a clean finish,
-    // so a truncated analysis doesn't render the same "all caught up"
-    // screen as a genuinely complete one.
+    const [emptyAnnouncements, setEmptyAnnouncements] = useState<AnnouncementResult[]>([]);
+    const [newCandidateCount, setNewCandidateCount] = useState(0);
     const [streamIncomplete, setStreamIncomplete] = useState(false);
+    const [rateLimitError, setRateLimitError] = useState<string | null>(null);
 
     const [preset, setPreset] = useState<RangePreset>("thisWeek");
     const [customFrom, setCustomFrom] = useState(getTodayString());
     const [customTo, setCustomTo] = useState(getTodayString());
     const [previewCount, setPreviewCount] = useState<number | null>(null);
-    const [previewAnnouncements, setPreviewAnnouncements] = useState<
-        PreviewAnnouncement[]
-    >([]);
-    const [deselectedIds, setDeselectedIds] = useState<Set<string>>(
-        new Set()
-    );
+    const [previewAnnouncements, setPreviewAnnouncements] = useState<PreviewAnnouncement[]>([]);
+    const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
     const [selectionTouched, setSelectionTouched] = useState(false);
     const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -138,10 +134,6 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
     }
 
     useEffect(() => {
-        // Invalid custom range: skip fetching. No setState here — the
-        // label/disabled state already fall back to `rangeIsInvalid`
-        // independent of a possibly-stale previewCount (see the render
-        // logic below), so there's nothing to reset synchronously.
         if (preset === "custom" && (!customFrom || !customTo || customFrom > customTo)) {
             return;
         }
@@ -154,17 +146,11 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                 setPreviewLoading(true);
 
                 try {
-                    const response = await fetch(
-                        "/api/ai/analyze-announcements",
-                        {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                dryRun: true,
-                                ...(range ?? {}),
-                            }),
-                        }
-                    );
+                    const response = await fetch("/api/ai/analyze-announcements", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ dryRun: true, ...(range ?? {}) }),
+                    });
 
                     const data = await response.json();
 
@@ -175,10 +161,7 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                         setSelectionTouched(false);
                     }
                 } catch (error) {
-                    console.error(
-                        "❌ Failed to preview announcement count:",
-                        error
-                    );
+                    console.error("❌ Failed to preview announcement count:", error);
                 } finally {
                     if (seq === previewSeq.current) {
                         setPreviewLoading(false);
@@ -210,51 +193,47 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
 
     const selectedCount = previewAnnouncements.length - deselectedIds.size;
 
-    async function analyzeAnnouncements() {
+    async function runDetectionPass() {
         setLoading(true);
         setStarted(true);
-        setResults([]);
-        setCurrentIndex(0);
+        setEmptyAnnouncements([]);
+        setNewCandidateCount(0);
         setProgress(null);
         setStreamIncomplete(false);
+        setRateLimitError(null);
 
         const range = currentRange();
 
-        const body =
-            selectionTouched
-                ? {
-                      selectedAnnouncementIds: previewAnnouncements
-                          .filter((a) => !deselectedIds.has(a.id))
-                          .map((a) => a.id),
-                  }
-                : range ?? {};
+        const body = selectionTouched
+            ? {
+                  selectedAnnouncementIds: previewAnnouncements
+                      .filter((a) => !deselectedIds.has(a.id))
+                      .map((a) => a.id),
+              }
+            : range ?? {};
 
         let mascotFired = false;
         let receivedDone = false;
 
         try {
-            const response = await fetch(
-                "/api/ai/analyze-announcements",
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body),
-                }
-            );
+            const response = await fetch("/api/ai/analyze-announcements", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+            });
+
+            if (response.status === 429) {
+                const data = await response.json().catch(() => null);
+                setRateLimitError(
+                    data?.error ?? "You've used your 2 checks for this week."
+                );
+                return;
+            }
 
             if (!response.ok || !response.body) {
                 throw new Error("Failed to analyze announcements.");
             }
 
-            // The route streams one NDJSON frame per line (a "start", one
-            // "batch" per resolved batch, a final "done") instead of one
-            // JSON body — this is what lets suggestions from the first
-            // batch show up for review before later batches finish. A
-            // batch frame can carry tens of KB (full announcement HTML,
-            // matched-assignment descriptions), so a frame can legitimately
-            // split across two reader.read() calls — buffer and only parse
-            // complete lines, keeping any trailing partial line for the
-            // next chunk.
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
@@ -283,26 +262,31 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                     } else if (frame.type === "batch") {
                         const batchResults = frame.results as AnnouncementResult[];
 
-                        setResults((current) => [...current, ...batchResults]);
+                        const newTasks = batchResults.flatMap((result) => result.tasks);
+
+                        if (newTasks.length > 0) {
+                            onNewCandidates(newTasks);
+                            setNewCandidateCount((count) => count + newTasks.length);
+                        }
+
+                        setEmptyAnnouncements((current) => [
+                            ...current,
+                            ...batchResults.filter((result) => result.tasks.length === 0),
+                        ]);
+
                         setProgress({
                             completed: frame.completedAnnouncements,
                             total: frame.totalAnnouncements,
                         });
 
-                        if (
-                            !mascotFired &&
-                            batchResults.some((result) => result.tasks.length > 0)
-                        ) {
+                        if (!mascotFired && newTasks.length > 0) {
                             mascotFired = true;
                             say("announcementFound");
                         }
                     } else if (frame.type === "done") {
                         receivedDone = true;
                     } else if (frame.type === "error") {
-                        console.error(
-                            "❌ Announcement analysis stream error:",
-                            frame.message
-                        );
+                        console.error("❌ Announcement analysis stream error:", frame.message);
                     }
                 }
 
@@ -315,150 +299,30 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                 setStreamIncomplete(true);
             }
         } catch (error) {
-            console.error(
-                "❌ Failed to analyze announcements:",
-                error
-            );
+            console.error("❌ Failed to analyze announcements:", error);
             setStreamIncomplete(true);
         } finally {
             setLoading(false);
+            onRunFinished?.();
         }
     }
 
-    function nextTask() {
-        setCurrentIndex((index) => index + 1);
-    }
-
-    function saveSuggestionReview(
-        task: ProposedTask,
-        status: "accepted" | "rejected"
-    ) {
-        // Fire-and-forget: a failed write shouldn't block the review
-        // flow, at worst causing one stale resurfacing later.
-        fetch("/api/ai/suggestion-review", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                sourceAnnouncementId: task.sourceAnnouncementId,
-                suggestionKey: task.suggestionKey,
-                status,
-            }),
-        }).catch((error) => {
-            console.error(
-                "❌ Failed to save suggestion review:",
-                error
-            );
-        });
-    }
-
-    const queue = results.flatMap((result) => result.tasks);
-
-    function handleAccept(updatedTask?: ProposedTask) {
-        const acceptedTask =
-            updatedTask ?? queue[currentIndex];
-
-        if (!acceptedTask) {
-            return;
-        }
-
-        /*
-         * Convert the AI task into the same Assignment shape
-         * used by the planner.
-         */
-        const plannerTask: Assignment = {
-            id: `custom-ai-${Date.now()}-${currentIndex}`,
-            name: acceptedTask.name,
-            course: acceptedTask.course,
-            due: acceptedTask.due ?? "",
-            completed: false,
-            sourceAnnouncementId: acceptedTask.sourceAnnouncementId,
-            typeOverride: acceptedTask.typeOverride ?? undefined,
-        };
-
-        console.log(
-            "✅ Accepted AI task:",
-            plannerTask
-        );
-
-        /*
-         * Tell WeeklyPlannerView to add this task.
-         *
-         * The planner is responsible for actually adding the
-         * task to its state and saving it to localStorage.
-         */
-        window.dispatchEvent(
-            new CustomEvent<Assignment>(
-                "planner:add-task",
-                {
-                    detail: plannerTask,
-                }
-            )
-        );
-
-        saveSuggestionReview(acceptedTask, "accepted");
-
-        nextTask();
-    }
-
-    function handleReject() {
-        const rejectedTask = queue[currentIndex];
-
-        if (rejectedTask) {
-            saveSuggestionReview(rejectedTask, "rejected");
-        }
-
-        nextTask();
-    }
-
-    const currentTask = queue[currentIndex];
-
-    const currentGroup = currentTask
-        ? results.find(
-              (result) =>
-                  result.announcement.id ===
-                  currentTask.sourceAnnouncementId
-          )
-        : undefined;
-
-    const previousTask = currentIndex > 0 ? queue[currentIndex - 1] : undefined;
-
-    const showGroupHeader =
-        !!currentTask &&
-        (!previousTask ||
-            previousTask.sourceAnnouncementId !==
-                currentTask.sourceAnnouncementId);
-
-    const emptyAnnouncements = results.filter(
-        (result) => result.tasks.length === 0
-    );
-
-    const finished =
-        started &&
-        !loading &&
-        !streamIncomplete &&
-        queue.length > 0 &&
-        currentIndex >= queue.length;
+    const finished = started && !loading && !streamIncomplete && !rateLimitError;
 
     const rangeIsInvalid =
-        preset === "custom" &&
-        (!customFrom || !customTo || customFrom > customTo);
+        preset === "custom" && (!customFrom || !customTo || customFrom > customTo);
 
-    // Disabled on a known-empty/invalid range, or once the user has
-    // deselected every previewed announcement — if the preview fetch is
-    // still loading or failed silently, previewCount stays null and the
-    // button stays clickable (falls back to the plain "Review AI
-    // Suggestions" label) rather than getting stuck disabled forever.
     const canAnalyze =
         !rangeIsInvalid &&
         previewCount !== 0 &&
         !(selectionTouched && selectedCount === 0);
 
     return (
-        <div className="mt-8">
-            {!started && (
+        <div>
+            {!loading && (
                 <div className="theme-surface rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5">
                     <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                        Announcements to analyze
+                        Announcements to check
                     </p>
 
                     <div className="mb-3 flex flex-wrap gap-1 rounded-xl bg-[var(--border)]/30 p-1">
@@ -533,9 +397,7 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                                         <p className="text-xs text-[var(--muted)]">
                                             {announcement.course}
                                             {announcement.postedAt &&
-                                                ` · ${new Date(
-                                                    announcement.postedAt
-                                                ).toLocaleDateString()}`}
+                                                ` · ${new Date(announcement.postedAt).toLocaleDateString()}`}
                                         </p>
                                     </div>
                                 </label>
@@ -543,35 +405,36 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                         </div>
                     )}
 
-                    {previewCount !== null &&
-                        previewCount > LARGE_RANGE_WARNING_THRESHOLD && (
-                            <p className="mb-3 text-xs text-amber-400">
-                                That&apos;s a lot to review at once and will
-                                use more AI calls — consider narrowing the
-                                range.
-                            </p>
-                        )}
+                    {previewCount !== null && previewCount > LARGE_RANGE_WARNING_THRESHOLD && (
+                        <p className="mb-3 text-xs text-amber-400">
+                            That&apos;s a lot to review at once and will use more AI calls — consider narrowing the range.
+                        </p>
+                    )}
+
+                    {rateLimitError && (
+                        <p className="mb-3 text-xs text-[var(--status-overdue-text)]">
+                            {rateLimitError}
+                        </p>
+                    )}
 
                     <button
-                        onClick={analyzeAnnouncements}
+                        onClick={runDetectionPass}
                         disabled={!canAnalyze}
                         className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                        {previewLoading && previewCount === null && (
-                            <Spinner className="h-4 w-4" />
-                        )}
+                        {previewLoading && previewCount === null && <Spinner className="h-4 w-4" />}
 
                         {rangeIsInvalid
-                            ? "🤖 Review AI Suggestions"
+                            ? "🤖 Check for new announcements"
                             : selectionTouched && selectedCount === 0
                             ? "Select at least one announcement"
                             : previewCount === null
-                            ? "🤖 Review AI Suggestions"
+                            ? "🤖 Check for new announcements"
                             : previewCount === 0
                             ? "No announcements in this range"
                             : selectionTouched
-                            ? `🤖 Analyze ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
-                            : `🤖 Analyze ${previewCount} announcement${previewCount === 1 ? "" : "s"}`}
+                            ? `🤖 Check ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
+                            : `🤖 Check ${previewCount} announcement${previewCount === 1 ? "" : "s"}`}
                     </button>
                 </div>
             )}
@@ -580,14 +443,12 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                 <div className="theme-surface mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
                     <p className="flex items-center gap-2 font-semibold">
                         <Spinner className="h-4 w-4" />
-                        🤖 Analyzing announcements
+                        🤖 Checking announcements
                         {progress ? `... ${progress.completed} of ${progress.total}` : "..."}
                     </p>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                        {progress
-                            ? "New suggestions appear below as each batch finishes."
-                            : "Reading through your Canvas announcements."}
+                        New suggestions appear in &quot;AI found these&quot; as each batch finishes.
                     </p>
 
                     {progress && (
@@ -603,67 +464,30 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                 </div>
             )}
 
-            {loading && !currentTask && results.length > 0 && (
-                <div className="theme-surface mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
-                    <p className="text-sm text-[var(--muted)]">
-                        You&apos;re caught up on what&apos;s arrived so far —
-                        still analyzing the rest.
-                    </p>
-                </div>
-            )}
-
-            {currentTask && (
-                <div>
-                    {showGroupHeader && currentGroup && (
-                        <p className="mb-2 text-sm font-semibold">
-                            From: {currentGroup.announcement.title} —{" "}
-                            {currentGroup.announcement.course} ·{" "}
-                            {currentGroup.tasks.length} suggestion
-                            {currentGroup.tasks.length === 1 ? "" : "s"}
-                        </p>
-                    )}
-
-                    <p className="mb-3 text-sm text-[var(--muted)]">
-                        Suggestion{" "}
-                        {currentIndex + 1} of{" "}
-                        {queue.length}
-                    </p>
-
-                    <AIReviewCard
-                        key={currentTask.suggestionKey}
-                        task={currentTask}
-                        courses={courses}
-                        onCourseCreated={onCourseCreated}
-                        onAccept={handleAccept}
-                        onReject={handleReject}
-                    />
-                </div>
-            )}
-
             {started && !loading && streamIncomplete && (
-                <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
+                <div className="theme-surface mt-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="font-semibold text-[var(--status-overdue-text)]">
-                        ⚠️ Analysis stopped early
+                        ⚠️ Check stopped early
                     </p>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                        The connection dropped before every announcement
-                        could be checked. Suggestions already shown above are
-                        safe to review — try analyzing again to check the
-                        rest.
+                        The connection dropped before every announcement could be checked. Suggestions already found are safe — try checking again to cover the rest.
                     </p>
                 </div>
             )}
 
             {finished && (
-                <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
+                <div className="theme-surface mt-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="text-xl font-bold">
-                        🎉 You&apos;re all caught up!
+                        {newCandidateCount > 0
+                            ? `🎉 Found ${newCandidateCount} new suggestion${newCandidateCount === 1 ? "" : "s"}`
+                            : "🎉 You're all caught up!"}
                     </p>
 
                     <p className="mt-2 text-sm text-[var(--muted)]">
-                        You&apos;ve reviewed all of the AI
-                        suggestions.
+                        {newCandidateCount > 0
+                            ? "New suggestions are listed in \"AI found these\" above."
+                            : "The AI didn't find any new work in these announcements."}
                     </p>
 
                     {emptyAnnouncements.length > 0 && (
@@ -674,12 +498,8 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
 
                             <ul className="mt-2 space-y-1">
                                 {emptyAnnouncements.map((result) => (
-                                    <li
-                                        key={result.announcement.id}
-                                        className="text-sm text-[var(--muted)]"
-                                    >
-                                        {result.announcement.title} —{" "}
-                                        {result.announcement.course}
+                                    <li key={result.announcement.id} className="text-sm text-[var(--muted)]">
+                                        {result.announcement.title} — {result.announcement.course}
                                     </li>
                                 ))}
                             </ul>
@@ -687,42 +507,6 @@ export default function AIReviewPanel({ courses, onCourseCreated }: AIReviewPane
                     )}
                 </div>
             )}
-
-            {started &&
-                !loading &&
-                !streamIncomplete &&
-                queue.length === 0 && (
-                    <div className="theme-surface rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
-                        <p className="font-semibold">
-                            No tasks found!
-                        </p>
-
-                        <p className="mt-1 text-sm text-[var(--muted)]">
-                            The AI didn&apos;t find any work in
-                            your announcements.
-                        </p>
-
-                        {emptyAnnouncements.length > 0 && (
-                            <div className="mt-4 border-t border-[var(--border)] pt-4">
-                                <p className="text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                                    Announcements checked
-                                </p>
-
-                                <ul className="mt-2 space-y-1">
-                                    {emptyAnnouncements.map((result) => (
-                                        <li
-                                            key={result.announcement.id}
-                                            className="text-sm text-[var(--muted)]"
-                                        >
-                                            {result.announcement.title} —{" "}
-                                            {result.announcement.course}
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-                    </div>
-                )}
         </div>
     );
 }

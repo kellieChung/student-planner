@@ -27,10 +27,14 @@ import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinati
 import {ProcrastinationHistory} from "@/types/procrastination";
 import Spinner from "./Spinner";
 import TaskStatusToggle from "./TaskStatusToggle";
-import AIReviewPanel from "./AIReviewPanel";
 import Taskbar from "./os/Taskbar";
 import { usePomodoroRemote } from "./os/PomodoroRemoteContext";
 import { useCoursesRemote } from "./os/CoursesRemoteContext";
+import { ProposedTask } from "@/types/proposedTask";
+import { PersistedCandidate, AddedFromCanvasItem } from "@/types/rundown";
+import { savePlannerSettings } from "@/lib/plannerSettings";
+import RundownOverlay from "./rundown/RundownOverlay";
+import StillDecidingPanel from "./rundown/StillDecidingPanel";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -63,11 +67,23 @@ function deriveAddedAt(task: Assignment): string | null {
     return null;
 }
 
+type InitialRundown = {
+    shouldAutoShow: boolean;
+    maybeCount: number;
+    autoAcceptAiTasks: boolean;
+};
+
 type WeeklyPlannerProps = {
     assignments: Assignment[];
-    weekStartDate: Date;
     userName?: string | null;
     userEmail?: string | null;
+    // Computed once, server-side (app/page.tsx), from PlannerSettings +
+    // pending/maybe AnnouncementSuggestionReview counts — cheap enough to
+    // compute on every page load without a client round trip before first
+    // paint. The full candidate/item payloads are still fetched lazily by
+    // this component's own mount effect (GET /api/rundown-candidates),
+    // same as every other piece of planner state here.
+    initialRundown?: InitialRundown;
 }
 
 // One row per (userId, taskId) in TaskCustomization — course/name/type/due
@@ -116,7 +132,7 @@ function toCustomizationPatchBody(updates: TaskCustomizationState) {
     };
 }
 
-export default function WeeklyPlannerView({ assignments, weekStartDate, userName, userEmail }: WeeklyPlannerProps) {
+export default function WeeklyPlannerView({ assignments, userName, userEmail, initialRundown }: WeeklyPlannerProps) {
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -160,6 +176,17 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
     const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
     const [courses, setCourses] = useState<Course[]>([]);
     const [estimatingCount, setEstimatingCount] = useState(0);
+    // AutoTaskCreation.md's Rundown screen. showRundown is seeded once
+    // from the server-computed initialRundown.shouldAutoShow (see
+    // app/page.tsx) — a plain `useState(() => ...)` initializer, not an
+    // effect, so it can't re-trigger the auto-show after the user
+    // dismisses it later in the same session.
+    const [pendingCandidates, setPendingCandidates] = useState<PersistedCandidate[]>([]);
+    const [maybeCandidates, setMaybeCandidates] = useState<PersistedCandidate[]>([]);
+    const [addedFromCanvas, setAddedFromCanvas] = useState<AddedFromCanvasItem[]>([]);
+    const [autoAcceptAiTasks, setAutoAcceptAiTasks] = useState(initialRundown?.autoAcceptAiTasks ?? false);
+    const [showRundown, setShowRundown] = useState(() => initialRundown?.shouldAutoShow ?? false);
+    const [showStillDeciding, setShowStillDeciding] = useState(false);
     const [awardingXp, setAwardingXp] = useState(false);
     const { focusTaskId, setFocusTask, setFocusTaskSummary } = usePomodoroRemote();
     const { coursesVersion } = useCoursesRemote();
@@ -170,16 +197,26 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         const domTheme = document.documentElement.dataset.theme;
         return domTheme === "light" ? "light" : "dark";
     });
-    const [activeWeekStart, setActiveWeekStart] = useState(() => {
-        const start = new Date(weekStartDate);
-        start.setHours(0, 0, 0, 0);
-        return start;
-    });
+    const [activeWeekStart, setActiveWeekStart] = useState(() => getStartOfWeek());
     const [activeMonthStart, setActiveMonthStart] = useState(() => {
-        const start = new Date(weekStartDate);
-        return new Date(start.getFullYear(), start.getMonth(), 1);
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), 1);
     });
 
+    // getStartOfWeek()'s no-arg default evaluates `new Date()` wherever it
+    // runs — during SSR that's the server's (Vercel: UTC) clock, not the
+    // viewer's. A Date instant survives the server/client boundary fine,
+    // but re-deriving "today" from it via local getters after hydration
+    // does not: it can land on a different calendar day than the same
+    // getters would give the server, silently mislabeling every day
+    // column (see PROGRESS.md's "Weekly grid layout" for the full story).
+    // Re-run once client-side, exactly like the "Today" button does, to
+    // correct the SSR-seeded guess.
+    useEffect(() => {
+        const start = getStartOfWeek();
+        setActiveWeekStart(start);
+        setActiveMonthStart(new Date(start.getFullYear(), start.getMonth(), 1));
+    }, []);
 
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -649,6 +686,32 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         void refetchCourses();
     }, [assignments]);
 
+    // Hydrates the Rundown/Still-Deciding screens' full item payloads.
+    // Deliberately does NOT trigger the AI detection pass itself — that
+    // only ever runs from DetectionTriggerControls' explicit button (see
+    // app/api/ai/analyze-announcements/route.ts's rate limit) — this just
+    // reads whatever has already been persisted.
+    useEffect(() => {
+        (async () => {
+            try {
+                const response = await fetch("/api/rundown-candidates");
+                if (!response.ok) return;
+
+                const data = await response.json() as {
+                    pending?: PersistedCandidate[];
+                    maybe?: PersistedCandidate[];
+                    addedFromCanvas?: AddedFromCanvasItem[];
+                };
+
+                setPendingCandidates(data.pending ?? []);
+                setMaybeCandidates(data.maybe ?? []);
+                setAddedFromCanvas(data.addedFromCanvas ?? []);
+            } catch (error) {
+                console.error("Could not load rundown candidates", error);
+            }
+        })();
+    }, []);
+
     // Hoisted out of the mount effect above so a recurring-series change
     // (pause/resume/edit-pattern/delete via RecurringTasksPanel, which
     // tombstones occurrences server-side through TaskCustomization) can
@@ -796,6 +859,29 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             setTasks((current) => current.map((task) => byId.get(task.id) ?? task));
         } catch (error) {
             console.error("Could not refresh custom tasks", error);
+        }
+    }
+
+    // Unlike refreshCustomTasks above (which only updates tasks already in
+    // local state), this is additive — needed after a detection pass with
+    // auto-accept on, which can create brand-new CustomTask rows
+    // server-side (lib/rundownAutoAccept.ts's "auto-insert") with no
+    // client-side planner:add-task event to pick them up otherwise.
+    async function mergeNewCustomTasks() {
+        try {
+            const response = await fetch("/api/custom-tasks");
+            if (!response.ok) return;
+
+            const data = await response.json() as { customTasks?: Assignment[] };
+
+            setTasks((current) => {
+                const existingIds = new Set(current.map((task) => task.id));
+                const newOnes = (data.customTasks ?? []).filter((task) => !existingIds.has(task.id));
+
+                return newOnes.length > 0 ? [...current, ...newOnes] : current;
+            });
+        } catch (error) {
+            console.error("Could not merge new custom tasks", error);
         }
     }
 
@@ -1614,6 +1700,128 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
         });
     }
 
+    // Dismissing the "AI-detected" badge (AssignmentCard's 🤖 button) is
+    // the implicit-confirmation half of AutoTaskCreation.md's logging
+    // requirement — the other half (implicit "it was wrong") is deleting
+    // the task without ever dismissing the tag, logged server-side by
+    // DELETE /api/custom-tasks/[taskId] itself.
+    function handleDismissAiTag(id: string) {
+        const dismissedAt = new Date().toISOString();
+
+        setTasks((current) =>
+            current.map((task) =>
+                task.id === id ? { ...task, aiTagDismissedAt: dismissedAt } : task
+            )
+        );
+
+        fetch(`/api/custom-tasks/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ aiTagDismissedAt: dismissedAt }),
+        }).catch((error) => {
+            console.error("Could not dismiss AI tag", error);
+        });
+    }
+
+    // ==================================================
+    // Rundown screen (AutoTaskCreation.md)
+    // ==================================================
+
+    function saveRundownDecision(task: ProposedTask, status: "accepted" | "rejected" | "maybe") {
+        // Fire-and-forget, same as the retired AIReviewPanel's
+        // saveSuggestionReview — a failed write shouldn't block the review
+        // flow, at worst causing one stale resurfacing later.
+        fetch("/api/ai/suggestion-review", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                sourceAnnouncementId: task.sourceAnnouncementId,
+                suggestionKey: task.suggestionKey,
+                status,
+                duplicateSuspected: task.canvasMatch.status !== "none",
+            }),
+        }).catch((error) => {
+            console.error("❌ Failed to save suggestion review:", error);
+        });
+    }
+
+    function removeCandidateFromLists(suggestionKey: string) {
+        setPendingCandidates((current) => current.filter((c) => c.suggestionKey !== suggestionKey));
+        setMaybeCandidates((current) => current.filter((c) => c.suggestionKey !== suggestionKey));
+    }
+
+    function handleRundownYes(task: ProposedTask) {
+        // Converts the AI task into the same Assignment shape used by the
+        // planner, exactly like the retired AIReviewPanel's handleAccept —
+        // the existing "planner:add-task" listener below is the single
+        // source of truth for actually creating + persisting a CustomTask,
+        // reused here rather than duplicated.
+        const plannerTask: Assignment = {
+            id: `custom-ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: task.name,
+            course: task.course,
+            due: task.due ?? "",
+            completed: false,
+            sourceAnnouncementId: task.sourceAnnouncementId,
+            typeOverride: task.typeOverride ?? undefined,
+        };
+
+        window.dispatchEvent(
+            new CustomEvent<Assignment>("planner:add-task", { detail: plannerTask })
+        );
+
+        saveRundownDecision(task, "accepted");
+        removeCandidateFromLists(task.suggestionKey);
+    }
+
+    function handleRundownNo(task: ProposedTask) {
+        saveRundownDecision(task, "rejected");
+        removeCandidateFromLists(task.suggestionKey);
+    }
+
+    function handleRundownMaybe(task: ProposedTask) {
+        saveRundownDecision(task, "maybe");
+
+        setPendingCandidates((current) => current.filter((c) => c.suggestionKey !== task.suggestionKey));
+        setMaybeCandidates((current) => [
+            ...current,
+            { ...task, reviewStatus: "maybe", firstSeenAt: new Date().toISOString() },
+        ]);
+    }
+
+    function handleNewCandidates(newTasks: ProposedTask[]) {
+        setPendingCandidates((current) => {
+            const existingKeys = new Set(current.map((c) => c.suggestionKey));
+            const additions = newTasks
+                .filter((task) => !existingKeys.has(task.suggestionKey))
+                .map((task) => ({
+                    ...task,
+                    reviewStatus: "pending" as const,
+                    firstSeenAt: new Date().toISOString(),
+                }));
+
+            return [...current, ...additions];
+        });
+    }
+
+    function handleCloseRundown() {
+        setShowRundown(false);
+        savePlannerSettings({ lastRundownViewedAt: new Date().toISOString() });
+    }
+
+    function handleRemoveCanvasItem(item: AddedFromCanvasItem) {
+        // Reuses the exact soft-delete tombstone path a Canvas-synced
+        // task's own ✕ button already goes through — see handleDelete
+        // above.
+        handleDelete(item.id);
+        setAddedFromCanvas((current) => current.filter((i) => i.id !== item.id));
+    }
+
+    function handleSetAutoAcceptAiTasks(value: boolean) {
+        setAutoAcceptAiTasks(value);
+        savePlannerSettings({ autoAcceptAiTasks: value });
+    }
+
     const handleSaveTask = (
         updatedTask: Assignment,
         startDate: string,
@@ -1985,6 +2193,8 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                                         isCompleting = {pulsingIds.has(task.id)}
                                         estimatedMinutes = {estimate?.estimatedMinutes}
                                         isFocused={task.id === focusTaskId}
+                                        isAiDetected={Boolean(task.sourceAnnouncementId) && !task.aiTagDismissedAt}
+                                        onDismissAiTag={handleDismissAiTag}
                                         onSetStatus = {(newStatus) => handleSetStatus(task, newStatus, estimate?.estimatedMinutes)}
                                         onDelete = {handleDelete}
                                         onFocus={(id) => setFocusTask(id === focusTaskId ? null : id)}
@@ -2108,7 +2318,6 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
                 )}
             </section>
 
-            <AIReviewPanel courses={courses} onCourseCreated={handleCourseCreated} />
         </div>
 
         <Taskbar
@@ -2124,7 +2333,39 @@ export default function WeeklyPlannerView({ assignments, weekStartDate, userName
             onManageRecurring={() => setIsRecurringPanelOpen(true)}
             userName={userName}
             userEmail={userEmail}
+            onOpenRundown={() => setShowRundown(true)}
+            onOpenStillDeciding={() => setShowStillDeciding(true)}
+            stillDecidingCount={maybeCandidates.length}
+            autoAcceptAiTasks={autoAcceptAiTasks}
+            onSetAutoAcceptAiTasks={handleSetAutoAcceptAiTasks}
         />
+
+        {showRundown && (
+            <RundownOverlay
+                pendingCandidates={pendingCandidates}
+                addedFromCanvas={addedFromCanvas}
+                courses={courses}
+                onCourseCreated={handleCourseCreated}
+                onYes={handleRundownYes}
+                onNo={handleRundownNo}
+                onMaybe={handleRundownMaybe}
+                onRemoveCanvasItem={handleRemoveCanvasItem}
+                onNewCandidates={handleNewCandidates}
+                onRunFinished={mergeNewCustomTasks}
+                onClose={handleCloseRundown}
+            />
+        )}
+
+        {showStillDeciding && (
+            <StillDecidingPanel
+                candidates={maybeCandidates}
+                courses={courses}
+                onCourseCreated={handleCourseCreated}
+                onYes={handleRundownYes}
+                onNo={handleRundownNo}
+                onClose={() => setShowStillDeciding(false)}
+            />
+        )}
         </>
     );
 }

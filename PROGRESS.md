@@ -97,6 +97,87 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   extension) — a past bug silently lost everything past page 1 for a
   course with 100+ items.
 
+**Auto Task Creation / Rundown screen** (`AutoTaskCreation.md`, implemented 2026-09-22)
+- The old manual, one-at-a-time `AIReviewPanel`/`AIReviewCard` carousel is
+  gone — replaced by a Rundown screen (`components/rundown/*`) shown
+  automatically on app open (non-blocking, `OnboardingOverlay`'s "tour"
+  pattern) whenever there's a pending AI candidate or a new Canvas
+  assignment since `PlannerSettings.lastRundownViewedAt`. **The AI
+  detection pass itself (extraction + duplicate-check) stays manually
+  triggered** — opening the Rundown never fires an Anthropic/Ollama call;
+  only `components/rundown/DetectionTriggerControls.tsx`'s "Check for new
+  announcements" button does (ported near-verbatim from the old panel,
+  including its custom-date-range picker and dry-run preview).
+- `AnnouncementSuggestionReview.status` is now 4-way
+  (`pending`/`accepted`/`rejected`/`maybe`, still a plain `String`, no DB
+  enum) instead of just accepted/rejected — a row is now written for
+  *every* detected candidate (`taskSnapshot` Json snapshot of the full
+  `ProposedTask`), not just decided ones, so a "pending" candidate
+  survives between sessions and a "maybe" one parks in the separate
+  Still-Deciding surface (`components/rundown/StillDecidingPanel.tsx`,
+  opened from a Taskbar badge, never auto-shown, not gated by
+  `lastRundownViewedAt`). `app/api/ai/analyze-announcements/route.ts`'s
+  `finalizeCandidates` is the single place that writes this — it also
+  applies the new auto-accept setting (see below) before anything reaches
+  the client.
+- `ProposedTask["canvasMatch"]` gained `checkConfidence` (the duplicate
+  check's own confidence, carried through on every branch including
+  "none" — auto-accept gates on this, never on the extraction
+  `confidence` field) and a `"unresolved"` status value for the
+  out-of-range-match-number case (`isDuplicate: true` with a null
+  `matchingAssignmentId`, produced only by `findDuplicateTask.ts`'s
+  existing `uncertainDuplicateResult` — that function's hallucinated-id
+  guard already existed, only the route's status mapping was missing this
+  as a distinct bucket).
+- New per-user singleton `PlannerSettings` (mirrors `TownState`'s
+  pattern, deliberately not folded into it): `autoAcceptAiTasks` (default
+  off, Taskbar settings popover toggle) and `lastRundownViewedAt`. When
+  on, `lib/rundownAutoAccept.ts`'s `classifyAutoAction` auto-inserts a
+  real `CustomTask` for a high-confidence non-duplicate and auto-suppresses
+  a high-confidence duplicate, both server-side inside `finalizeCandidates`
+  — neither ever reaches the stream/client. Anything else (medium/low
+  confidence, or unresolved) always surfaces regardless of the setting.
+- New `AiTaskEvent` durable log (free-form `data` Json per `type`) backs
+  both the spec's accuracy-tracking logging requirement and the manual
+  detection-pass rate limit (`lib/aiRateLimit.ts`: 2 real (non-dry-run)
+  runs per rolling 7 days per user, bypassed for emails in the new
+  `DEV_ACCOUNT_EMAILS` env var — not set anywhere yet, add it to `.env`
+  and Vercel for any account that needs to bypass it).
+- `CustomTask.aiTagDismissedAt` + `AssignmentCard`'s new 🤖 badge is the
+  "AI-detected until dismissed" tag from the spec — dismissing it logs an
+  implicit-confirmation event; deleting the task without dismissing first
+  logs the opposite signal (both from the same `ai_task_deleted`/
+  `ai_tag_dismissed` events, read off `existing.aiTagDismissedAt` at
+  delete time).
+- Known, accepted edge case (documented, not solved): a Canvas course
+  restored via `restore-course` cascade-recreates its `Assignment` rows
+  with fresh `createdAt`, which would show them as "new" again in "Added
+  from Canvas" — mitigated only by a `take: 200` cap in
+  `/api/rundown-candidates`, same category as the existing hidden-course
+  tombstone gap above.
+- Real bug caught by a pre-completion review and fixed before landing: the
+  duplicate-check `alreadyDecidedKeys` skip was gated on `!isCustomSelection`
+  (inherited from the old panel's "custom mode lets you re-review" intent,
+  predating auto-accept). With auto-accept ON, re-selecting an
+  already-decided announcement in custom mode let `finalizeCandidates`
+  silently re-decide it — flipping a user's explicit "No" into an
+  auto-inserted task with zero visibility, and with it OFF, an already-
+  "maybe"'d item could render in both "AI found these" and Still-Deciding
+  at once. Fixed by checking `alreadyDecidedKeys` unconditionally in both
+  modes — an already-decided candidate now never re-enters the pipeline,
+  in exchange for dropping the old "custom mode re-review" affordance
+  (not something `AutoTaskCreation.md` asks for, and directly at odds with
+  its "decisions are sticky" intent).
+- **Not live-verified this session** — only `tsc`/lint/`next build` clean.
+  Needs a real click-through with actual Canvas announcements + local
+  Ollama/Anthropic before trusting: the auto-accept insert/suppress
+  branches, the rate limit's 429 path and reset-date display, the Rundown
+  auto-show/no-auto-show-on-dismiss behavior, the Maybe → Still-Deciding
+  round trip surviving a reload, and the AI-tag dismiss/delete event
+  logging. The Prisma migration itself did apply cleanly against the
+  shared prod/dev DB (backfilled 127 existing `AnnouncementSuggestionReview`
+  rows' new `updatedAt` via `now()`).
+
 **Priority / scheduling**
 - Priority scoring (`prioritizationModule.md`'s "Scoring formula"):
   urgency is deliberately dominant — importance/difficulty/consequence/the
@@ -144,6 +225,45 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 - Completing a task never moves its position (explicit user request) — a
   short CSS pulse plays, nothing more. Completed cards render shrunk
   (`min-h-[24px]`) and dimmed (`opacity-55`).
+- **Real bug fixed 2026-09-22**: every task appeared one day late on the
+  grid (confirmed live: date number on the card was correct, but it sat
+  under the wrong weekday column). Root cause: `app/page.tsx` (a Server
+  Component, runs on Vercel's UTC clock) computed `getStartOfWeek()` and
+  passed the resulting `Date` to `WeeklyPlannerView` as a `weekStartDate`
+  prop; the component seeded `activeWeekStart`/`activeMonthStart` from it
+  via `setHours(0,0,0,0)`. A `Date` is just an instant and survives the
+  server→client hop fine, but `setHours`/`getDate`-style local getters
+  re-derive the calendar day **in whatever timezone calls them** — so a
+  midnight-UTC instant built server-side got re-read as the previous
+  evening once the Pacific-timezone browser touched it, anchoring the
+  week start one day early. Column placement itself
+  (`calculateGridSpan`'s `daysBetween(due, activeWeekStart)`) stayed
+  self-consistent with that wrong anchor, but `dayNames` (`["Sun", "Mon",
+  ...]`) is a fixed positional array, not derived from the anchor's real
+  weekday — so every real day's weekday **label** was one column off from
+  its true date. This surfaced once the Canvas extension started pointing
+  at Vercel (`3fb7e11`) instead of `localhost` (previously the dev server
+  ran on the same Pacific machine as the browser, so no cross-timezone
+  reinterpretation ever happened). Fixed by never crossing a
+  server-constructed day-anchor `Date` to the client at all:
+  `WeeklyPlannerView` now seeds `activeWeekStart`/`activeMonthStart` with
+  an SSR-safe default and corrects them via a mount effect calling
+  `getStartOfWeek()` client-side (same call the "Today" button already
+  used) — `weekStartDate` was removed from `WeeklyPlannerProps` and
+  `app/page.tsx` entirely. **Sharper corollary to the existing "no
+  server-side timezone guessing" rule: never pass a `Date` across the
+  server/client boundary as a day-anchor** — the instant is fine, but any
+  local-getter re-derivation on the far side silently reinterprets it.
+  **Known, related, NOT fixed in this pass** (same violation, different
+  code path, no reported symptom, ruled out because the reported bug hits
+  even untouched Canvas assignments): `getStartOfWeek()` called
+  server-side in `app/api/ai/analyze-announcements/route.ts`;
+  `getTodayString()` called server-side in
+  `app/api/recurring-tasks/[id]/route.ts`; `.toISOString().slice(0, 10)`
+  (UTC-based) used to serialize `startAt`/`completedAt` back to date keys
+  in both `task-customizations` routes; `StartDateField.tsx`'s "today"
+  quick-set button using `toISOString().slice(0,10)` instead of the
+  shared `getTodayString()`.
 
 **Task customization / persistence**
 - A custom start date (`TaskCustomization.startAt`) auto-reverts to
@@ -438,6 +558,11 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- Auto Task Creation / Rundown: not live-verified — see the dedicated
+  architecture entry above for the exact list (auto-accept branches, rate
+  limit 429/reset display, auto-show/dismiss gating, Maybe round trip,
+  AI-tag dismiss/delete logging). Set `DEV_ACCOUNT_EMAILS` in `.env`/Vercel
+  before relying on the rate-limit bypass for any account.
 - Canvas: of the 4 courses that reappeared before the 2026-09-21 fix, 3
   have been re-deleted (English Student Aide Workshop, STEM Mentors
   26-27, World Language Center); Calculus III wasn't — confirm with the
@@ -477,10 +602,13 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 - Several features are verified only via `tsc`/lint/build, not click-tested
   live: `nameOverride` task-field override; loading indicators (XP award,
   course create/save, `MusicPlayer`'s `busyItemId`); most of the
-  announcement-analysis polish list (evidence highlighting/auto-scroll/
-  inline editing ARE live-verified; HTML-safe rendering, due-date
-  resolution, persisted accept/reject, and "check unavailable" status are
-  not); AI-suggested-task course-matching; the announcement pipeline's
+  announcement-analysis polish list, now living in
+  `components/rundown/RundownCandidateCard.tsx` (evidence highlighting/
+  inline editing were live-verified pre-Rundown; the carousel-only
+  auto-scroll was deliberately dropped in the port, not carried forward;
+  HTML-safe rendering, due-date resolution, persisted accept/reject, and
+  "check unavailable" status were not live-verified even before the
+  rewrite); AI-suggested-task course-matching; the announcement pipeline's
   reliability changes (RULES dedup, concurrency cap, bisection retry,
   degradation, number-based matching) haven't been re-exercised together
   against a live run since landing; the announcement time-range preset UI;

@@ -6,7 +6,8 @@
 // it without needing a general natural-language date library. Anything
 // outside this vocabulary resolves to null rather than guessing; the
 // original `dueText` is still shown to the user regardless (see
-// AIReviewCard.tsx's "AI detected: ..." line), so nothing is lost.
+// components/rundown/RundownCandidateCard.tsx's "AI detected: ..." line),
+// so nothing is lost.
 //
 // "next <weekday>" resolves identically to a bare weekday mention (the
 // closest upcoming occurrence, inclusive of `referenceDate` itself) for

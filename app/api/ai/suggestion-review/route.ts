@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { logAiTaskEvent } from "@/lib/aiTaskEvents";
 
-const VALID_STATUSES = ["accepted", "rejected"] as const;
+// "pending" is intentionally not accepted from a client — it's only ever
+// written by the detection pass itself (app/api/ai/analyze-announcements/
+// route.ts). This route is the Rundown/Still-Deciding screens' Yes/No/
+// Maybe write path.
+const VALID_STATUSES = ["accepted", "rejected", "maybe"] as const;
 
 export async function POST(request: Request) {
     try {
@@ -37,7 +42,11 @@ export async function POST(request: Request) {
             );
         }
 
-        const { sourceAnnouncementId, suggestionKey, status } =
+        // `duplicateSuspected`: the client already knows this from
+        // `task.canvasMatch.status !== "none"` when it renders the card —
+        // cheaper than a second server-side read of taskSnapshot just to
+        // log whether an accept overrode a flagged duplicate.
+        const { sourceAnnouncementId, suggestionKey, status, duplicateSuspected } =
             (body ?? {}) as Record<string, unknown>;
 
         if (
@@ -53,6 +62,21 @@ export async function POST(request: Request) {
             );
         }
 
+        const decision = status as (typeof VALID_STATUSES)[number];
+
+        const existing = await prisma.announcementSuggestionReview.findUnique({
+            where: {
+                userId_sourceAnnouncementId_suggestionKey: {
+                    userId: user.id,
+                    sourceAnnouncementId,
+                    suggestionKey,
+                },
+            },
+            select: { status: true, createdAt: true },
+        });
+
+        const isResolving = decision === "accepted" || decision === "rejected";
+
         await prisma.announcementSuggestionReview.upsert({
             where: {
                 userId_sourceAnnouncementId_suggestionKey: {
@@ -65,12 +89,39 @@ export async function POST(request: Request) {
                 userId: user.id,
                 sourceAnnouncementId,
                 suggestionKey,
-                status: status as string,
+                status: decision,
+                resolvedAt: isResolving ? new Date() : null,
             },
             update: {
-                status: status as string,
+                status: decision,
+                resolvedAt: isResolving ? new Date() : null,
             },
         });
+
+        try {
+            await logAiTaskEvent(user.id, "candidate_decided", {
+                sourceAnnouncementId,
+                suggestionKey,
+                data: {
+                    decision,
+                    overrodeDuplicateVerdict:
+                        duplicateSuspected === true && decision === "accepted",
+                },
+            });
+
+            if (existing?.status === "maybe" && isResolving) {
+                await logAiTaskEvent(user.id, "maybe_resolved", {
+                    sourceAnnouncementId,
+                    suggestionKey,
+                    data: {
+                        resolvedTo: decision,
+                        timeParkedMs: Date.now() - existing.createdAt.getTime(),
+                    },
+                });
+            }
+        } catch (error) {
+            console.error("❌ Failed to log suggestion review decision:", error);
+        }
 
         return NextResponse.json({ success: true });
     } catch (error) {

@@ -309,8 +309,12 @@ function toProposedTasks(
 
         suggestionKey: computeSuggestionKey(announcement.id, task.name),
 
+        // Placeholder — always overwritten by the duplicate-check pass in
+        // app/api/ai/analyze-announcements/route.ts before this task ever
+        // reaches a client.
         canvasMatch: {
             status: "none",
+            checkConfidence: "low",
             assignmentId: null,
             reason: "",
             assignment: null,

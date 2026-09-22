@@ -40,6 +40,7 @@ export async function GET() {
                 dueAt: task.dueAt ? task.dueAt.toISOString() : null,
                 dueFraction: task.dueFraction,
                 sourceAnnouncementId: task.sourceAnnouncementId,
+                aiTagDismissedAt: task.aiTagDismissedAt ? task.aiTagDismissedAt.toISOString() : null,
                 createdAt: task.createdAt.toISOString(),
                 recurrenceId: task.recurrenceId,
                 recurrenceOverridden: task.recurrenceOverridden,
