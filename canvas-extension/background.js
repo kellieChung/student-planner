@@ -535,6 +535,25 @@ chrome.runtime.onMessage.addListener(
                         "🔄 Starting Canvas sync..."
                     );
 
+                    // Fetched up front (not just before the final POST, as
+                    // before) — needed now for the excluded-courses lookup
+                    // below, and failing fast on missing auth before doing
+                    // any Canvas API work is a real improvement on its own.
+                    const authResult =
+                        await chrome.storage.local.get(
+                            "extensionToken"
+                        );
+
+                    if (!authResult.extensionToken) {
+                        await clearExtensionAuth();
+
+                        throw new Error(
+                            "Extension is not authenticated. Please sign in again."
+                        );
+                    }
+
+                    const appOrigin = await getAppOrigin();
+
                     const courses =
                         await getCanvasData(
                             `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
@@ -544,9 +563,98 @@ chrome.runtime.onMessage.addListener(
                         `📚 Found ${courses.length} courses`
                     );
 
+                    // Skip fetching (and syncing) a course the user already
+                    // deleted — upsertCanvasCourses would throw the data
+                    // away anyway, so there's no reason to spend a Canvas
+                    // API round trip (assignments/discussions/announcements)
+                    // on it every single sync. Purely a speed optimization:
+                    // any failure here falls open (syncs everything, same
+                    // as before this existed) except a 401, which means the
+                    // token is stale and the sync POST would fail anyway.
+                    let excludedIds = new Set();
+
+                    const excludedResponse =
+                        await fetch(
+                            `${appOrigin}/api/canvas/excluded-courses?canvasOrigin=${encodeURIComponent(canvasOrigin)}`,
+                            {
+                                headers: {
+                                    "Authorization":
+                                        `Bearer ${authResult.extensionToken}`,
+                                },
+                            }
+                        ).catch((error) => {
+                            console.warn(
+                                "⚠️ Excluded-courses lookup failed — syncing everything.",
+                                error
+                            );
+
+                            return null;
+                        });
+
+                    if (excludedResponse && excludedResponse.status === 401) {
+                        await clearExtensionAuth();
+
+                        throw new Error(
+                            "Your session expired. Please sign in again."
+                        );
+                    } else if (excludedResponse && excludedResponse.ok) {
+                        const excludedData =
+                            await excludedResponse
+                                .json()
+                                .catch(() => null);
+
+                        if (Array.isArray(excludedData?.canvasIds)) {
+                            excludedIds = new Set(
+                                excludedData.canvasIds.map(String)
+                            );
+                        }
+                    } else if (excludedResponse) {
+                        console.warn(
+                            `⚠️ Excluded-courses lookup returned ${excludedResponse.status} — syncing everything.`
+                        );
+                    }
+
+                    const coursesToSync =
+                        courses.filter(
+                            (course) => !excludedIds.has(String(course.id))
+                        );
+
+                    if (coursesToSync.length < courses.length) {
+                        console.log(
+                            `⏭️ Skipping ${courses.length - coursesToSync.length} deleted course(s)`
+                        );
+                    }
+
+                    if (coursesToSync.length === 0) {
+                        console.log(
+                            "✅ Nothing to sync — every course is excluded."
+                        );
+
+                        await setSyncProgress({
+                            status: "success",
+                            totalCourses: 0,
+                            completedCourses: 0,
+                            currentCourseName: null,
+                            courseCount: 0,
+                            errorMessage: null,
+                        });
+
+                        try {
+                            sendResponse({
+                                success: true,
+                                courseCount: 0,
+                            });
+                        } catch {
+                            // Popup already gone — fine, storage has the
+                            // success state for next time it opens.
+                        }
+
+                        return;
+                    }
+
                     await setSyncProgress({
                         status: "running",
-                        totalCourses: courses.length,
+                        totalCourses: coursesToSync.length,
                         completedCourses: 0,
                         currentCourseName: null,
                         startedAt: Date.now(),
@@ -557,7 +665,7 @@ chrome.runtime.onMessage.addListener(
                     const courseData = [];
                     let wasCancelled = false;
 
-                    for (const course of courses) {
+                    for (const course of coursesToSync) {
 
                         if (syncCancelled) {
                             wasCancelled = true;
@@ -574,7 +682,7 @@ chrome.runtime.onMessage.addListener(
 
                         await setSyncProgress({
                             status: "running",
-                            totalCourses: courses.length,
+                            totalCourses: coursesToSync.length,
                             completedCourses: courseData.length,
                             currentCourseName: course.name,
                             startedAt: Date.now(),
@@ -584,7 +692,7 @@ chrome.runtime.onMessage.addListener(
 
                         broadcastSyncProgress({
                             completedCourses: courseData.length,
-                            totalCourses: courses.length,
+                            totalCourses: coursesToSync.length,
                             currentCourseName: course.name,
                         });
                     }
@@ -597,7 +705,7 @@ chrome.runtime.onMessage.addListener(
 
                         await setSyncProgress({
                             status: "cancelled",
-                            totalCourses: courses.length,
+                            totalCourses: coursesToSync.length,
                             completedCourses: courseData.length,
                             currentCourseName: null,
                             courseCount: null,
@@ -636,18 +744,9 @@ chrome.runtime.onMessage.addListener(
                         "🚀 Sending Canvas data to Student Planner..."
                     );
 
-                    const authResult =
-                        await chrome.storage.local.get(
-                            "extensionToken"
-                        );
-
-                    if (!authResult.extensionToken) {
-                        await clearExtensionAuth();
-
-                        throw new Error(
-                            "Extension is not authenticated. Please sign in again."
-                        );
-                    }
+                    // authResult/appOrigin were already fetched at the top
+                    // of this handler (needed earlier for the
+                    // excluded-courses lookup) — reused here, not re-fetched.
 
                     console.log(
                         "📤 Sending canvasOrigin:",
@@ -658,8 +757,6 @@ chrome.runtime.onMessage.addListener(
                         "📤 Sending course count:",
                         courseData.length
                     );
-
-                    const appOrigin = await getAppOrigin();
 
                     const backendResponse =
                         await fetch(
@@ -714,7 +811,7 @@ chrome.runtime.onMessage.addListener(
 
                     await setSyncProgress({
                         status: "success",
-                        totalCourses: courses.length,
+                        totalCourses: coursesToSync.length,
                         completedCourses: courseData.length,
                         currentCourseName: null,
                         courseCount: courseData.length,

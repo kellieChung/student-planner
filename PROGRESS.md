@@ -354,13 +354,47 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   removes a tombstone, reachable via the extension's "Find Canvas
   Courses" → restore flow, which `CoursesPanel.tsx`'s own delete-confirm
   copy points users at) being used on these courses after deletion.
-  **Not yet done**: the decisive live test (delete a fresh, unaffected
-  course on production → confirm tombstone appears → run a real "Sync
-  Canvas" → confirm it survives) that would settle this instead of
-  inferring from timestamps — see Active TODOs. Until that test runs, do
-  not treat this as fixed. Also still true, unrelated either way: a
-  **hidden** course is equally vulnerable to the same tombstone-free prune
-  path (`hidden` is never checked there) — not addressed here.
+  **Live test run 2026-09-21, after the extension's App URL was pointed at
+  production**: deleted a fresh course ("DAO Home") on production, then
+  ran a real "Sync Canvas" from the extension — it did **not** come back.
+  Directly confirmed afterward via `GET /api/canvas/excluded-courses`
+  against the live DB: its tombstone (`canvasId: "4"`) is present and
+  correct, alongside 3 of the original 4 (`1555`/`1556`/`1564` — the user
+  evidently re-deleted those through `CoursesPanel` at some point; `1030`/
+  Calculus III was left off, presumably intentionally). **Treat this as
+  "resolved in practice," not "root cause isolated"** — a passing live
+  test doesn't distinguish which of the two hypotheses above was actually
+  responsible for the original symptom, since both predict this same
+  passing result once the courses are deleted fresh today. Don't upgrade
+  this to "confirmed root cause" in a future session without new evidence.
+  Also still true, unrelated either way: a **hidden** course is equally
+  vulnerable to the same tombstone-free prune path (`hidden` is never
+  checked there) — not addressed here.
+- **Sync now skips already-deleted courses client-side, not just
+  server-side** (2026-09-21) — the user asked, once the above was
+  confirmed working, to also stop *fetching* Canvas data for a course
+  that's just going to be thrown away server-side anyway (every deleted
+  course still cost a full Canvas API round trip — assignments/
+  discussions/announcements — on every sync). New `GET
+  /api/canvas/excluded-courses?canvasOrigin=...` (auth via the same
+  `getCanvasSyncUserId` used elsewhere, live-tested directly: returns the
+  correct tombstoned `canvasId`s, 400s with no `canvasOrigin`, 401s with a
+  bad token) returns the user's `DeletedCanvasCourse` ids for an origin.
+  `SYNC_CANVAS` in `background.js` now calls this right after fetching
+  Canvas's active-course list and before the per-course fetch loop,
+  filtering into `coursesToSync`; `setSyncProgress`/the progress bar/the
+  final POST all use the filtered list. Fails open (syncs everything, same
+  as before this existed) on any lookup failure except a 401, which is
+  treated like every other stale-token case in this file
+  (`clearExtensionAuth()` + throw) since the subsequent sync POST would
+  fail anyway. If literally everything is excluded, the extension skips
+  the `/api/canvas/sync` POST entirely and reports success with 0 courses,
+  rather than sending an empty payload — `sync/route.ts`'s existing
+  empty-payload pruning guard is otherwise unaffected but now has one line
+  noting why an empty payload still means what it always did. No changes
+  to `upsertCanvasCourses`/the prune step — they remain the actual
+  correctness safety net regardless of whether this client-side filter
+  runs, succeeds, or is bypassed.
 - **App is now deployed on Vercel** (`https://student-planner-beta.vercel.app/`
   as of 2026-09-21, subject to change — check Vercel's dashboard for the
   current URL), connected to the `kellieChung/student-planner` GitHub
@@ -1080,21 +1114,18 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
-- Canvas: run the decisive live test described in the "Canvas / extension"
-  entry above — delete a fresh, currently-unaffected course (not one of
-  the 4 already-reappeared ones) via `CoursesPanel` on production, confirm
-  a `DeletedCanvasCourse` row appears, then run a real "Sync Canvas" from
-  the extension and confirm the tombstone/absence survives. This is what
-  actually determines whether the delete/sync path has a live bug or
-  whether the sync-prune hypothesis (no bug, just reversible-by-design
-  pruning) is correct — not yet run as of 2026-09-21.
-- Canvas: once the above test confirms the path works, the user needs to
-  re-delete (via `CoursesPanel`) the 4 courses that reappeared (Calculus
-  III, English Student Aide Workshop, STEM Mentors 26-27, World Language
-  Center) if they still don't want them. Not something to do automatically
-  on their behalf, and not worth doing before the live test above, since
-  re-deleting them would just reintroduce the same ambiguity the test is
-  meant to resolve.
+- Canvas: the decisive live test ran 2026-09-21 and passed (delete →
+  tombstone → real "Sync Canvas" → course stayed gone) — see the "Canvas /
+  extension" entry above. This is resolved *in practice*; the root cause
+  of the original symptom (sync-prune vs. restore-course confusion) was
+  never actually isolated, and doesn't need to be unless it recurs.
+- Canvas: of the 4 originally-reappeared courses, the user has re-deleted
+  3 (English Student Aide Workshop, STEM Mentors 26-27, World Language
+  Center — confirmed via `DeletedCanvasCourse` tombstones as of
+  2026-09-21). Calculus III was left un-deleted — presumably intentional
+  (they may have decided to keep it), but worth a quick confirmation with
+  the user rather than assuming, since it was originally flagged as one of
+  the 4 "the user didn't want."
 - Recurring tasks: the "AI estimate cloning" simplification described in
   the architecture-decisions entry was never actually wired up — the real
   per-task `TaskPlanningEstimate`-trigger call site wasn't identified

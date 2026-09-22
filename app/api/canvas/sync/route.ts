@@ -68,7 +68,12 @@ export async function POST(request: Request) {
          * missing from this payload is no longer active and can be safely
          * removed. Guard against an empty payload, which is ambiguous
          * (could be a real course-less term, could be something else) —
-         * skip pruning rather than risk wiping everything.
+         * skip pruning rather than risk wiping everything. The extension
+         * itself now skips this POST entirely when every course is
+         * excluded (see SYNC_CANVAS's coursesToSync.length === 0 check in
+         * background.js) rather than sending an empty courses array, so an
+         * empty payload reaching this route still means what it always
+         * did — something ambiguous, not "everything got deleted."
          */
         // This prune is NOT the same event as a user's explicit "Delete" in
         // ManageCoursesModal/CoursesPanel (which writes a DeletedCanvasCourse
