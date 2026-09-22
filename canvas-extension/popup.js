@@ -1,3 +1,6 @@
+const appUrlInput = document.getElementById("appUrl");
+const saveAppUrlButton = document.getElementById("saveAppUrlButton");
+const appUrlStatus = document.getElementById("appUrlStatus");
 const canvasUrlInput = document.getElementById("canvasUrl");
 const connectButton = document.getElementById("connectButton");
 const syncButton = document.getElementById("syncButton");
@@ -136,6 +139,60 @@ chrome.storage.onChanged.addListener(
         }
     }
 );
+
+
+// ============================================================
+// APP URL
+// ============================================================
+
+// Which Student Planner backend this extension talks to (must match
+// background.js's own DEFAULT_APP_ORIGIN — duplicated rather than shared,
+// since the popup and the background service worker are separate script
+// contexts with no module system wiring them together in this manifest).
+// Local dev and the deployed Vercel app both point at the SAME database
+// right now, so switching this only changes which server handles a
+// request, not which data it touches.
+const DEFAULT_APP_ORIGIN = "https://student-planner-beta.vercel.app";
+
+async function loadSavedAppUrl() {
+    const result =
+        await chrome.storage.local.get(
+            "appOrigin"
+        );
+
+    appUrlInput.value =
+        result.appOrigin || DEFAULT_APP_ORIGIN;
+}
+
+async function saveAppUrl() {
+    let appUrl =
+        appUrlInput.value.trim();
+
+    if (!appUrl) {
+        appUrl = DEFAULT_APP_ORIGIN;
+    }
+
+    if (
+        !appUrl.startsWith("http://") &&
+        !appUrl.startsWith("https://")
+    ) {
+        appUrl =
+            `https://${appUrl}`;
+    }
+
+    try {
+        appUrl = new URL(appUrl).origin;
+
+        await chrome.storage.local.set({
+            appOrigin: appUrl,
+        });
+
+        appUrlInput.value = appUrl;
+        appUrlStatus.textContent = "✅ Saved. Sync/sign-in now use this URL.";
+    } catch (error) {
+        appUrlStatus.textContent = describeError("❌ Invalid URL", error);
+    }
+}
 
 
 // ============================================================
@@ -541,6 +598,11 @@ async function restoreSelectedCourse() {
 // EVENT LISTENERS
 // ============================================================
 
+saveAppUrlButton.addEventListener(
+    "click",
+    saveAppUrl
+);
+
 connectButton.addEventListener(
     "click",
     connectCanvas
@@ -635,6 +697,7 @@ loginButton.addEventListener(
 // ============================================================
 
 applyPlannerTheme();
+loadSavedAppUrl();
 loadSavedCanvasUrl();
 updateAuthUI();
 restoreSyncProgress();

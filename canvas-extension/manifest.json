@@ -30,7 +30,11 @@
       "js": ["content.js"]
     },
     {
-      "matches": ["http://localhost:3000/*", "http://127.0.0.1:3000/*"],
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://student-planner-beta.vercel.app/*"
+      ],
       "js": ["theme-sync.js"]
     }
   ]

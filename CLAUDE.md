@@ -77,6 +77,21 @@ via Prisma 7.
 - Database: schema is `prisma/schema.prisma`, config in `prisma.config.ts`
   (uses `@prisma/adapter-pg`). Client generates to `app/generated/prisma`.
   Typical flow: `npx prisma migrate dev` then `npx prisma generate`.
+- **Deployment: Vercel**, connected to the `kellieChung/student-planner`
+  GitHub repo, auto-deploying on push to `main`. Production URL as of
+  2026-09-21: `https://student-planner-beta.vercel.app/` (may change —
+  check Vercel's dashboard if this looks stale). Vercel runs the existing
+  `build` script (`prisma generate && next build`) as-is; no separate
+  Vercel-specific config exists or is needed. **A `git push` is required
+  to get any code change live** — Vercel does not pick up local,
+  uncommitted, or unpushed-to-`main` changes on its own. Env vars are the
+  exception: they're set directly in Vercel's Project Settings →
+  Environment Variables (not carried by `git push`, and separate from the
+  local, gitignored `.env`) and take effect on the next deploy without
+  needing a code change. **Production and local dev currently point at
+  the same Postgres database** — there is no environment split right now,
+  so testing against `npm run dev` locally touches the exact same rows
+  the deployed app reads/writes, not a sandbox copy.
 
 ## Never do this
 

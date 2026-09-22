@@ -1,5 +1,19 @@
 console.log("🚀 Student Planner background service worker loaded!");
 
+// The Student Planner backend this extension talks to. Configurable (popup's
+// "App URL" field, chrome.storage.local key "appOrigin") rather than a
+// second hardcoded literal, since local dev (npm run dev, localhost:3000)
+// and the deployed Vercel app are both real targets a solo developer needs
+// to switch between, and the production URL itself may change. Falls back
+// to the deployed app so a fresh install works without any setup.
+const DEFAULT_APP_ORIGIN = "https://student-planner-beta.vercel.app";
+
+async function getAppOrigin() {
+    const { appOrigin } = await chrome.storage.local.get("appOrigin");
+
+    return appOrigin || DEFAULT_APP_ORIGIN;
+}
+
 // Checked between courses in SYNC_CANVAS's loop, set by the CANCEL_SYNC
 // handler. One popup drives one sync at a time, so a single module-level
 // flag is enough — a second popup should see/cancel the same in-flight
@@ -69,8 +83,15 @@ async function getCanvasData(url) {
 // already run in an already-open tab) so the popup shows the right theme
 // even right after installing/reloading the extension.
 async function getPlannerTabTheme() {
+    const appOrigin = await getAppOrigin();
+
+    // Checks the configured app origin plus both localhost forms
+    // (regardless of which one is currently configured) so a still-open
+    // local dev tab is still picked up for theming even while the
+    // extension itself is pointed at production, and vice versa.
     const tabs = await chrome.tabs.query({
         url: [
+            `${appOrigin}/*`,
             "http://localhost:3000/*",
             "http://127.0.0.1:3000/*",
         ],
@@ -130,8 +151,10 @@ async function startExtensionAuth() {
     console.log("🔐 Starting extension authentication...");
 
     try {
+        const appOrigin = await getAppOrigin();
+
         const response = await fetch(
-            "http://localhost:3000/api/extension/auth/start"
+            `${appOrigin}/api/extension/auth/start`
         );
 
         const data = await response.json();
@@ -161,7 +184,7 @@ async function startExtensionAuth() {
 
         await chrome.tabs.create({
             url:
-                `http://localhost:3000/extension-login?state=${encodeURIComponent(state)}`,
+                `${appOrigin}/extension-login?state=${encodeURIComponent(state)}`,
         });
 
         console.log(
@@ -190,11 +213,13 @@ async function watchAuthState(state) {
         state
     );
 
+    const appOrigin = await getAppOrigin();
+
     for (let i = 0; i < 60; i++) {
 
         try {
             const response = await fetch(
-                "http://localhost:3000/api/extension/auth/exchange",
+                `${appOrigin}/api/extension/auth/exchange`,
                 {
                     method: "POST",
                     headers: {
@@ -634,9 +659,11 @@ chrome.runtime.onMessage.addListener(
                         courseData.length
                     );
 
+                    const appOrigin = await getAppOrigin();
+
                     const backendResponse =
                         await fetch(
-                            "http://localhost:3000/api/canvas/sync",
+                            `${appOrigin}/api/canvas/sync`,
                             {
                                 method: "POST",
                                 headers: {
@@ -805,9 +832,11 @@ chrome.runtime.onMessage.addListener(
                     const restoredCourse =
                         await fetchCourseData(canvasOrigin, course);
 
+                    const appOrigin = await getAppOrigin();
+
                     const backendResponse =
                         await fetch(
-                            "http://localhost:3000/api/canvas/restore-course",
+                            `${appOrigin}/api/canvas/restore-course`,
                             {
                                 method: "POST",
                                 headers: {

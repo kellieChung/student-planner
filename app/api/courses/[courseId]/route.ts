@@ -179,36 +179,41 @@ export async function DELETE(
         );
     }
 
+    // The course delete and its tombstone write must succeed or fail
+    // together — if the tombstone write were left as a second, independent
+    // await, a failure there after the delete already committed would
+    // silently strip a real deletion of its protection, and the next sync
+    // would recreate the course since Canvas still reports it active.
     // Cascades to the course's assignments/discussions/announcements
-    // (onDelete: Cascade in prisma/schema.prisma).
-    await prisma.canvasCourse.delete({
-        where: { id: courseId },
-    });
-
-    // Tombstone it so a later sync doesn't silently recreate this row just
-    // because Canvas still reports the course active — upsertCanvasCourses
-    // (lib/canvasIngest.ts) checks DeletedCanvasCourse before ever creating
-    // a course. Not meaningful for a custom (non-Canvas) course: it has no
-    // real canvasId to ever re-sync, so its deletion is already permanent.
+    // (onDelete: Cascade in prisma/schema.prisma). Not meaningful for a
+    // custom (non-Canvas) course: it has no real canvasId to ever re-sync,
+    // so its deletion is already permanent and needs no tombstone.
     // Upsert, not create, so re-deleting an already-tombstoned canvasId
     // (e.g. restore, then delete again) can't hit a unique-constraint error.
-    if (existingCourse.canvasOrigin !== CUSTOM_COURSE_ORIGIN) {
-        await prisma.deletedCanvasCourse.upsert({
-            where: {
-                userId_canvasOrigin_canvasId: {
-                    userId: user.id,
-                    canvasOrigin: existingCourse.canvasOrigin,
-                    canvasId: existingCourse.canvasId,
-                },
-            },
-            update: {},
-            create: {
-                userId: user.id,
-                canvasOrigin: existingCourse.canvasOrigin,
-                canvasId: existingCourse.canvasId,
-            },
-        });
-    }
+    await prisma.$transaction([
+        prisma.canvasCourse.delete({
+            where: { id: courseId },
+        }),
+        ...(existingCourse.canvasOrigin !== CUSTOM_COURSE_ORIGIN
+            ? [
+                  prisma.deletedCanvasCourse.upsert({
+                      where: {
+                          userId_canvasOrigin_canvasId: {
+                              userId: user.id,
+                              canvasOrigin: existingCourse.canvasOrigin,
+                              canvasId: existingCourse.canvasId,
+                          },
+                      },
+                      update: {},
+                      create: {
+                          userId: user.id,
+                          canvasOrigin: existingCourse.canvasOrigin,
+                          canvasId: existingCourse.canvasId,
+                      },
+                  }),
+              ]
+            : []),
+    ]);
 
     return NextResponse.json({ success: true });
 }

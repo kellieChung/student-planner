@@ -309,6 +309,75 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   since Canvas doesn't give students a way to mint their own token.
 - The extension mirrors whichever theme is active on the web app itself
   (not OS preference).
+- **Investigated 2026-09-20/21: deleted Canvas courses reappearing after a
+  sync. Root cause still open — a same-day follow-up overturned the first
+  session's conclusion.** The user reported "Sync Canvas" re-importing
+  courses they'd deleted. The exclusion mechanism they were asking for
+  already existed and, on direct re-reading, is correctly implemented —
+  `app/api/courses/[courseId]/route.ts`'s `DELETE` handler hard-deletes
+  the `CanvasCourse` row and upserts a `DeletedCanvasCourse` tombstone
+  (`[userId, canvasOrigin, canvasId]`), `lib/canvasIngest.ts`'s
+  `upsertCanvasCourses` (shared by `/api/canvas/sync` and
+  `/api/canvas/restore-course`) skips ingesting any tombstoned `canvasId`,
+  and `components/CoursesPanel.tsx`'s `deleteCourse` correctly waits for
+  `response.ok` before touching local state and targets the right id. The
+  first session wrapped the delete's two writes (course delete + tombstone
+  upsert) in a single `prisma.$transaction([...])` on the theory that a
+  failure between them was the cause, and wrote a verification script that
+  "confirmed" it — **but that script used the exact same two-`await`
+  pattern the pre-fix code already had, so it would have passed against
+  the pre-fix code too.** It proved the mechanism works, not that anything
+  had been broken. The transaction is real, harmless hardening (kept), not
+  a proven fix.
+  Re-investigating: `git log` confirms the tombstone feature (commit
+  `20d5c4f`) has been on `origin/main` the whole time; the user confirmed
+  Vercel's `DATABASE_URL` is the *same* Postgres instance as local `.env`
+  (ruling out an environment split — see the Vercel entry below); and the
+  user confirmed the 4 courses that reappeared (Calculus III, English
+  Student Aide Workshop, STEM Mentors 26-27, World Language Center) were
+  deleted **this week**, well after the tombstone feature was live
+  everywhere. So: correct server code, correct client code, shared DB,
+  code live wherever the user could have clicked Delete — yet zero
+  `DeletedCanvasCourse` rows for an account that definitely deleted 4
+  courses recently. Two non-bug explanations fit without contradiction:
+  (1) **leading hypothesis** — `/api/canvas/sync`'s prune step
+  (`app/api/canvas/sync/route.ts`) deletes any `CanvasCourse` absent from
+  a sync payload with **no tombstone**, by design, since a course
+  dropping off Canvas's active list is meant to be reversible; if these 4
+  were briefly absent from one payload they'd vanish tombstone-free and
+  silently reappear on the next sync that saw them again — fits the DB's
+  own timestamps (3 of the 4 `createdAt` values land within the same
+  second, `01:10:17`–`01:10:18`, reading as one ordinary sync loop, not
+  four independent manual extension-restore clicks each requiring its own
+  Canvas fetch + POST); (2) secondary, weaker given that same timing —
+  `app/api/canvas/restore-course/route.ts` (the *only* code that ever
+  removes a tombstone, reachable via the extension's "Find Canvas
+  Courses" → restore flow, which `CoursesPanel.tsx`'s own delete-confirm
+  copy points users at) being used on these courses after deletion.
+  **Not yet done**: the decisive live test (delete a fresh, unaffected
+  course on production → confirm tombstone appears → run a real "Sync
+  Canvas" → confirm it survives) that would settle this instead of
+  inferring from timestamps — see Active TODOs. Until that test runs, do
+  not treat this as fixed. Also still true, unrelated either way: a
+  **hidden** course is equally vulnerable to the same tombstone-free prune
+  path (`hidden` is never checked there) — not addressed here.
+- **App is now deployed on Vercel** (`https://student-planner-beta.vercel.app/`
+  as of 2026-09-21, subject to change — check Vercel's dashboard for the
+  current URL), connected to the `kellieChung/student-planner` GitHub
+  repo, auto-deploying on push to `main` via the existing `build` script
+  (`prisma generate && next build` — no Vercel-specific build config
+  needed). Env vars (`DATABASE_URL`/`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/
+  `AUTH_SECRET`/`CANVAS_TOKEN`/`YOUTUBE_DATA_API_KEY`/`ANTHROPIC_API_KEY`)
+  are set independently in Vercel's Project Settings → Environment
+  Variables, not carried by `git push` — `.env` stays local/gitignored as
+  always. **Production and local dev currently point at the same Postgres
+  database** (confirmed 2026-09-21) — a delete/sync/etc. against either
+  environment affects the other's data immediately; "testing locally" is
+  not an isolated sandbox from production data right now. The Canvas
+  extension (`canvas-extension/`) is being updated to target this URL
+  (via a configurable popup setting, not a hardcoded swap, so local dev
+  via `npm run dev` keeps working) — see Active TODOs if that work isn't
+  finished yet.
 
 **Gamification / World layer** (`gamificationSystem.md`)
 - OS loads by default, not World — per `projectReview.md`'s warning
@@ -1011,6 +1080,21 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- Canvas: run the decisive live test described in the "Canvas / extension"
+  entry above — delete a fresh, currently-unaffected course (not one of
+  the 4 already-reappeared ones) via `CoursesPanel` on production, confirm
+  a `DeletedCanvasCourse` row appears, then run a real "Sync Canvas" from
+  the extension and confirm the tombstone/absence survives. This is what
+  actually determines whether the delete/sync path has a live bug or
+  whether the sync-prune hypothesis (no bug, just reversible-by-design
+  pruning) is correct — not yet run as of 2026-09-21.
+- Canvas: once the above test confirms the path works, the user needs to
+  re-delete (via `CoursesPanel`) the 4 courses that reappeared (Calculus
+  III, English Student Aide Workshop, STEM Mentors 26-27, World Language
+  Center) if they still don't want them. Not something to do automatically
+  on their behalf, and not worth doing before the live test above, since
+  re-deleting them would just reintroduce the same ambiguity the test is
+  meant to resolve.
 - Recurring tasks: the "AI estimate cloning" simplification described in
   the architecture-decisions entry was never actually wired up — the real
   per-task `TaskPlanningEstimate`-trigger call site wasn't identified
