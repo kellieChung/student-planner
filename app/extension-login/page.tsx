@@ -1,4 +1,6 @@
 import { signIn } from "@/auth";
+import CredentialsForm from "@/components/auth/CredentialsForm";
+import LegalLinks from "@/components/auth/LegalLinks";
 
 export default async function ExtensionLoginPage({
     searchParams,
@@ -9,6 +11,7 @@ export default async function ExtensionLoginPage({
 }) {
     const params = await searchParams;
     const state = params.state;
+    const redirectTo = `/extension-callback?state=${encodeURIComponent(state ?? "")}`;
 
     return (
         <main className="min-h-screen flex items-center justify-center p-4">
@@ -20,12 +23,7 @@ export default async function ExtensionLoginPage({
                     action={async () => {
                         "use server";
 
-                        await signIn("google", {
-                            redirectTo:
-                                `/extension-callback?state=${encodeURIComponent(
-                                    state ?? ""
-                                )}`,
-                        });
+                        await signIn("google", { redirectTo });
                     }}
                     className="mt-6"
                 >
@@ -33,9 +31,18 @@ export default async function ExtensionLoginPage({
                         type="submit"
                         className="w-full rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)]"
                     >
-                        Sign in with Google
+                        Continue with Google
                     </button>
                 </form>
+                <LegalLinks prefix="By continuing with Google, you agree to the" />
+
+                <div className="my-6 flex items-center gap-3 text-xs text-[var(--muted)]">
+                    <span className="h-px flex-1 bg-[var(--border)]" />
+                    or
+                    <span className="h-px flex-1 bg-[var(--border)]" />
+                </div>
+
+                <CredentialsForm redirectTo={redirectTo} />
             </div>
         </main>
     );

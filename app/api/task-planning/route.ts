@@ -5,6 +5,7 @@ import { analyzeAssignments, estimateMinutesByType, normalizeAssignmentType } fr
 import { calculatePriority } from "@/lib/prioritization";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getTaskSignature } from "@/lib/taskPlanning";
+import { isAnthropicEnabled } from "@/lib/ai/anthropicClient";
 
 type PlanningTask = {
     id: string;
@@ -43,20 +44,7 @@ export async function GET() {
 
     return NextResponse.json({
         success: true,
-        estimates: estimates.map((estimate) => ({
-            id: estimate.taskId,
-            signature: estimate.signature,
-            estimatedMinutes: estimate.estimatedMinutes,
-            importance: estimate.importance,
-            difficulty: estimate.difficulty,
-            consequence: estimate.consequence,
-            reason: estimate.reason,
-            assignmentType: estimate.assignmentType,
-            priorityScore: estimate.priorityScore,
-            urgencyScore: estimate.urgencyScore,
-            frogScore: estimate.frogScore,
-            priorityReason: estimate.priorityReason,
-        })),
+        estimates: estimates.map(toEstimateResponse),
     });
 }
 
@@ -113,10 +101,42 @@ function normalizeAnalysis(analysis: {
 // resources instead of finishing faster, so cap how many run concurrently.
 const OLLAMA_CONCURRENCY = 2;
 
-// Assignments analyzed per Ollama call. Each call resends the full
+// Assignments analyzed per model call. Each call resends the full
 // rubric/instructions regardless of batch size, so batching cuts that
-// fixed per-call cost proportionally across the batch.
-const ANALYSIS_BATCH_SIZE = 5;
+// fixed per-call cost proportionally across the batch — Haiku's context
+// fits far more per call than the local model's.
+const ANTHROPIC_ANALYSIS_BATCH_SIZE = 20;
+const OLLAMA_ANALYSIS_BATCH_SIZE = 5;
+
+function toEstimateResponse(estimate: {
+    taskId: string;
+    signature: string;
+    estimatedMinutes: number;
+    importance: number;
+    difficulty: number;
+    consequence: number;
+    reason: string;
+    assignmentType: string | null;
+    priorityScore: number;
+    urgencyScore: number;
+    frogScore: number;
+    priorityReason: string;
+}) {
+    return {
+        id: estimate.taskId,
+        signature: estimate.signature,
+        estimatedMinutes: estimate.estimatedMinutes,
+        importance: estimate.importance,
+        difficulty: estimate.difficulty,
+        consequence: estimate.consequence,
+        reason: estimate.reason,
+        assignmentType: estimate.assignmentType,
+        priorityScore: estimate.priorityScore,
+        urgencyScore: estimate.urgencyScore,
+        frogScore: estimate.frogScore,
+        priorityReason: estimate.priorityReason,
+    };
+}
 
 export async function POST(request: Request) {
     const user = await getAuthenticatedUser();
@@ -168,7 +188,32 @@ export async function POST(request: Request) {
         });
     }
 
-    const batches = chunk(tasks, ANALYSIS_BATCH_SIZE);
+    // Spend guard: this is a paid call now, so an estimate already stored
+    // for the task's current signature is returned as-is instead of being
+    // re-analyzed — a client bug or several open tabs re-requesting the
+    // same tasks can't re-bill them.
+    const storedEstimates = await prisma.taskPlanningEstimate.findMany({
+        where: { userId: user.id, taskId: { in: tasks.map((task) => task.id) } },
+    });
+
+    const storedByTaskId = new Map(storedEstimates.map((estimate) => [estimate.taskId, estimate]));
+
+    const reusedEstimates = tasks
+        .map((task) => storedByTaskId.get(task.id))
+        .filter(
+            (estimate, i): estimate is NonNullable<typeof estimate> =>
+                estimate !== undefined && estimate.signature === getTaskSignature(tasks[i])
+        )
+        .map(toEstimateResponse);
+
+    const reusedIds = new Set(reusedEstimates.map((estimate) => estimate.id));
+
+    tasks = tasks.filter((task) => !reusedIds.has(task.id));
+
+    const batches = chunk(
+        tasks,
+        isAnthropicEnabled() ? ANTHROPIC_ANALYSIS_BATCH_SIZE : OLLAMA_ANALYSIS_BATCH_SIZE
+    );
 
     const estimatesByBatch = await mapWithConcurrency(
         batches,
@@ -249,7 +294,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
         success: true,
-        estimates,
+        estimates: [...reusedEstimates, ...estimates],
     });
 }
 

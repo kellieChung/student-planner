@@ -2,6 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
+import { hasAcceptedCurrentTerms } from "@/lib/legal";
 
 export default async function ExtensionCallbackPage({
     searchParams,
@@ -32,6 +33,14 @@ export default async function ExtensionCallbackPage({
     if (!user) {
         return (
             <ExtensionCallbackMessage text="❌ Could not find your Student Planner account." />
+        );
+    }
+
+    if (!hasAcceptedCurrentTerms(user)) {
+        redirect(
+            `/accept-terms?next=${encodeURIComponent(
+                `/extension-callback?state=${encodeURIComponent(state)}`
+            )}`
         );
     }
 

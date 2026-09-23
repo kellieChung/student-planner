@@ -6,6 +6,38 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Auth: email/password + consent gate (2026-09-22)**
+- Sessions are **JWT** (`auth.ts`), not database — Auth.js's Credentials
+  provider can't use DB sessions. Switching logged everyone out once; the
+  `Session` table is now unused. `ExtensionSession` bearer tokens are
+  separate and unaffected. Because a JWT outlives a deleted user row,
+  `app/login/page.tsx` checks the row exists before redirecting to `/`
+  (otherwise `/` ↔ `/login` loops).
+- Sign-up is a server action (`app/login/actions.ts`), not the Credentials
+  provider (which only authenticates). Emails are trimmed+lowercased on
+  both paths (`normalizeEmail`) since Postgres `@unique` is case-sensitive.
+  Passwords: `lib/password.ts`, Node `crypto.scrypt` + per-user salt,
+  `scrypt$salt$hash` format, 8–128 chars, no composition rules (NIST).
+- **Sign-up never attaches a password to an existing email** (e.g. a
+  Google user) and `allowDangerousEmailAccountLinking` is deliberately off
+  — with no email verification either would allow account takeover. Known
+  consequence: someone can register another person's email first, which
+  blocks that person's later Google sign-in (`OAuthAccountNotLinked`,
+  surfaced on `/login`). Fix is email verification (TODO).
+- Consent: `User.termsAcceptedAt/termsVersion/ageConfirmedAt`. Sign-up
+  records them directly; Google users and pre-existing users are sent to
+  `/accept-terms` by `hasAcceptedCurrentTerms` checks in `app/page.tsx`
+  and `app/extension-callback/page.tsx`. **Bump `TERMS_VERSION` in
+  `lib/legal.ts`** to re-prompt everyone after a material policy change.
+  13+ age gate (COPPA) with an explanatory message; declining on
+  `/accept-terms` offers account deletion.
+- `/terms` and `/privacy` are templates (operator: Kellie Chung) with `[CONTACT
+  EMAIL]` placeholder (governing law: Nevada); the privacy page lists real data
+  flows (Anthropic for announcements, Ollama, YouTube, Vercel, DB host) —
+  keep it in sync when adding a new third party.
+- Account deletion: `DELETE /api/account` (every User relation cascades),
+  triggered from `UserMenu`'s inline two-step confirm.
+
 **Recurring tasks**
 - `RecurringTask` (frequency/interval/weekdays/startDate/endDate/dueTime/
   typeOverride, all plain strings, no enums — matches `TaskCustomization`)
@@ -53,12 +85,50 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   (never wired — see Active TODOs), a paused series producing zero new
   occurrences (toggle-state verified only).
 
-**AI / Ollama pipeline**
+**AI pipeline (Claude Haiku primary, Ollama fallback)**
+- **2026-09-22: every AI call site now runs on Claude Haiku when
+  `ANTHROPIC_API_KEY` is set** — on Vercel, local Ollama is unreachable,
+  so the duplicate check was showing grey "unavailable" and assignment
+  scoring was silently on its keyword fallback. Shared client/logging/
+  error mapping in `lib/ai/anthropicClient.ts` (`logAnthropicUsage(label,
+  …)` prints a `💰` per-call cost). XP (`task-xp`) no longer calls any
+  model — purely time-based (`estimatedMinutes`, else
+  `estimateMinutesByType(classifyAssignmentType(...))`).
+- **Cost design (target ≤ ~$0.05/user/week; estimate ≈ $0.014)**:
+  - `Announcement.aiAnalyzedHash` (sha256 of title+message,
+    `computeAnnouncementContentHash`) — the detection pass skips any
+    announcement whose hash matches, so unchanged text is never paid for
+    twice (overlapping windows used to re-extract everything every run).
+    Set only when extraction returned a real entry (`ok: true` from
+    `analyzeAnnouncements`) AND no dup check for it was `degraded`;
+    failures stay unmarked and retry. Legacy announcements (null hash but
+    already have `AnnouncementSuggestionReview` rows) are backfilled
+    without a model call — re-extracting them could re-word a task, change
+    its `suggestionKey`, and resurface a prior "No". A run with nothing
+    new skips the rate limit/event log entirely. Dry run returns
+    `alreadyAnalyzedCount`.
+  - Extraction batches 10 announcements per Haiku call (Ollama stays 5 —
+    `getAnnouncementBatchSize()`); evidence is now a ≤20-word verbatim
+    quote and description one sentence (output tokens cost 5× input).
+  - Dup check is ONE call per extraction batch
+    (`findDuplicateTasksForBatch`): each course's assignments listed once
+    and numbered globally; a task may only match within its own course
+    (cross-course number → `uncertainDuplicateResult`). Zero-token
+    pre-pass: exact normalized name → high, containment (≥8 chars) →
+    **medium at most** (high would let auto-accept silently suppress it).
+    Never throws; a total failure degrades just the model-bound tasks.
+  - Assignment scoring: 20 per Haiku call, compressed rubric, no `reason`
+    output (stored as a fixed string — never displayed). Descriptions are
+    now stripped/truncated (previously raw HTML into the prompt).
+    `/api/task-planning` reuses any stored estimate whose signature still
+    matches instead of re-billing it.
+  - Prompt caching / Batches API deliberately not used: prompts are under
+    Haiku 4.5's 4,096-token cache minimum, and Batches is async.
+  - Known, accepted: a pending candidate's duplicate verdict isn't
+    refreshed if a matching Canvas assignment appears after analysis.
 - Shared config `lib/ollamaConfig.ts` (`OLLAMA_CHAT_URL`/`MODEL`/
   `NUM_CTX=8192` — added after a real outage where unbounded Canvas HTML
-  blew the context window). All 4 call sites (`analyzeAssignment.ts`,
-  `analyzeAnnouncement.ts`, `findDuplicateTask.ts`, `task-xp/route.ts`)
-  share it, set `format: "json"`, wrap in `try/catch` → deterministic
+  blew the context window). The Ollama call sites share it, set `format: "json"`, wrap in `try/catch` → deterministic
   fallback with `AbortSignal.timeout`, batch via `lib/concurrency.ts`. Any
   HTML field from Canvas MUST go through `lib/htmlText.ts`'s
   `stripHtml`/`truncateText` before entering a prompt — this is the exact
@@ -70,8 +140,7 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   failure retries via split-in-half bisection, not a flat N-way retry. The
   `RULES` block must be sent exactly once (system message only) — it was
   once accidentally duplicated into the user prompt too.
-- The duplicate checker (`lib/ai/findDuplicateTask.ts`) deliberately stays
-  on local Ollama and is deliberately biased toward false positives **in
+- The duplicate checker (`lib/ai/findDuplicateTask.ts`) is deliberately biased toward false positives **in
   code**: an unresolved/unknown match must stay flagged
   (`uncertainDuplicateResult`) rather than cleared. `checkStatus`
   distinguishes `"checked"` (a genuine verdict, including uncertain) from
@@ -558,6 +627,34 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- **Legal pages are missing a contact email** — `/terms` and `/privacy`
+  still show the literal `[CONTACT EMAIL]` placeholder in production
+  (pushed 2026-09-22 without it). Replace once the custom-domain email
+  exists; nothing else is left to fill in.
+- AI cost pass (2026-09-22) — **blocked on applying the migration**:
+  `prisma/migrations/20260923000000_add_announcement_ai_analyzed_hash`
+  (one nullable column) was written but not applied; `npx prisma migrate
+  deploy` + `npx prisma generate` were blocked from the agent session
+  (shared prod DB). Until then `tsc` fails on `aiAnalyzedHash` and the
+  code must not be pushed. Then live-verify: a dry run shows new vs.
+  already-checked counts; a real run logs `💰` for extraction/dup
+  check/scoring with amber/clean (not grey) dup states; an immediate
+  second run makes zero Anthropic calls with pending candidates still
+  visible; evidence highlight scrolls inside the announcement box only;
+  XP awards with no model call. Compare real `💰` numbers to the
+  ~$0.014/user/week estimate.
+
+- Auth (2026-09-22): not live-verified in a browser — sign up (age/terms
+  unchecked, short/mismatched password, duplicate email in other case),
+  password sign-in/wrong password, Google → `/accept-terms`, extension
+  login with a password, Delete Account. Only lint/build + page status
+  codes + a hashing script were checked. Shared prod DB: use a test email
+  and delete it after. Follow-ups: fill the legal-page placeholders and
+  get them reviewed; email verification; password reset; rate-limit
+  login/sign-up attempts. The consent gate covers pages only — existing
+  extension Bearer tokens keep syncing via `/api/canvas/sync` until the
+  user next opens `/`.
+
 - Auto Task Creation / Rundown: not live-verified — see the dedicated
   architecture entry above for the exact list (auto-accept branches, rate
   limit 429/reset display, auto-show/dismiss gating, Maybe round trip,
@@ -604,8 +701,10 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   course create/save, `MusicPlayer`'s `busyItemId`); most of the
   announcement-analysis polish list, now living in
   `components/rundown/RundownCandidateCard.tsx` (evidence highlighting/
-  inline editing were live-verified pre-Rundown; the carousel-only
-  auto-scroll was deliberately dropped in the port, not carried forward;
+  inline editing were live-verified pre-Rundown; auto-scroll to the
+  highlight is back, scoped to the announcement box's own scrollTop —
+  not scrollIntoView, which dragged the whole overlay — not yet
+  live-verified;
   HTML-safe rendering, due-date resolution, persisted accept/reject, and
   "check unavailable" status were not live-verified even before the
   rewrite); AI-suggested-task course-matching; the announcement pipeline's

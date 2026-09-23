@@ -8,6 +8,7 @@ import LaptopFrame from "@/components/world/LaptopFrame";
 import { TownState } from "@/types/townState";
 import { WorldLayoutData } from "@/types/worldLayout";
 import { DEFAULT_WORLD_LAYOUT, isValidWorldLayoutData } from "@/lib/worldLayout";
+import { hasAcceptedCurrentTerms } from "@/lib/legal";
 
 
 export default async function TestPage() {
@@ -23,6 +24,10 @@ export default async function TestPage() {
 
     if (!user) {
         redirect("/login");
+    }
+
+    if (!hasAcceptedCurrentTerms(user)) {
+        redirect("/accept-terms");
     }
 
     const assignments: Assignment[] = (await getAllAssignments(user.id)).map((assignment) => ({
