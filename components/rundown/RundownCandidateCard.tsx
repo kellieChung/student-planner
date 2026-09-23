@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
 import { Course } from "@/types/course";
 import { stripHtmlForDisplay } from "@/lib/htmlText";
@@ -14,10 +14,11 @@ import CourseSelect from "@/components/CourseSelect";
 // "AI found these" / Still-Deciding list renderer — editing UI, evidence
 // highlighting, and the Canvas-comparison block are unchanged; the footer
 // is Yes/No/Maybe instead of Accept/Reject (mode="resolve" drops Maybe,
-// for the Still-Deciding panel where only a final call makes sense). The
-// carousel-only auto-scrollIntoView mount effect from AIReviewCard is
-// intentionally dropped here — it would fight itself across cards in a
-// scrollable list.
+// for the Still-Deciding panel where only a final call makes sense).
+// AIReviewCard's scrollIntoView is deliberately not used here: it scrolls
+// every scrollable ancestor, so each card in the list would drag the whole
+// Rundown overlay to itself. Instead only the announcement box's own
+// scrollTop is moved to center the evidence highlight.
 type RundownCandidateCardProps = {
     task: ProposedTask;
     courses: Course[];
@@ -84,6 +85,26 @@ export default function RundownCandidateCard({
     const evidenceRange = task.evidence
         ? findEvidenceRange(announcementText, task.evidence)
         : null;
+
+    const announcementBoxRef = useRef<HTMLDivElement>(null);
+    const evidenceMarkRef = useRef<HTMLElement>(null);
+
+    useEffect(() => {
+        const box = announcementBoxRef.current;
+        const mark = evidenceMarkRef.current;
+
+        if (!box || !mark) {
+            return;
+        }
+
+        const offsetInBox =
+            mark.getBoundingClientRect().top - box.getBoundingClientRect().top;
+
+        box.scrollTo({
+            top: box.scrollTop + offsetInBox - (box.clientHeight - mark.offsetHeight) / 2,
+            behavior: "smooth",
+        });
+    }, [task.suggestionKey, evidenceRange?.start]);
 
     const assignmentDescription = task.canvasMatch.assignment?.description
         ? stripHtmlForDisplay(task.canvasMatch.assignment.description)
@@ -275,12 +296,12 @@ export default function RundownCandidateCard({
                                     {task.sourceAnnouncement.course}
                                 </p>
 
-                                <div className="mt-4 max-h-80 overflow-y-auto pr-2">
+                                <div ref={announcementBoxRef} className="mt-4 max-h-80 overflow-y-auto pr-2">
                                     <p className="whitespace-pre-wrap text-sm leading-7">
                                         {evidenceRange ? (
                                             <>
                                                 {announcementText.slice(0, evidenceRange.start)}
-                                                <mark className="rounded bg-[var(--accent)] px-1 font-bold text-white">
+                                                <mark ref={evidenceMarkRef} className="rounded bg-[var(--accent)] px-1 font-bold text-white">
                                                     {announcementText.slice(
                                                         evidenceRange.start,
                                                         evidenceRange.end

@@ -49,12 +49,14 @@ via Prisma 7.
   scope all Prisma queries by that `user.id`. Extension-facing routes
   additionally accept a `Bearer` token checked against `ExtensionSession`
   (see `app/api/canvas/sync/route.ts`). See the `api-route-handler` skill.
-- **Calls to the local Ollama server** (`lib/analyzeAssignment.ts`,
-  `app/api/task-xp/route.ts`) must degrade gracefully: wrap in `try/catch`
-  with a deterministic keyword-based fallback, and prefer an
-  `AbortSignal.timeout(...)` on the `fetch` (task-xp does this;
-  `analyzeAssignment.ts` currently doesn't — don't copy that gap into new
-  code).
+- **AI calls** (`lib/ai/analyzeAnnouncement.ts`, `lib/ai/findDuplicateTask.ts`,
+  `lib/analyzeAssignment.ts`) use Claude Haiku via `lib/ai/anthropicClient.ts`
+  when `ANTHROPIC_API_KEY` is set (Vercel can't reach a local Ollama), and
+  local Ollama otherwise. Both paths must degrade gracefully: `try/catch`
+  with a deterministic fallback, and a timeout on every call. Every
+  Anthropic call is paid — batch, avoid re-analyzing unchanged input, and
+  log spend via `logAnthropicUsage`. XP (`app/api/task-xp`) is purely
+  time-based, no model call.
 - **Comments are sparse** — only used to explain non-obvious *why* (see the
   block comment in `lib/prioritization.ts` and `lib/utils.ts`). Don't add
   comments that restate the code.

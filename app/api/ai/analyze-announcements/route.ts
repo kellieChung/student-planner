@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { analyzeAnnouncements } from "@/lib/ai/analyzeAnnouncement";
-import { findDuplicateTasks } from "@/lib/ai/findDuplicateTask";
+import { analyzeAnnouncements, getAnnouncementBatchSize } from "@/lib/ai/analyzeAnnouncement";
+import {
+    CanvasAssignment,
+    DuplicateCheckResult,
+    findDuplicateTasksForBatch,
+} from "@/lib/ai/findDuplicateTask";
+import { computeAnnouncementContentHash } from "@/lib/suggestionKey";
 import { Announcement } from "@/types/announcement";
 import { ProposedTask } from "@/types/proposedTask";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
@@ -17,10 +22,6 @@ import { classifyAutoAction } from "@/lib/rundownAutoAccept";
 // announcement about the coming week's work.
 const ANNOUNCEMENT_BUFFER_DAYS = 4;
 
-// Announcements analyzed per Ollama call. Each call resends the full
-// instructional rules regardless of batch size, so batching cuts that
-// fixed per-call cost proportionally across the batch.
-const ANNOUNCEMENT_BATCH_SIZE = 5;
 const OLLAMA_CONCURRENCY = 2;
 
 /**
@@ -163,6 +164,42 @@ function isWithinOneMonth(
     );
 }
 
+// "unresolved": the model flagged a likely duplicate but returned an
+// unresolvable match number (lib/ai/findDuplicateTask.ts's
+// uncertainDuplicateResult, the only producer of isDuplicate:true with a
+// null matchingAssignmentId) — routed to the rundown as its own case per
+// AutoTaskCreation.md step 3, rather than collapsed into "possible".
+function withCanvasMatch(
+    task: ProposedTask,
+    duplicateCheck: DuplicateCheckResult,
+    courseAssignments: CanvasAssignment[]
+): ProposedTask {
+    const status =
+        duplicateCheck.checkStatus === "degraded"
+            ? "unavailable"
+            : duplicateCheck.isDuplicate
+            ? duplicateCheck.matchingAssignmentId === null
+                ? "unresolved"
+                : duplicateCheck.confidence === "high"
+                ? "definite"
+                : "possible"
+            : "none";
+
+    return {
+        ...task,
+        canvasMatch: {
+            status,
+            checkConfidence: duplicateCheck.confidence,
+            assignmentId: duplicateCheck.matchingAssignmentId,
+            reason: duplicateCheck.reason,
+            assignment:
+                courseAssignments.find(
+                    (assignment) => assignment.id === duplicateCheck.matchingAssignmentId
+                ) ?? null,
+        },
+    };
+}
+
 export async function POST(
     request: Request
 ) {
@@ -280,6 +317,23 @@ export async function POST(
         // 5. Convert announcements
         // --------------------------------------------------
 
+        // Current content hash vs. the hash stored at the last successful
+        // analysis — see step 7a.
+        const analysisHashes = new Map<string, { current: string; stored: string | null }>(
+            courses.flatMap((course) =>
+                course.announcements.map((announcement) => [
+                    announcement.id,
+                    {
+                        current: computeAnnouncementContentHash(
+                            announcement.title,
+                            announcement.message ?? ""
+                        ),
+                        stored: announcement.aiAnalyzedHash,
+                    },
+                ])
+            )
+        );
+
         const allAnnouncements: Announcement[] =
             courses.flatMap((course) =>
                 course.announcements.map(
@@ -381,6 +435,75 @@ export async function POST(
         });
 
         // --------------------------------------------------
+        // 7a. Skip already-analyzed announcements — the biggest cost
+        // lever: overlapping windows across runs used to re-extract and
+        // re-dup-check the same unchanged text every time, even though
+        // every candidate from it already persists in
+        // AnnouncementSuggestionReview. An announcement analyzed before
+        // aiAnalyzedHash existed (null hash, but it already has review
+        // rows) is backfilled rather than re-run: a re-run with the
+        // current prompt/batching can word a task differently, giving it
+        // a new suggestionKey and resurfacing something the user already
+        // said No to.
+        // --------------------------------------------------
+
+        const legacyReviewed = new Set(
+            (
+                await prisma.announcementSuggestionReview.findMany({
+                    where: {
+                        userId: user.id,
+                        sourceAnnouncementId: {
+                            in: announcements
+                                .filter((a) => analysisHashes.get(a.id)?.stored == null)
+                                .map((a) => a.id),
+                        },
+                    },
+                    select: { sourceAnnouncementId: true },
+                    distinct: ["sourceAnnouncementId"],
+                })
+            ).map((review) => review.sourceAnnouncementId)
+        );
+
+        const backfillIds: string[] = [];
+        const selectedCount = announcements.length;
+
+        announcements = announcements.filter((announcement) => {
+            const hashes = analysisHashes.get(announcement.id);
+
+            if (hashes?.stored === hashes?.current) {
+                return false;
+            }
+
+            if (hashes?.stored == null && legacyReviewed.has(announcement.id)) {
+                backfillIds.push(announcement.id);
+                return false;
+            }
+
+            return true;
+        });
+
+        const alreadyAnalyzedCount = selectedCount - announcements.length;
+
+        async function markAnalyzed(announcementIds: string[]) {
+            await Promise.all(
+                announcementIds.map((id) =>
+                    prisma.announcement.updateMany({
+                        where: { id, userId },
+                        data: { aiAnalyzedHash: analysisHashes.get(id)?.current ?? null },
+                    })
+                )
+            );
+        }
+
+        if (!dryRun && backfillIds.length > 0) {
+            await markAnalyzed(backfillIds);
+        }
+
+        console.log(
+            `⏭️ Skipping ${alreadyAnalyzedCount} already-analyzed announcement(s); ${announcements.length} new`
+        );
+
+        // --------------------------------------------------
         // 7b. Dry run — preview the count/list with zero AI cost
         // --------------------------------------------------
 
@@ -390,6 +513,7 @@ export async function POST(
                 dryRun: true,
 
                 announcementCount: announcements.length,
+                alreadyAnalyzedCount,
                 totalAnnouncementCount: allAnnouncements.length,
 
                 filtering: {
@@ -423,10 +547,13 @@ export async function POST(
         // blocked by the weekly quota.
         // --------------------------------------------------
 
-        const rateLimit = await checkDetectionPassRateLimit(
-            user.id,
-            session.user.email
-        );
+        // Nothing new to analyze means no model call at all, so it
+        // shouldn't spend one of the user's weekly checks either.
+        const hasWork = announcements.length > 0;
+
+        const rateLimit = hasWork
+            ? await checkDetectionPassRateLimit(user.id, session.user.email)
+            : { allowed: true, resetsAt: null };
 
         if (!rateLimit.allowed) {
             return NextResponse.json(
@@ -446,13 +573,15 @@ export async function POST(
         // disconnects mid-stream (cost control is the intent) — response
         // headers for the stream aren't committed yet at this point.
         try {
-            await logAiTaskEvent(user.id, "detection_pass_triggered", {
-                data: {
-                    mode: isCustomSelection ? "custom" : "automatic",
-                    rangeFrom,
-                    rangeTo,
-                },
-            });
+            if (hasWork) {
+                await logAiTaskEvent(user.id, "detection_pass_triggered", {
+                    data: {
+                        mode: isCustomSelection ? "custom" : "automatic",
+                        rangeFrom,
+                        rangeTo,
+                    },
+                });
+            }
         } catch (error) {
             console.error("❌ Failed to log detection pass trigger:", error);
         }
@@ -509,7 +638,7 @@ export async function POST(
 
         const announcementBatches = chunk(
             announcements,
-            ANNOUNCEMENT_BATCH_SIZE
+            getAnnouncementBatchSize()
         );
 
         // --------------------------------------------------
@@ -727,14 +856,14 @@ export async function POST(
                         announcementBatches,
                         OLLAMA_CONCURRENCY,
                         async (batch) => {
-                            let proposedTasksByAnnouncement;
+                            let analysisByAnnouncement;
 
                             try {
                                 console.log(
                                     `🤖 Analyzing ${batch.length} announcement(s): ${batch.map((a) => `"${a.title}"`).join(", ")}`
                                 );
 
-                                proposedTasksByAnnouncement =
+                                analysisByAnnouncement =
                                     await analyzeAnnouncements(batch);
                             } catch (error) {
                                 console.error(
@@ -766,7 +895,7 @@ export async function POST(
                             // row at all) is exactly what should re-stream,
                             // so it isn't skipped here. Checked unconditionally
                             // now, which also saves the duplicate-check
-                            // Ollama call's cost for custom-mode reruns.
+                            // call's cost for custom-mode reruns.
                             const reviews =
                                 await prisma.announcementSuggestionReview.findMany({
                                     where: {
@@ -788,129 +917,100 @@ export async function POST(
                                 )
                             );
 
-                            // Bounded to 1: each batch worker's duplicate checks run
-                            // strictly one-at-a-time, so combined with the outer
-                            // mapWithConcurrency's OLLAMA_CONCURRENCY cap on concurrent
-                            // batches, total concurrent local Ollama duplicate-check
-                            // calls across the whole request stay at OLLAMA_CONCURRENCY
-                            // — previously unbounded here (up to
-                            // ANNOUNCEMENT_BATCH_SIZE per batch on top of
-                            // OLLAMA_CONCURRENCY concurrent batches), which is what was
-                            // overloading the local Ollama server and causing the
-                            // duplicate-check timeouts.
-                            return mapWithConcurrency(
-                                batch.map((announcement, i) => ({ announcement, i })),
-                                1,
-                                async ({ announcement, i }) => {
-                                    const proposedTasks = proposedTasksByAnnouncement[
-                                        i
-                                    ].filter(
-                                        (task) =>
-                                            !alreadyDecidedKeys.has(
-                                                `${task.sourceAnnouncementId}::${task.suggestionKey}`
-                                            )
-                                    );
-
-                                    const nearbyAssignments =
-                                        nearbyAssignmentsFor(announcement);
-
-                                    console.log(
-                                        `🔎 ${nearbyAssignments.length} nearby assignments for "${announcement.title}"`
-                                    );
-
-                                    let tasksWithDuplicates: ProposedTask[];
-
-                                    try {
-                                        const duplicateChecks =
-                                            await findDuplicateTasks(
-                                                proposedTasks.map((task) => task.name),
-                                                nearbyAssignments
-                                            );
-
-                                        tasksWithDuplicates = proposedTasks.map(
-                                            (task, taskIndex) => {
-                                                const duplicateCheck =
-                                                    duplicateChecks[taskIndex];
-
-                                                const matchedAssignment =
-                                                    duplicateCheck.matchingAssignmentId
-                                                        ? nearbyAssignments.find(
-                                                              (assignment) =>
-                                                                  assignment.id ===
-                                                                  duplicateCheck.matchingAssignmentId
-                                                          ) ?? null
-                                                        : null;
-
-                                                console.log(
-                                                    `🔍 "${task.name}" →`,
-                                                    duplicateCheck
-                                                );
-
-                                                // "unresolved": the model flagged this
-                                                // as a likely duplicate but returned an
-                                                // out-of-range/unresolvable match number
-                                                // (lib/ai/findDuplicateTask.ts's
-                                                // uncertainDuplicateResult, the only
-                                                // producer of isDuplicate:true with a
-                                                // null matchingAssignmentId) — routed to
-                                                // the rundown as its own case per
-                                                // AutoTaskCreation.md step 3, rather
-                                                // than collapsed into "possible".
-                                                const status =
-                                                    duplicateCheck.checkStatus === "degraded"
-                                                        ? "unavailable"
-                                                        : duplicateCheck.isDuplicate
-                                                        ? duplicateCheck.matchingAssignmentId === null
-                                                            ? "unresolved"
-                                                            : duplicateCheck.confidence === "high"
-                                                            ? "definite"
-                                                            : "possible"
-                                                        : "none";
-
-                                                return {
-                                                    ...task,
-                                                    canvasMatch: {
-                                                        status,
-                                                        checkConfidence: duplicateCheck.confidence,
-                                                        assignmentId:
-                                                            duplicateCheck.matchingAssignmentId,
-                                                        reason: duplicateCheck.reason,
-                                                        assignment: matchedAssignment,
-                                                    },
-                                                };
-                                            }
-                                        );
-                                    } catch (error) {
-                                        console.error(
-                                            `❌ Duplicate check failed for announcement "${announcement.title}":`,
-                                            error
-                                        );
-
-                                        // Do NOT let a malformed Ollama response
-                                        // destroy the entire announcement.
-                                        tasksWithDuplicates = proposedTasks.map((task) => ({
-                                            ...task,
-                                            canvasMatch: {
-                                                status: "unavailable",
-                                                checkConfidence: "low",
-                                                assignmentId: null,
-                                                reason: "Duplicate checking failed.",
-                                                assignment: null,
-                                            },
-                                        }));
-                                    }
-
-                                    const visibleTasks = await finalizeCandidates(
-                                        announcement.id,
-                                        tasksWithDuplicates
-                                    );
-
-                                    return {
-                                        announcement: toAnnouncementSummary(announcement),
-                                        tasks: visibleTasks,
-                                    };
-                                }
+                            const tasksByAnnouncement = batch.map((_, i) =>
+                                analysisByAnnouncement[i].tasks.filter(
+                                    (task) =>
+                                        !alreadyDecidedKeys.has(
+                                            `${task.sourceAnnouncementId}::${task.suggestionKey}`
+                                        )
+                                )
                             );
+
+                            // One duplicate-check call for the whole batch
+                            // (not one per announcement): each course's
+                            // nearby assignments are unioned across the
+                            // batch's announcements and listed once.
+                            const assignmentsByCourse = new Map<string, CanvasAssignment[]>();
+
+                            batch.forEach((announcement, i) => {
+                                if (tasksByAnnouncement[i].length === 0) {
+                                    return;
+                                }
+
+                                const existing = assignmentsByCourse.get(announcement.course) ?? [];
+                                const seen = new Set(existing.map((assignment) => assignment.id));
+
+                                assignmentsByCourse.set(announcement.course, [
+                                    ...existing,
+                                    ...nearbyAssignmentsFor(announcement).filter(
+                                        (assignment) => !seen.has(assignment.id)
+                                    ),
+                                ]);
+                            });
+
+                            const duplicateChecks = await findDuplicateTasksForBatch(
+                                batch.flatMap((announcement, i) =>
+                                    tasksByAnnouncement[i].map((task) => ({
+                                        taskName: task.name,
+                                        courseKey: announcement.course,
+                                    }))
+                                ),
+                                assignmentsByCourse
+                            );
+
+                            const results = [];
+                            const analyzedIds: string[] = [];
+                            let checkCursor = 0;
+
+                            for (const [i, announcement] of batch.entries()) {
+                                const proposedTasks = tasksByAnnouncement[i];
+                                const checks = duplicateChecks.slice(
+                                    checkCursor,
+                                    checkCursor + proposedTasks.length
+                                );
+                                checkCursor += proposedTasks.length;
+
+                                const courseAssignments =
+                                    assignmentsByCourse.get(announcement.course) ?? [];
+
+                                const tasksWithDuplicates = proposedTasks.map((task, t) =>
+                                    withCanvasMatch(task, checks[t], courseAssignments)
+                                );
+
+                                // Only a genuine answer from both passes marks
+                                // the announcement as analyzed — a failed
+                                // extraction or a degraded duplicate check is
+                                // left unmarked so the next pass retries it
+                                // instead of skipping it forever.
+                                const analysisOk =
+                                    analysisByAnnouncement[i].ok &&
+                                    checks.every((check) => check.checkStatus === "checked");
+
+                                if (analysisOk) {
+                                    analyzedIds.push(announcement.id);
+                                }
+
+                                const visibleTasks = await finalizeCandidates(
+                                    announcement.id,
+                                    tasksWithDuplicates
+                                );
+
+                                results.push({
+                                    announcement: toAnnouncementSummary(announcement),
+                                    tasks: visibleTasks,
+                                    ...(analysisByAnnouncement[i].ok
+                                        ? {}
+                                        : { error: "Failed to analyze announcement." }),
+                                });
+                            }
+
+                            try {
+                                await markAnalyzed(analyzedIds);
+                            } catch (error) {
+                                console.error("❌ Failed to mark announcements as analyzed:", error);
+                            }
+
+                            return results;
                         },
                         // Fires once per resolved batch, in arrival order
                         // (not necessarily input order, since

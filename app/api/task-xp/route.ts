@@ -2,33 +2,7 @@ import { NextResponse } from "next/server";
 import { Assignment } from "@/types/assignment";
 import { XpAward } from "@/types/gamification";
 import { daysBetween } from "@/lib/utils";
-import { OLLAMA_CHAT_URL, OLLAMA_MODEL, OLLAMA_NUM_CTX } from "@/lib/ollamaConfig";
-
-const XP_VALUES = [10, 20, 35, 50, 75, 100];
-
-function fallbackXp(task: Pick<Assignment, "name" | "course">): XpAward {
-    const taskText = `${task.name} ${task.course}`.toLowerCase();
-
-    if (/(exam|midterm|final|research paper|presentation|project)/.test(taskText)) {
-        return { xp: 75, source: "fallback" };
-    }
-
-    if (/(essay|lab|quiz|problem set|homework)/.test(taskText)) {
-        return { xp: 35, source: "fallback" };
-    }
-
-    return { xp: 20, source: "fallback" };
-}
-
-function normalizeXp(value: unknown): number {
-    const proposedXp = typeof value === "number" ? value : Number(value);
-
-    if (!Number.isFinite(proposedXp)) return 20;
-
-    return XP_VALUES.reduce((closest, current) =>
-        Math.abs(current - proposedXp) < Math.abs(closest - proposedXp) ? current : closest
-    );
-}
+import { classifyAssignmentType, estimateMinutesByType } from "@/lib/analyzeAssignment";
 
 function xpFromEstimatedMinutes(estimatedMinutes: unknown): number | null {
     const minutes = typeof estimatedMinutes === "number" ? estimatedMinutes : Number(estimatedMinutes);
@@ -79,57 +53,16 @@ export async function POST(request: Request) {
     }
 
     const daysLate = calculateDaysLate(task.due, task.completedAt ?? "");
-    const timeBasedXp = xpFromEstimatedMinutes(task.estimatedMinutes);
-    const fallbackBase = fallbackXp(task);
-    const fallback = {
-        ...fallbackBase,
-        xp: applyLatePenalty(timeBasedXp ?? fallbackBase.xp, daysLate),
-    };
 
-    // A deterministic estimatedMinutes already fully determines the XP
-    // tier (see the system prompt below), so calling Ollama here would
-    // only recompute a value that gets discarded in favor of timeBasedXp
-    // anyway — skip the wasted call.
-    if (timeBasedXp !== null) {
-        return NextResponse.json({
-            xp: applyLatePenalty(timeBasedXp, daysLate),
-            source: "fallback",
-        } satisfies XpAward);
-    }
+    // Purely time-based (no model call): a task without a planning estimate
+    // gets the same deterministic type→minutes estimate task-planning uses.
+    const baseXp =
+        xpFromEstimatedMinutes(task.estimatedMinutes) ??
+        xpFromEstimatedMinutes(estimateMinutesByType(classifyAssignmentType(task))) ??
+        20;
 
-    try {
-        const response = await fetch(OLLAMA_CHAT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: AbortSignal.timeout(12_000),
-            body: JSON.stringify({
-                model: OLLAMA_MODEL,
-                stream: false,
-                format: "json",
-                options: { temperature: 0.2, num_ctx: OLLAMA_NUM_CTX },
-                messages: [
-                    {
-                        role: "system",
-                        content: "Estimate only the expected workload of this student task. Do not judge quality, effort, or how well it was completed. Return only JSON: {\"xp\": number}. Choose exactly one base XP value: 10 for a quick routine task, 20 for a small task, 35 for typical homework/quiz/lab, 50 for a substantial assignment, 75 for a major paper/project/exam, or 100 for an exceptional capstone. Do not default to 50: if the title is vague, choose 20.",
-                    },
-                    {
-                        role: "user",
-                        content: JSON.stringify(task),
-                    },
-                ],
-            }),
-        });
-
-        if (!response.ok) return NextResponse.json(fallback);
-
-        const result = await response.json() as { message?: { content?: string } };
-        const scoredTask = JSON.parse(result.message?.content ?? "{}") as { xp?: unknown };
-
-        return NextResponse.json({
-            xp: applyLatePenalty(normalizeXp(scoredTask.xp), daysLate),
-            source: "ollama",
-        } satisfies XpAward);
-    } catch {
-        return NextResponse.json(fallback);
-    }
+    return NextResponse.json({
+        xp: applyLatePenalty(baseXp, daysLate),
+        source: "fallback",
+    } satisfies XpAward);
 }

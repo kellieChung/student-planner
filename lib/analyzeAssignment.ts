@@ -1,4 +1,14 @@
+import Anthropic from "@anthropic-ai/sdk";
 import { OLLAMA_CHAT_URL, OLLAMA_MODEL, OLLAMA_NUM_CTX } from "@/lib/ollamaConfig";
+import { ANTHROPIC_MODEL } from "@/lib/anthropicConfig";
+import {
+    describeAnthropicError,
+    getAnthropicClient,
+    getToolInput,
+    isAnthropicEnabled,
+    logAnthropicUsage,
+} from "@/lib/ai/anthropicClient";
+import { stripHtml, truncateText } from "@/lib/htmlText";
 
 export const ASSIGNMENT_TYPES = [
     "homework", "reading", "reflection", "discussion", "quiz", "test", "exam",
@@ -145,28 +155,166 @@ POINTS POSSIBLE: ${assignment.pointsPossible ?? "Unknown"}
 }
 
 /**
- * Analyzes a batch of assignments in a single Ollama call rather than one
- * call per assignment — each call resends the full rubric/instructions, so
- * batching cuts that fixed per-call cost proportionally. A malformed or
- * missing entry for any one assignment falls back to the deterministic
- * heuristic for the whole batch; this is a deliberate simplicity/robustness
- * tradeoff for a reasonably small batch size, not a partial-recovery
- * attempt. Never throws — degrades to `fallbackAssignmentAnalysis` on any
- * failure (timeout, non-2xx, malformed JSON), per this repo's convention
- * for Ollama calls.
+ * Analyzes a batch of assignments in a single model call (Claude Haiku
+ * when ANTHROPIC_API_KEY is set, local Ollama otherwise) rather than one
+ * call per assignment — each call resends the full rubric, so batching cuts
+ * that fixed per-call cost proportionally. On the Ollama path a malformed
+ * entry falls back for the whole batch (small batches); the Anthropic path
+ * degrades per entry. Never throws — degrades to
+ * `fallbackAssignmentAnalysis` on any failure (timeout, non-2xx, malformed
+ * JSON).
  */
 export async function analyzeAssignments(
-    assignments: AssignmentInput[]
+    rawAssignments: AssignmentInput[]
 ): Promise<AssignmentAnalysis[]> {
-    if (assignments.length === 0) {
+    if (rawAssignments.length === 0) {
         return [];
     }
 
+    // Canvas descriptions are raw HTML — see lib/htmlText.ts for why this
+    // must never reach a prompt unstripped.
+    const assignments = rawAssignments.map((assignment) => ({
+        ...assignment,
+        description: assignment.description
+            ? truncateText(stripHtml(assignment.description), MAX_DESCRIPTION_LENGTH)
+            : null,
+    }));
+
     try {
-        return await analyzeAssignmentsWithOllama(assignments);
-    } catch {
+        return isAnthropicEnabled()
+            ? await analyzeAssignmentsWithAnthropic(assignments)
+            : await analyzeAssignmentsWithOllama(assignments);
+    } catch (error) {
+        console.error("❌ Assignment analysis failed; using fallback:", error);
         return assignments.map(fallbackAssignmentAnalysis);
     }
+}
+
+// --------------------------------------------------------------------
+// Anthropic path (primary when ANTHROPIC_API_KEY is set). Tuned for cost:
+// a compressed rubric (these scores only break ties among tasks of similar
+// urgency — see prioritizationModule.md — so a terse rubric is enough),
+// and no free-text `reason` in the output since output tokens cost 5x
+// input and the stored reason is never displayed.
+// --------------------------------------------------------------------
+
+const MAX_DESCRIPTION_LENGTH = 400;
+const ANTHROPIC_TIMEOUT_MS = 30_000;
+// A ceiling, not a spend — only generated tokens are billed.
+const ANTHROPIC_MAX_TOKENS = 2048;
+const ANTHROPIC_REASON = "Estimated by AI.";
+
+const SCORE_TOOL_NAME = "record_assignment_scores";
+
+const SCORE_TOOL: Anthropic.Tool = {
+    name: SCORE_TOOL_NAME,
+    description: "Record one score entry per assignment, in order.",
+    input_schema: {
+        type: "object",
+        properties: {
+            results: {
+                type: "array",
+                items: {
+                    type: "object",
+                    properties: {
+                        index: { type: "integer" },
+                        importance: { type: "integer" },
+                        difficulty: { type: "integer" },
+                        consequence: { type: "integer" },
+                        assignmentType: { type: "string", enum: [...ASSIGNMENT_TYPES] },
+                    },
+                    required: ["index", "importance", "difficulty", "consequence", "assignmentType"],
+                    additionalProperties: false,
+                },
+            },
+        },
+        required: ["results"],
+        additionalProperties: false,
+    },
+    strict: true,
+};
+
+const SCORING_RUBRIC = `
+You score student assignments for a planner. Judge each assignment independently, only from its own information; never invent grading policies, weights, or requirements. Scores are integers 1-10.
+
+IMPORTANCE: academic significance vs. normal coursework. 1-2 routine/negligible; 3-4 ordinary homework, practice, participation; 5-6 meaningful graded work; 7-8 substantial graded work or key skill assessment; 9 major essay, project, or exam; 10 final exam or capstone. Points are evidence, not a formula. Don't confuse importance with difficulty or time.
+
+DIFFICULTY: how challenging for a capable student. 1-2 trivial; 3-4 straightforward, familiar procedures; 5-6 moderate reasoning or multiple steps; 7-8 substantial reasoning, writing, or synthesis; 9-10 very to exceptionally demanding. Points are not a proxy for difficulty.
+
+CONSEQUENCE: harm from missing it, submitting late, or doing poorly. 1-2 minimal; 3-4 small; 5-6 noticeable; 7-8 significant; 9-10 very to extremely significant. Use stated grading or late policy when given; otherwise infer cautiously.
+
+"index" is the ASSIGNMENT number (1-based).
+`.trim();
+
+function clampScore(value: number): number {
+    return Math.min(10, Math.max(1, Math.round(value)));
+}
+
+async function analyzeAssignmentsWithAnthropic(
+    assignments: AssignmentInput[]
+): Promise<AssignmentAnalysis[]> {
+    let response: Anthropic.Message;
+
+    try {
+        response = await getAnthropicClient().messages.create(
+            {
+                model: ANTHROPIC_MODEL,
+                max_tokens: ANTHROPIC_MAX_TOKENS,
+                temperature: 0,
+                system: SCORING_RUBRIC,
+                tools: [SCORE_TOOL],
+                tool_choice: { type: "tool", name: SCORE_TOOL_NAME },
+                messages: [
+                    {
+                        role: "user",
+                        content: assignments.map(buildAssignmentBlock).join("\n"),
+                    },
+                ],
+            },
+            { timeout: ANTHROPIC_TIMEOUT_MS }
+        );
+    } catch (error) {
+        throw describeAnthropicError("assignment scoring", error);
+    }
+
+    logAnthropicUsage("assignment scoring", response);
+
+    const input = getToolInput(response, SCORE_TOOL_NAME) as { results?: unknown };
+
+    if (!Array.isArray(input.results)) {
+        throw new Error("Anthropic scoring tool call did not contain a results array.");
+    }
+
+    const resultsByIndex = new Map<number, Record<string, unknown>>();
+
+    for (const entry of input.results) {
+        if (entry && typeof entry === "object" && typeof (entry as { index?: unknown }).index === "number") {
+            resultsByIndex.set((entry as { index: number }).index, entry as Record<string, unknown>);
+        }
+    }
+
+    // Per-entry degradation: one missing/malformed entry falls back for
+    // just that assignment rather than discarding the whole batch.
+    return assignments.map((assignment, i) => {
+        const entry = resultsByIndex.get(i + 1);
+
+        if (
+            !entry ||
+            typeof entry.importance !== "number" ||
+            typeof entry.difficulty !== "number" ||
+            typeof entry.consequence !== "number"
+        ) {
+            return fallbackAssignmentAnalysis(assignment);
+        }
+
+        return {
+            importance: clampScore(entry.importance),
+            difficulty: clampScore(entry.difficulty),
+            consequence: clampScore(entry.consequence),
+            assignmentType: normalizeAssignmentType(entry.assignmentType),
+            reason: ANTHROPIC_REASON,
+        };
+    });
 }
 
 async function analyzeAssignmentsWithOllama(
