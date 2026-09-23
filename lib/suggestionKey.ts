@@ -21,15 +21,3 @@ export function computeSuggestionKey(
         .update(`${sourceAnnouncementId}::${normalizedName}`)
         .digest("hex");
 }
-
-// Fingerprint of an announcement's text as last analyzed
-// (Announcement.aiAnalyzedHash) — an edited announcement hashes
-// differently and so gets re-analyzed instead of skipped.
-export function computeAnnouncementContentHash(
-    title: string,
-    message: string
-): string {
-    return createHash("sha256")
-        .update(`${title}\n${message}`)
-        .digest("hex");
-}

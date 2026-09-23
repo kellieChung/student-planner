@@ -186,12 +186,6 @@ model Announcement {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  // sha256 of title+message as of the last successful AI extraction +
-  // duplicate-check pass; a match means the detection pass skips this
-  // announcement (never pays twice for unchanged text). Deliberately not
-  // written by Canvas sync's upsert, so it survives re-syncs.
-  aiAnalyzedHash String?
-
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 

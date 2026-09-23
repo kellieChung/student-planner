@@ -2,14 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Announcement } from "@/types/announcement";
 import { ProposedTask } from "@/types/proposedTask";
 import { OLLAMA_CHAT_URL, OLLAMA_MODEL, OLLAMA_NUM_CTX } from "@/lib/ollamaConfig";
-import { ANTHROPIC_MODEL } from "@/lib/anthropicConfig";
 import {
-    describeAnthropicError,
-    getAnthropicClient,
-    getToolInput,
-    isAnthropicEnabled,
-    logAnthropicUsage,
-} from "@/lib/ai/anthropicClient";
+    ANTHROPIC_INPUT_COST_PER_MTOK,
+    ANTHROPIC_MODEL,
+    ANTHROPIC_OUTPUT_COST_PER_MTOK,
+} from "@/lib/anthropicConfig";
 import { stripHtml, truncateText } from "@/lib/htmlText";
 import { computeSuggestionKey } from "@/lib/suggestionKey";
 
@@ -35,7 +32,7 @@ const PREDICT_TOKENS_BASE = 100;
 const ANTHROPIC_MAX_TOKENS = 4096;
 
 // Ollama's OLLAMA_NUM_CTX (8192) bounds prompt+RULES+output combined for a
-// batch of OLLAMA_BATCH_SIZE (5) — this cap is now mostly a safety
+// batch of ANNOUNCEMENT_BATCH_SIZE (5) — this cap is now mostly a safety
 // net, since extractActionableHtml below already keeps typical content
 // well under it.
 const OLLAMA_MAX_MESSAGE_LENGTH = 3000;
@@ -44,27 +41,6 @@ const OLLAMA_MAX_MESSAGE_LENGTH = 3000;
 // safety net; sized to comfortably cover the fallback (all-prose,
 // no-actionable-match) path without needing an aggressive cap.
 const ANTHROPIC_MAX_MESSAGE_LENGTH = 4000;
-
-// The fixed per-call overhead (RULES + tool schema, ~1.2k tokens) is shared
-// across the batch, so Haiku gets twice Ollama's batch size — its 200k
-// context has room; the local 3B model's OLLAMA_NUM_CTX (8192) doesn't.
-const ANTHROPIC_BATCH_SIZE = 10;
-const OLLAMA_BATCH_SIZE = 5;
-
-export function getAnnouncementBatchSize(): number {
-    return isAnthropicEnabled() ? ANTHROPIC_BATCH_SIZE : OLLAMA_BATCH_SIZE;
-}
-
-// `ok: false` means the model never gave a usable answer for this
-// announcement (malformed/missing entry, or a failed single-announcement
-// call) — distinct from `ok: true` with zero tasks, a genuine "nothing to
-// do." The route only marks an announcement as analyzed on `ok: true`, so a
-// failure is retried on the next pass instead of being silently skipped
-// forever.
-export type AnnouncementAnalysisResult = {
-    tasks: ProposedTask[];
-    ok: boolean;
-};
 
 // Reused as a relevance signal below — not classification vocabulary, just
 // "does this block plausibly describe something a student needs to do."
@@ -282,7 +258,7 @@ Do NOT turn every table cell into a task.
 Only create a task when the table indicates that the student
 actually needs to perform an action.
 
-7. Evidence must be an EXACT, verbatim quote copied from the announcement (at most 20 words) — never a paraphrase. Description is one short sentence.
+7. Keep evidence short.
 
 8. Never output anything outside the requested structure.
 `;
@@ -366,7 +342,7 @@ function toProposedTasks(
 function toProposedTasksForAnnouncements(
     announcements: Announcement[],
     rawEntries: unknown[]
-): AnnouncementAnalysisResult[] {
+): ProposedTask[][] {
     const byIndex = new Map<number, Record<string, unknown>>();
 
     for (const entry of rawEntries) {
@@ -398,20 +374,25 @@ function toProposedTasksForAnnouncements(
                 entry
             );
 
-            return { tasks: [], ok: false };
+            return toProposedTasks(announcement, []);
         }
 
         const validatedTasks = entry.tasks
             .map(toValidatedTask)
             .filter((task): task is AIExtractedTask => task !== null);
 
-        return { tasks: toProposedTasks(announcement, validatedTasks), ok: true };
+        return toProposedTasks(announcement, validatedTasks);
     });
 }
 
 // --------------------------------------------------------------------
 // Anthropic path (primary when ANTHROPIC_API_KEY is set) — Claude Haiku,
-// forced tool use. Forced tool use with a strict schema means the SDK parses tool_use.input
+// forced tool use. This is the higher-complexity/higher-variance call
+// (nested arrays, multilingual input, judgment calls about what counts as
+// "work"), so it gets the stronger model; the duplicate checker
+// (lib/ai/findDuplicateTask.ts) stays on local Ollama since it runs far
+// more often per review and is a comparatively simpler classification.
+// Forced tool use with a strict schema means the SDK parses tool_use.input
 // for us — no JSON.parse() step, and no free-text JSON to get wrong.
 // --------------------------------------------------------------------
 
@@ -441,8 +422,8 @@ const EXTRACT_TOOL: Anthropic.Tool = {
                                 type: "object",
                                 properties: {
                                     name: { type: "string", description: "Short, actionable task name." },
-                                    description: { type: "string", description: "One short sentence." },
-                                    evidence: { type: "string", description: "Exact verbatim quote from the announcement, at most 20 words." },
+                                    description: { type: "string" },
+                                    evidence: { type: "string", description: "Short quote or paraphrase from the announcement." },
                                     dueText: {
                                         anyOf: [{ type: "string" }, { type: "null" }],
                                         description: "Original date wording exactly as it appears, or null.",
@@ -467,6 +448,34 @@ const EXTRACT_TOOL: Anthropic.Tool = {
     },
     strict: true,
 };
+
+// Constructed lazily, and only ever reached from the Anthropic path (gated
+// on ANTHROPIC_API_KEY by the exported analyzeAnnouncements below) — the
+// SDK client throws at construction time if it can't resolve any
+// credential, so building it unconditionally at module load would break
+// the Ollama-only fallback for anyone without the key set.
+let anthropicClient: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+    if (!anthropicClient) {
+        anthropicClient = new Anthropic();
+    }
+
+    return anthropicClient;
+}
+
+function logAnthropicUsage(response: Anthropic.Message): void {
+    const inputTokens = response.usage.input_tokens;
+    const outputTokens = response.usage.output_tokens;
+
+    const cost =
+        (inputTokens / 1_000_000) * ANTHROPIC_INPUT_COST_PER_MTOK +
+        (outputTokens / 1_000_000) * ANTHROPIC_OUTPUT_COST_PER_MTOK;
+
+    console.log(
+        `💰 Anthropic announcement extraction: ${inputTokens} in / ${outputTokens} out (~$${cost.toFixed(4)})`
+    );
+}
 
 async function callAnthropicForBatch(
     announcements: Announcement[]
@@ -496,12 +505,37 @@ Call the ${EXTRACT_TOOL_NAME} tool exactly once with one entry per announcement 
             { timeout: ANTHROPIC_TIMEOUT_MS }
         );
     } catch (error) {
-        throw describeAnthropicError("announcement extraction", error);
+        if (error instanceof Anthropic.AuthenticationError) {
+            throw new Error(`Anthropic authentication failed: ${error.message}`);
+        }
+
+        if (error instanceof Anthropic.RateLimitError) {
+            throw new Error(`Anthropic rate limited: ${error.message}`);
+        }
+
+        if (error instanceof Anthropic.APIConnectionError) {
+            throw new Error(`Anthropic connection failed: ${error.message}`);
+        }
+
+        if (error instanceof Anthropic.APIError) {
+            throw new Error(`Anthropic request failed: ${error.status} ${error.message}`);
+        }
+
+        throw error;
     }
 
-    logAnthropicUsage("announcement extraction", response);
+    logAnthropicUsage(response);
 
-    const input = getToolInput(response, EXTRACT_TOOL_NAME) as { announcements?: unknown };
+    const toolUse = response.content.find(
+        (block): block is Anthropic.ToolUseBlock =>
+            block.type === "tool_use" && block.name === EXTRACT_TOOL_NAME
+    );
+
+    if (!toolUse) {
+        throw new Error("Anthropic did not return the expected tool call.");
+    }
+
+    const input = toolUse.input as { announcements?: unknown };
 
     if (!Array.isArray(input.announcements)) {
         throw new Error("Anthropic tool call did not contain an announcements array.");
@@ -519,7 +553,7 @@ Call the ${EXTRACT_TOOL_NAME} tool exactly once with one entry per announcement 
 // extractable tasks" on failure rather than throwing.
 async function analyzeAnnouncementsWithAnthropic(
     announcements: Announcement[]
-): Promise<AnnouncementAnalysisResult[]> {
+): Promise<ProposedTask[][]> {
     try {
         const rawEntries = await callAnthropicForBatch(announcements);
         return toProposedTasksForAnnouncements(announcements, rawEntries);
@@ -530,7 +564,7 @@ async function analyzeAnnouncementsWithAnthropic(
                 error
             );
 
-            return [{ tasks: [], ok: false }];
+            return [toProposedTasks(announcements[0], [])];
         }
 
         const mid = Math.ceil(announcements.length / 2);
@@ -558,7 +592,7 @@ async function analyzeAnnouncementsWithAnthropic(
 
 async function analyzeAnnouncementsWithOllama(
     announcements: Announcement[]
-): Promise<AnnouncementAnalysisResult[]> {
+): Promise<ProposedTask[][]> {
     const prompt = `
 ${RULES}
 
@@ -575,8 +609,8 @@ RETURN ONLY VALID JSON, with exactly one entry per announcement above, in this e
       "tasks": [
         {
           "name": "short actionable task name",
-          "description": "one short sentence",
-          "evidence": "exact verbatim quote from the announcement, at most 20 words",
+          "description": "what the student needs to do",
+          "evidence": "short quote or paraphrase from the announcement",
           "dueText": "original date wording or null",
           "confidence": "high"
         }
@@ -676,12 +710,12 @@ RETURN ONLY VALID JSON, with exactly one entry per announcement above, in this e
  */
 export async function analyzeAnnouncements(
     announcements: Announcement[]
-): Promise<AnnouncementAnalysisResult[]> {
+): Promise<ProposedTask[][]> {
     if (announcements.length === 0) {
         return [];
     }
 
-    return isAnthropicEnabled()
+    return process.env.ANTHROPIC_API_KEY
         ? analyzeAnnouncementsWithAnthropic(announcements)
         : analyzeAnnouncementsWithOllama(announcements);
 }

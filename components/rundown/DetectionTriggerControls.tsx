@@ -113,7 +113,6 @@ export default function DetectionTriggerControls({
     const [customFrom, setCustomFrom] = useState(getTodayString());
     const [customTo, setCustomTo] = useState(getTodayString());
     const [previewCount, setPreviewCount] = useState<number | null>(null);
-    const [alreadyAnalyzedCount, setAlreadyAnalyzedCount] = useState(0);
     const [previewAnnouncements, setPreviewAnnouncements] = useState<PreviewAnnouncement[]>([]);
     const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
     const [selectionTouched, setSelectionTouched] = useState(false);
@@ -157,7 +156,6 @@ export default function DetectionTriggerControls({
 
                     if (seq === previewSeq.current && data.success) {
                         setPreviewCount(data.announcementCount);
-                        setAlreadyAnalyzedCount(data.alreadyAnalyzedCount ?? 0);
                         setPreviewAnnouncements(data.preview ?? []);
                         setDeselectedIds(new Set());
                         setSelectionTouched(false);
@@ -433,9 +431,7 @@ export default function DetectionTriggerControls({
                             : previewCount === null
                             ? "🤖 Check for new announcements"
                             : previewCount === 0
-                            ? alreadyAnalyzedCount > 0
-                                ? `No new announcements (${alreadyAnalyzedCount} already checked)`
-                                : "No announcements in this range"
+                            ? "No announcements in this range"
                             : selectionTouched
                             ? `🤖 Check ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
                             : `🤖 Check ${previewCount} announcement${previewCount === 1 ? "" : "s"}`}
