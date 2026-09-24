@@ -3,6 +3,8 @@ import { Prisma } from "@/app/generated/prisma/client";
 
 export type AiTaskEventType =
     | "detection_pass_triggered"
+    | "detection_pass_paused"
+    | "detection_credit_granted"
     | "candidate_decided"
     | "maybe_resolved"
     | "ai_tag_dismissed"

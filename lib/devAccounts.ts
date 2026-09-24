@@ -1,8 +1,9 @@
-// Accounts exempt from the manual AI-detection-pass rate limit
-// (lib/aiRateLimit.ts) — a comma-separated allowlist, same
-// `process.env.X ?? default` shape as lib/ollamaConfig.ts. No such flag
-// existed anywhere in this codebase before; set DEV_ACCOUNT_EMAILS in
-// .env locally and in Vercel's dashboard for production.
+// Accounts allowed into the dev dashboard (/dev) and /api/dev/* — a
+// comma-separated allowlist, same `process.env.X ?? default` shape as
+// lib/ollamaConfig.ts. Set DEV_ACCOUNT_EMAILS in .env locally and in
+// Vercel's dashboard for production. It deliberately grants NO exemption
+// from the announcement-check limit (lib/aiRateLimit.ts); dev accounts get
+// extra checks through credits like anyone else.
 const DEV_ACCOUNT_EMAILS = new Set(
     (process.env.DEV_ACCOUNT_EMAILS ?? "")
         .split(",")

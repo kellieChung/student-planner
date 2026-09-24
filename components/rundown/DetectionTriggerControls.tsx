@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
+import { DetectionQuota } from "@/types/aiQuota";
+import { MAX_ANNOUNCEMENTS_PER_CHECK } from "@/lib/analysisLimits";
 import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString } from "@/lib/utils";
 import { useMascot } from "@/components/world/LaptopFrame";
@@ -14,7 +16,8 @@ import { useMascot } from "@/components/world/LaptopFrame";
 // Ollama cost, rate-limited to 2/week) stay an explicit user action, never
 // fired just by opening the Rundown. New candidates stream straight into
 // the parent's pending list via onNewCandidates instead of a local
-// one-at-a-time carousel queue.
+// one-at-a-time carousel queue. A running check can be paused (the server
+// stops launching batches, finishes the in-flight ones) and resumed for free.
 type DetectionTriggerControlsProps = {
     onNewCandidates: (tasks: ProposedTask[]) => void;
     onRunFinished?: () => void;
@@ -46,10 +49,19 @@ type AnalysisProgress = {
     total: number;
 };
 
-// A lot to review in one sitting, and — now that extraction runs on the
-// Anthropic API — a lot of real per-batch cost. Not a hard cap, just a
-// nudge toward narrowing the range.
-const LARGE_RANGE_WARNING_THRESHOLD = 15;
+function newRunId(): string {
+    return typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function formatResetDate(iso: string): string {
+    return new Date(iso).toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+    });
+}
 
 function formatLocalDate(date: Date): string {
     const year = date.getFullYear();
@@ -108,6 +120,10 @@ export default function DetectionTriggerControls({
     const [newCandidateCount, setNewCandidateCount] = useState(0);
     const [streamIncomplete, setStreamIncomplete] = useState(false);
     const [rateLimitError, setRateLimitError] = useState<string | null>(null);
+    const [quota, setQuota] = useState<DetectionQuota | null>(null);
+    const [pausing, setPausing] = useState(false);
+    const [paused, setPaused] = useState(false);
+    const [inRangeCount, setInRangeCount] = useState(0);
 
     const [preset, setPreset] = useState<RangePreset>("thisWeek");
     const [customFrom, setCustomFrom] = useState(getTodayString());
@@ -120,7 +136,12 @@ export default function DetectionTriggerControls({
     const [previewLoading, setPreviewLoading] = useState(false);
 
     const previewSeq = useRef(0);
+    const runIdRef = useRef<string | null>(null);
+    const lastBodyRef = useRef<Record<string, unknown>>({});
+    const abortRef = useRef<AbortController | null>(null);
     const { say } = useMascot();
+
+    useEffect(() => () => abortRef.current?.abort(), []);
 
     function currentRange(): { from: string; to: string } | null {
         if (preset === "custom") {
@@ -134,6 +155,48 @@ export default function DetectionTriggerControls({
         return resolvePresetRange(preset);
     }
 
+    async function loadPreview(range: { from: string; to: string } | null, seq: number) {
+        setPreviewLoading(true);
+
+        try {
+            const response = await fetch("/api/ai/analyze-announcements", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ dryRun: true, ...(range ?? {}) }),
+            });
+
+            const data = await response.json();
+
+            if (seq === previewSeq.current && data.success) {
+                setPreviewCount(data.announcementCount);
+                setAlreadyAnalyzedCount(data.alreadyAnalyzedCount ?? 0);
+                setInRangeCount(data.inRangeCount ?? data.announcementCount);
+                setPreviewAnnouncements(data.preview ?? []);
+                // The list is newest-first and a check covers at most
+                // MAX_ANNOUNCEMENTS_PER_CHECK, so everything past that starts
+                // unselected — exactly what the server would take on its own.
+                setDeselectedIds(
+                    new Set(
+                        ((data.preview ?? []) as PreviewAnnouncement[])
+                            .slice(MAX_ANNOUNCEMENTS_PER_CHECK)
+                            .map((announcement) => announcement.id)
+                    )
+                );
+                setSelectionTouched(false);
+
+                if (data.quota) {
+                    setQuota(data.quota);
+                }
+            }
+        } catch (error) {
+            console.error("❌ Failed to preview announcement count:", error);
+        } finally {
+            if (seq === previewSeq.current) {
+                setPreviewLoading(false);
+            }
+        }
+    }
+
     useEffect(() => {
         if (preset === "custom" && (!customFrom || !customTo || customFrom > customTo)) {
             return;
@@ -143,33 +206,7 @@ export default function DetectionTriggerControls({
         const seq = ++previewSeq.current;
 
         const timer = setTimeout(
-            async () => {
-                setPreviewLoading(true);
-
-                try {
-                    const response = await fetch("/api/ai/analyze-announcements", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ dryRun: true, ...(range ?? {}) }),
-                    });
-
-                    const data = await response.json();
-
-                    if (seq === previewSeq.current && data.success) {
-                        setPreviewCount(data.announcementCount);
-                        setAlreadyAnalyzedCount(data.alreadyAnalyzedCount ?? 0);
-                        setPreviewAnnouncements(data.preview ?? []);
-                        setDeselectedIds(new Set());
-                        setSelectionTouched(false);
-                    }
-                } catch (error) {
-                    console.error("❌ Failed to preview announcement count:", error);
-                } finally {
-                    if (seq === previewSeq.current) {
-                        setPreviewLoading(false);
-                    }
-                }
-            },
+            () => void loadPreview(range, seq),
             preset === "custom" ? 400 : 0
         );
 
@@ -177,7 +214,25 @@ export default function DetectionTriggerControls({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [preset, customFrom, customTo]);
 
+    // After a run the list/count above is stale (those announcements are now
+    // analyzed), and the quota has moved.
+    function refreshPreview() {
+        if (preset === "custom" && (!customFrom || !customTo || customFrom > customTo)) {
+            return;
+        }
+
+        void loadPreview(currentRange(), ++previewSeq.current);
+    }
+
     function toggleAnnouncement(id: string) {
+        // Can't tick past the per-check cap.
+        if (
+            deselectedIds.has(id) &&
+            previewAnnouncements.length - deselectedIds.size >= MAX_ANNOUNCEMENTS_PER_CHECK
+        ) {
+            return;
+        }
+
         setSelectionTouched(true);
 
         setDeselectedIds((current) => {
@@ -195,40 +250,76 @@ export default function DetectionTriggerControls({
 
     const selectedCount = previewAnnouncements.length - deselectedIds.size;
 
-    async function runDetectionPass() {
+    async function runDetectionPass(mode: "check" | "regenerate" | "resume" = "check") {
+        const range = currentRange();
+
+        let body: Record<string, unknown>;
+
+        if (mode === "resume") {
+            // Same selection/range as the paused run, under its runId so the
+            // server continues it without charging another check.
+            body = { ...lastBodyRef.current, resumeRunId: runIdRef.current };
+            delete body.runId;
+            delete body.regenerate;
+        } else {
+            runIdRef.current = newRunId();
+
+            // A regenerate re-runs everything in the range, so any
+            // hand-picked subset of the *new* announcements doesn't apply.
+            const scope =
+                mode === "check" && selectionTouched
+                    ? {
+                          selectedAnnouncementIds: previewAnnouncements
+                              .filter((a) => !deselectedIds.has(a.id))
+                              .map((a) => a.id),
+                      }
+                    : range ?? {};
+
+            body = {
+                ...scope,
+                runId: runIdRef.current,
+                ...(mode === "regenerate" ? { regenerate: true } : {}),
+            };
+
+            lastBodyRef.current = body;
+        }
+
         setLoading(true);
         setStarted(true);
-        setEmptyAnnouncements([]);
-        setNewCandidateCount(0);
-        setProgress(null);
+        setPaused(false);
+        setPausing(false);
         setStreamIncomplete(false);
         setRateLimitError(null);
 
-        const range = currentRange();
-
-        const body = selectionTouched
-            ? {
-                  selectedAnnouncementIds: previewAnnouncements
-                      .filter((a) => !deselectedIds.has(a.id))
-                      .map((a) => a.id),
-              }
-            : range ?? {};
+        if (mode !== "resume") {
+            setEmptyAnnouncements([]);
+            setNewCandidateCount(0);
+            setProgress(null);
+        }
 
         let mascotFired = false;
         let receivedDone = false;
+        let receivedPaused = false;
+
+        const controller = new AbortController();
+        abortRef.current = controller;
 
         try {
             const response = await fetch("/api/ai/analyze-announcements", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(body),
+                signal: controller.signal,
             });
 
             if (response.status === 429) {
                 const data = await response.json().catch(() => null);
-                setRateLimitError(
-                    data?.error ?? "You've used your 2 checks for this week."
-                );
+
+                if (data?.quota) {
+                    setQuota(data.quota);
+                }
+
+                setRateLimitError(data?.error ?? "You're out of announcement checks.");
                 return;
             }
 
@@ -259,8 +350,18 @@ export default function DetectionTriggerControls({
 
                     const frame = JSON.parse(line);
 
+                    if (frame.quota) {
+                        setQuota(frame.quota);
+                    }
+
                     if (frame.type === "start") {
-                        setProgress({ completed: 0, total: frame.totalAnnouncements });
+                        setProgress((current) => ({
+                            completed: mode === "resume" ? current?.completed ?? 0 : 0,
+                            total:
+                                mode === "resume"
+                                    ? (current?.completed ?? 0) + frame.totalAnnouncements
+                                    : frame.totalAnnouncements,
+                        }));
                     } else if (frame.type === "batch") {
                         const batchResults = frame.results as AnnouncementResult[];
 
@@ -276,15 +377,26 @@ export default function DetectionTriggerControls({
                             ...batchResults.filter((result) => result.tasks.length === 0),
                         ]);
 
-                        setProgress({
-                            completed: frame.completedAnnouncements,
-                            total: frame.totalAnnouncements,
+                        // A resume's frame counts restart at 0; carry the
+                        // paused run's finished count forward.
+                        setProgress((current) => {
+                            const base =
+                                mode === "resume" && current
+                                    ? current.total - frame.totalAnnouncements
+                                    : 0;
+
+                            return {
+                                completed: base + frame.completedAnnouncements,
+                                total: base + frame.totalAnnouncements,
+                            };
                         });
 
                         if (!mascotFired && newTasks.length > 0) {
                             mascotFired = true;
                             say("announcementFound");
                         }
+                    } else if (frame.type === "paused") {
+                        receivedPaused = true;
                     } else if (frame.type === "done") {
                         receivedDone = true;
                     } else if (frame.type === "error") {
@@ -297,34 +409,83 @@ export default function DetectionTriggerControls({
                 }
             }
 
-            if (!receivedDone) {
+            if (receivedPaused) {
+                setPaused(true);
+            } else if (!receivedDone) {
                 setStreamIncomplete(true);
             }
         } catch (error) {
-            console.error("❌ Failed to analyze announcements:", error);
-            setStreamIncomplete(true);
+            if (!controller.signal.aborted) {
+                console.error("❌ Failed to analyze announcements:", error);
+                setStreamIncomplete(true);
+            }
         } finally {
             setLoading(false);
+            setPausing(false);
             onRunFinished?.();
+            refreshPreview();
         }
     }
 
-    const finished = started && !loading && !streamIncomplete && !rateLimitError;
+    async function pauseRun() {
+        if (!runIdRef.current || pausing) {
+            return;
+        }
+
+        setPausing(true);
+
+        try {
+            await fetch("/api/ai/analyze-announcements/pause", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ runId: runIdRef.current }),
+            });
+        } catch (error) {
+            console.error("❌ Failed to pause announcement analysis:", error);
+            setPausing(false);
+        }
+    }
+
+    function stopPausedRun() {
+        setPaused(false);
+        setStarted(false);
+        setProgress(null);
+    }
+
+    const finished =
+        started && !loading && !paused && !streamIncomplete && !rateLimitError;
 
     const rangeIsInvalid =
         preset === "custom" && (!customFrom || !customTo || customFrom > customTo);
 
+    const outOfChecks = quota !== null && quota.remaining <= 0;
+
+    const nothingNew = previewCount === 0;
+
     const canAnalyze =
         !rangeIsInvalid &&
+        !outOfChecks &&
         previewCount !== 0 &&
         !(selectionTouched && selectedCount === 0);
 
+    const canRegenerate = !rangeIsInvalid && !outOfChecks && inRangeCount > 0;
+
+    // Only offered when there's something already checked to redo — with
+    // everything new, the main button already covers the whole range.
+    const showRegenerate = !rangeIsInvalid && inRangeCount > 0 && alreadyAnalyzedCount > 0;
+
     return (
         <div>
-            {!loading && (
+            {!loading && !paused && (
                 <div className="theme-surface rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5">
                     <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
                         Announcements to check
+                    </p>
+
+                    <QuotaBanner quota={quota} />
+
+                    <p className="mb-3 text-xs text-[var(--muted)]">
+                        Works best on English announcements — suggestions from other languages may be less accurate, so double-check them.
                     </p>
 
                     <div className="mb-3 flex flex-wrap gap-1 rounded-xl bg-[var(--border)]/30 p-1">
@@ -377,6 +538,12 @@ export default function DetectionTriggerControls({
                         </div>
                     )}
 
+                    {previewAnnouncements.length > MAX_ANNOUNCEMENTS_PER_CHECK && (
+                        <p className="mb-2 text-xs text-amber-400">
+                            {previewAnnouncements.length} new announcements in this range, but a check covers at most {MAX_ANNOUNCEMENTS_PER_CHECK} (newest first). {selectedCount} of {MAX_ANNOUNCEMENTS_PER_CHECK} selected — pick different ones below or narrow the range. The rest stay waiting for your next check.
+                        </p>
+                    )}
+
                     {previewAnnouncements.length > 0 && (
                         <div className="mb-3 max-h-64 overflow-y-auto rounded-xl border border-[var(--border)]">
                             {previewAnnouncements.map((announcement) => (
@@ -387,6 +554,10 @@ export default function DetectionTriggerControls({
                                     <input
                                         type="checkbox"
                                         checked={!deselectedIds.has(announcement.id)}
+                                        disabled={
+                                            deselectedIds.has(announcement.id) &&
+                                            selectedCount >= MAX_ANNOUNCEMENTS_PER_CHECK
+                                        }
                                         onChange={() => toggleAnnouncement(announcement.id)}
                                         className="mt-1"
                                     />
@@ -407,52 +578,100 @@ export default function DetectionTriggerControls({
                         </div>
                     )}
 
-                    {previewCount !== null && previewCount > LARGE_RANGE_WARNING_THRESHOLD && (
-                        <p className="mb-3 text-xs text-amber-400">
-                            That&apos;s a lot to review at once and will use more AI calls — consider narrowing the range.
-                        </p>
-                    )}
-
                     {rateLimitError && (
                         <p className="mb-3 text-xs text-[var(--status-overdue-text)]">
                             {rateLimitError}
                         </p>
                     )}
 
-                    <button
-                        onClick={runDetectionPass}
-                        disabled={!canAnalyze}
-                        className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                        {previewLoading && previewCount === null && <Spinner className="h-4 w-4" />}
+                    {nothingNew && !rangeIsInvalid && (
+                        <div className="mb-3 rounded-xl border border-[var(--border)] bg-[var(--border)]/20 p-3">
+                            <p className="text-sm font-semibold">
+                                {inRangeCount > 0
+                                    ? "No new announcements in this range"
+                                    : "No announcements in this range"}
+                            </p>
 
-                        {rangeIsInvalid
-                            ? "🤖 Check for new announcements"
-                            : selectionTouched && selectedCount === 0
-                            ? "Select at least one announcement"
-                            : previewCount === null
-                            ? "🤖 Check for new announcements"
-                            : previewCount === 0
-                            ? alreadyAnalyzedCount > 0
-                                ? `No new announcements (${alreadyAnalyzedCount} already checked)`
-                                : "No announcements in this range"
-                            : selectionTouched
-                            ? `🤖 Check ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
-                            : `🤖 Check ${previewCount} announcement${previewCount === 1 ? "" : "s"}`}
-                    </button>
+                            {inRangeCount > 0 && (
+                                <p className="mt-1 text-xs text-[var(--muted)]">
+                                    All {inRangeCount} announcement{inRangeCount === 1 ? " has" : "s have"} already been checked. You can re-check them if you want fresh results.
+                                </p>
+                            )}
+                        </div>
+                    )}
+
+                    {!nothingNew && (
+                        <button
+                            onClick={() => void runDetectionPass("check")}
+                            disabled={!canAnalyze}
+                            className="flex items-center gap-2 rounded-xl bg-[var(--accent)] px-5 py-3 font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {previewLoading && previewCount === null && <Spinner className="h-4 w-4" />}
+
+                            {outOfChecks
+                                ? "Out of checks"
+                                : rangeIsInvalid
+                                ? "🤖 Check for new announcements"
+                                : selectionTouched && selectedCount === 0
+                                ? "Select at least one announcement"
+                                : previewCount === null
+                                ? "🤖 Check for new announcements"
+                                : selectionTouched
+                                ? `🤖 Check ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
+                                : previewCount > MAX_ANNOUNCEMENTS_PER_CHECK
+                                ? `🤖 Check the newest ${MAX_ANNOUNCEMENTS_PER_CHECK} of ${previewCount} new announcements`
+                                : `🤖 Check ${previewCount} new announcement${previewCount === 1 ? "" : "s"}`}
+                        </button>
+                    )}
+
+                    {showRegenerate && (
+                        <button
+                            onClick={() => void runDetectionPass("regenerate")}
+                            disabled={!canRegenerate}
+                            className={`flex items-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 ${
+                                nothingNew ? "" : "mt-2"
+                            }`}
+                        >
+                            🔄{" "}
+                            {inRangeCount > MAX_ANNOUNCEMENTS_PER_CHECK
+                                ? `Re-check the newest ${MAX_ANNOUNCEMENTS_PER_CHECK} of ${inRangeCount} in this range`
+                                : `Re-check all ${inRangeCount} in this range`}
+                        </button>
+                    )}
+
+                    {(!nothingNew || showRegenerate) && !outOfChecks && (
+                        <p className="mt-2 text-xs text-[var(--muted)]">
+                            Each check uses 1 of your checks. You can pause it and resume for free.
+                        </p>
+                    )}
                 </div>
             )}
 
             {loading && (
                 <div className="theme-surface mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel)] p-4">
-                    <p className="flex items-center gap-2 font-semibold">
-                        <Spinner className="h-4 w-4" />
-                        🤖 Checking announcements
-                        {progress ? `... ${progress.completed} of ${progress.total}` : "..."}
-                    </p>
+                    <QuotaBanner quota={quota} />
+
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="flex items-center gap-2 font-semibold">
+                            <Spinner className="h-4 w-4" />
+                            {pausing ? "Pausing" : "🤖 Checking announcements"}
+                            {progress ? `... ${progress.completed} of ${progress.total}` : "..."}
+                        </p>
+
+                        <button
+                            type="button"
+                            onClick={() => void pauseRun()}
+                            disabled={pausing || !progress}
+                            className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            ⏸ Pause
+                        </button>
+                    </div>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                        New suggestions appear in &quot;AI found these&quot; as each batch finishes.
+                        {pausing
+                            ? "Finishing the announcements already in progress, then stopping."
+                            : "New suggestions appear in \"AI found these\" as each batch finishes."}
                     </p>
 
                     {progress && (
@@ -468,6 +687,42 @@ export default function DetectionTriggerControls({
                 </div>
             )}
 
+            {paused && !loading && (
+                <div className="theme-surface mt-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
+                    <QuotaBanner quota={quota} />
+
+                    <p className="font-semibold">
+                        ⏸ Paused
+                        {progress ? ` — ${progress.completed} of ${progress.total} checked` : ""}
+                    </p>
+
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                        {newCandidateCount > 0
+                            ? `${newCandidateCount} suggestion${newCandidateCount === 1 ? "" : "s"} found so far are listed in "AI found these". `
+                            : ""}
+                        Resuming picks up where it stopped and doesn&apos;t use another check.
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                            type="button"
+                            onClick={() => void runDetectionPass("resume")}
+                            className="rounded-xl bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]"
+                        >
+                            ▶ Resume
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={stopPausedRun}
+                            className="rounded-xl border border-[var(--border)] px-5 py-2.5 text-sm font-semibold transition hover:border-[var(--accent)]"
+                        >
+                            Stop
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {started && !loading && streamIncomplete && (
                 <div className="theme-surface mt-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="font-semibold text-[var(--status-overdue-text)]">
@@ -475,8 +730,16 @@ export default function DetectionTriggerControls({
                     </p>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
-                        The connection dropped before every announcement could be checked. Suggestions already found are safe — try checking again to cover the rest.
+                        The connection dropped before every announcement could be checked. Suggestions already found are safe — resume to cover the rest without using another check.
                     </p>
+
+                    <button
+                        type="button"
+                        onClick={() => void runDetectionPass("resume")}
+                        className="mt-3 rounded-xl bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]"
+                    >
+                        ▶ Resume
+                    </button>
                 </div>
             )}
 
@@ -511,6 +774,66 @@ export default function DetectionTriggerControls({
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+function QuotaBanner({ quota }: { quota: DetectionQuota | null }) {
+    if (!quota) {
+        return null;
+    }
+
+    const outOfChecks = quota.remaining <= 0;
+
+    return (
+        <div
+            className={`mb-3 rounded-xl border p-3 ${
+                outOfChecks
+                    ? "border-[var(--status-overdue-text)]/40"
+                    : "border-[var(--border)] bg-[var(--border)]/20"
+            }`}
+        >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold">
+                    Announcement checks this week:{" "}
+                    <span className={outOfChecks ? "text-[var(--status-overdue-text)]" : ""}>
+                        {quota.weeklyRemaining} of {quota.limit} left
+                    </span>
+                    {quota.credits > 0 && (
+                        <span className="text-[var(--accent)]">
+                            {" "}
+                            + {quota.credits} bonus
+                        </span>
+                    )}
+                </p>
+
+                <div className="flex gap-1" aria-hidden="true">
+                    {Array.from({ length: quota.limit }, (_, i) => (
+                        <span
+                            key={i}
+                            className={`h-2.5 w-2.5 rounded-full border ${
+                                i < quota.weeklyRemaining
+                                    ? "border-[var(--accent)] bg-[var(--accent)]"
+                                    : "border-[var(--border)]"
+                            }`}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            <p className="mt-1 text-xs font-semibold">
+                Each check analyzes up to {MAX_ANNOUNCEMENTS_PER_CHECK} announcements.
+            </p>
+
+            <p className="mt-1 text-xs text-[var(--muted)]">
+                {outOfChecks
+                    ? quota.resetsAt
+                        ? `You're out of checks. The next one frees up ${formatResetDate(quota.resetsAt)}.`
+                        : "You're out of checks."
+                    : quota.resetsAt
+                    ? `Your next check frees up ${formatResetDate(quota.resetsAt)}.`
+                    : "Checks refill on a rolling 7-day basis."}
+            </p>
         </div>
     );
 }

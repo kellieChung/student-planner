@@ -12,7 +12,13 @@ import { Announcement } from "@/types/announcement";
 import { ProposedTask } from "@/types/proposedTask";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getStartOfWeek, parseLocalDate } from "@/lib/utils";
-import { checkDetectionPassRateLimit } from "@/lib/aiRateLimit";
+import {
+    consumeDetectionCheck,
+    findRunAnnouncementIds,
+    getDetectionQuota,
+    isRunPaused,
+} from "@/lib/aiRateLimit";
+import { MAX_ANNOUNCEMENTS_PER_CHECK } from "@/lib/analysisLimits";
 import { logAiTaskEvent } from "@/lib/aiTaskEvents";
 import { classifyAutoAction } from "@/lib/rundownAutoAccept";
 
@@ -259,6 +265,14 @@ export async function POST(
         let dryRun = false;
         let rangeFrom: string | null = null;
         let rangeTo: string | null = null;
+        let regenerate = false;
+        let runId: string | null = null;
+        let resumeRunId: string | null = null;
+
+        // Anything the pause route's isRunPaused() compares against — a
+        // client-generated id, so bounded rather than trusted.
+        const readRunId = (value: unknown): string | null =>
+            typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
 
         try {
             const body =
@@ -283,6 +297,13 @@ export async function POST(
                 dryRun = true;
             }
 
+            if (body?.regenerate === true) {
+                regenerate = true;
+            }
+
+            runId = readRunId(body?.runId);
+            resumeRunId = readRunId(body?.resumeRunId);
+
             if (
                 typeof body?.from === "string" &&
                 typeof body?.to === "string"
@@ -294,8 +315,28 @@ export async function POST(
             // No body = automatic mode, default range.
         }
 
+        // A resumed run continues exactly what the original check was
+        // charged for, whatever range/selection this request carries — so
+        // pausing and resuming can't be used to analyze past the per-check
+        // cap.
+        const resumedIds = resumeRunId
+            ? await findRunAnnouncementIds(user.id, resumeRunId)
+            : null;
+
+        if (resumedIds) {
+            selectedAnnouncementIds = resumedIds;
+        }
+
         const isCustomSelection =
             selectedAnnouncementIds !== null;
+
+        // A resume continues a paused run, so it must go through the normal
+        // already-analyzed skip — regenerating again would redo everything
+        // the paused run already finished.
+        const forceReanalyze = regenerate && resumeRunId === null;
+
+        // A pause aimed at an earlier request must not stop this one.
+        const requestStartedAt = new Date();
 
         // --------------------------------------------------
         // 4. Get Canvas data
@@ -447,42 +488,67 @@ export async function POST(
         // said No to.
         // --------------------------------------------------
 
-        const legacyReviewed = new Set(
-            (
-                await prisma.announcementSuggestionReview.findMany({
-                    where: {
-                        userId: user.id,
-                        sourceAnnouncementId: {
-                            in: announcements
-                                .filter((a) => analysisHashes.get(a.id)?.stored == null)
-                                .map((a) => a.id),
-                        },
-                    },
-                    select: { sourceAnnouncementId: true },
-                    distinct: ["sourceAnnouncementId"],
-                })
-            ).map((review) => review.sourceAnnouncementId)
-        );
-
         const backfillIds: string[] = [];
         const selectedCount = announcements.length;
 
-        announcements = announcements.filter((announcement) => {
-            const hashes = analysisHashes.get(announcement.id);
+        // Regenerate deliberately re-runs announcements that were already
+        // analyzed (and skips the legacy backfill, which would mark them
+        // analyzed without ever checking them).
+        if (!forceReanalyze) {
+            const legacyReviewed = new Set(
+                (
+                    await prisma.announcementSuggestionReview.findMany({
+                        where: {
+                            userId: user.id,
+                            sourceAnnouncementId: {
+                                in: announcements
+                                    .filter((a) => analysisHashes.get(a.id)?.stored == null)
+                                    .map((a) => a.id),
+                            },
+                        },
+                        select: { sourceAnnouncementId: true },
+                        distinct: ["sourceAnnouncementId"],
+                    })
+                ).map((review) => review.sourceAnnouncementId)
+            );
 
-            if (hashes?.stored === hashes?.current) {
-                return false;
-            }
+            announcements = announcements.filter((announcement) => {
+                const hashes = analysisHashes.get(announcement.id);
 
-            if (hashes?.stored == null && legacyReviewed.has(announcement.id)) {
-                backfillIds.push(announcement.id);
-                return false;
-            }
+                if (hashes?.stored === hashes?.current) {
+                    return false;
+                }
 
-            return true;
-        });
+                if (hashes?.stored == null && legacyReviewed.has(announcement.id)) {
+                    backfillIds.push(announcement.id);
+                    return false;
+                }
+
+                return true;
+            });
+        }
 
         const alreadyAnalyzedCount = selectedCount - announcements.length;
+
+        // Per-check cap (a cost guard, see lib/analysisLimits.ts). An
+        // explicit selection over the cap is a client bug/abuse → 400; an
+        // automatic range just takes the newest announcements (already
+        // sorted newest-first above) and leaves the rest for a later check.
+        const eligibleCount = announcements.length;
+
+        if (!dryRun && isCustomSelection && eligibleCount > MAX_ANNOUNCEMENTS_PER_CHECK) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: `A check can analyze at most ${MAX_ANNOUNCEMENTS_PER_CHECK} announcements — select fewer.`,
+                },
+                { status: 400 }
+            );
+        }
+
+        if (!dryRun) {
+            announcements = announcements.slice(0, MAX_ANNOUNCEMENTS_PER_CHECK);
+        }
 
         async function markAnalyzed(announcementIds: string[]) {
             await Promise.all(
@@ -513,8 +579,13 @@ export async function POST(
                 dryRun: true,
 
                 announcementCount: announcements.length,
+                maxPerCheck: MAX_ANNOUNCEMENTS_PER_CHECK,
                 alreadyAnalyzedCount,
+                // Everything in the range, analyzed or not — what a
+                // regenerate would re-run.
+                inRangeCount: selectedCount,
                 totalAnnouncementCount: allAnnouncements.length,
+                quota: await getDetectionQuota(userId),
 
                 filtering: {
                     mode: isCustomSelection ? "custom" : "automatic",
@@ -541,49 +612,46 @@ export async function POST(
 
         // --------------------------------------------------
         // 7c. Rate limit — a real (non-dry-run) run is a real Anthropic/
-        // Ollama cost, capped at 2/week per user (see AutoTaskCreation.md)
-        // except for DEV_ACCOUNT_EMAILS. Placed after the dry-run
-        // short-circuit above so a date-range preview never consumes or is
-        // blocked by the weekly quota.
+        // Ollama cost, capped at 2 checks/week per user (see
+        // AutoTaskCreation.md) plus any bonus credits granted from the dev
+        // dashboard. Placed after the dry-run short-circuit above so a
+        // date-range preview never consumes or is blocked by the quota.
         // --------------------------------------------------
 
-        // Nothing new to analyze means no model call at all, so it
-        // shouldn't spend one of the user's weekly checks either.
+        // Nothing to analyze means no model call at all, so it shouldn't
+        // spend a check either. A resumed run is free (see
+        // consumeDetectionCheck). The charge is logged before the streaming
+        // Response is returned below, so an attempt counts even if the
+        // client disconnects mid-stream (cost control is the intent).
         const hasWork = announcements.length > 0;
 
-        const rateLimit = hasWork
-            ? await checkDetectionPassRateLimit(user.id, session.user.email)
-            : { allowed: true, resetsAt: null };
+        const consumed = hasWork
+            ? await consumeDetectionCheck(userId, {
+                  runId: runId ?? undefined,
+                  resumeRunId: resumeRunId ?? undefined,
+                  data: {
+                      mode: isCustomSelection ? "custom" : "automatic",
+                      rangeFrom,
+                      rangeTo,
+                      regenerate: forceReanalyze,
+                      announcementIds: announcements.map((a) => a.id),
+                      eligibleCount,
+                  },
+              })
+            : null;
 
-        if (!rateLimit.allowed) {
+        const quota = consumed?.quota ?? (await getDetectionQuota(userId));
+
+        if (consumed && !consumed.allowed) {
             return NextResponse.json(
                 {
                     success: false,
-                    error: rateLimit.resetsAt
-                        ? `You've used your 2 checks for this week. Resets ${new Date(rateLimit.resetsAt).toLocaleDateString()}.`
-                        : "You've used your 2 checks for this week.",
-                    resetsAt: rateLimit.resetsAt,
+                    error: "You're out of announcement checks.",
+                    resetsAt: quota.resetsAt,
+                    quota,
                 },
                 { status: 429 }
             );
-        }
-
-        // Logged before the streaming Response is returned below, so an
-        // attempt counts against the weekly limit even if the client
-        // disconnects mid-stream (cost control is the intent) — response
-        // headers for the stream aren't committed yet at this point.
-        try {
-            if (hasWork) {
-                await logAiTaskEvent(user.id, "detection_pass_triggered", {
-                    data: {
-                        mode: isCustomSelection ? "custom" : "automatic",
-                        rangeFrom,
-                        rangeTo,
-                    },
-                });
-            }
-        } catch (error) {
-            console.error("❌ Failed to log detection pass trigger:", error);
         }
 
         const plannerSettings = await prisma.plannerSettings.findUnique({
@@ -835,12 +903,43 @@ export async function POST(
 
         const encoder = new TextEncoder();
 
+        // Set when the client disconnects. In-flight batches still finish
+        // and persist (the spend is already committed), but no new ones start.
+        let cancelled = false;
+        let paused = false;
+
+        const controlRunId = runId ?? resumeRunId;
+
+        // Checked before each batch starts (see mapWithConcurrency). Pause is
+        // cooperative: the client POSTs to .../pause, which logs an event this
+        // reads, so in-flight batches finish and stream their results instead
+        // of being cut off mid-call.
+        async function shouldStopLaunching(): Promise<boolean> {
+            if (cancelled || paused) {
+                return true;
+            }
+
+            if (controlRunId) {
+                paused = await isRunPaused(userId, controlRunId, requestStartedAt);
+            }
+
+            return paused;
+        }
+
         const stream = new ReadableStream({
             async start(controller) {
                 function send(frame: Record<string, unknown>) {
-                    controller.enqueue(
-                        encoder.encode(JSON.stringify(frame) + "\n")
-                    );
+                    if (cancelled) {
+                        return;
+                    }
+
+                    try {
+                        controller.enqueue(
+                            encoder.encode(JSON.stringify(frame) + "\n")
+                        );
+                    } catch {
+                        cancelled = true;
+                    }
                 }
 
                 try {
@@ -848,6 +947,7 @@ export async function POST(
                         type: "start",
                         totalAnnouncements: announcements.length,
                         totalBatches: announcementBatches.length,
+                        quota,
                     });
 
                     let completedAnnouncements = 0;
@@ -990,6 +1090,27 @@ export async function POST(
                                     analyzedIds.push(announcement.id);
                                 }
 
+                                // A re-run replaces the announcement's
+                                // pending candidates: one the model no longer
+                                // extracts (or now words differently, giving
+                                // it a new suggestionKey) would otherwise sit
+                                // in the Rundown next to its replacement.
+                                // Decided rows are never touched.
+                                if (analysisByAnnouncement[i].ok) {
+                                    await prisma.announcementSuggestionReview.deleteMany({
+                                        where: {
+                                            userId,
+                                            sourceAnnouncementId: announcement.id,
+                                            status: "pending",
+                                            suggestionKey: {
+                                                notIn: analysisByAnnouncement[i].tasks.map(
+                                                    (task) => task.suggestionKey
+                                                ),
+                                            },
+                                        },
+                                    });
+                                }
+
                                 const visibleTasks = await finalizeCandidates(
                                     announcement.id,
                                     tasksWithDuplicates
@@ -1026,13 +1147,28 @@ export async function POST(
                                 completedAnnouncements,
                                 totalAnnouncements: announcements.length,
                             });
-                        }
+                        },
+                        shouldStopLaunching
                     );
+
+                    // A pause requested after the last batch started has
+                    // nothing left to pause — that's just a finished run.
+                    if (paused && completedAnnouncements < announcements.length) {
+                        send({
+                            type: "paused",
+                            completedAnnouncements,
+                            totalAnnouncements: announcements.length,
+                            quota,
+                        });
+
+                        return;
+                    }
 
                     send({
                         type: "done",
                         announcementCount: announcements.length,
                         totalAnnouncementCount: allAnnouncements.length,
+                        quota,
                         filtering: {
                             mode: isCustomSelection ? "custom" : "automatic",
                             bufferDays: ANNOUNCEMENT_BUFFER_DAYS,
@@ -1058,8 +1194,16 @@ export async function POST(
                         message: "Failed to analyze announcements.",
                     });
                 } finally {
-                    controller.close();
+                    try {
+                        controller.close();
+                    } catch {
+                        // Already closed/cancelled by the client.
+                    }
                 }
+            },
+
+            cancel() {
+                cancelled = true;
             },
         });
 

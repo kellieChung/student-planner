@@ -77,6 +77,8 @@ type WeeklyPlannerProps = {
     assignments: Assignment[];
     userName?: string | null;
     userEmail?: string | null;
+    // Shows the dev-dashboard link in the settings popover.
+    isDev?: boolean;
     // Computed once, server-side (app/page.tsx), from PlannerSettings +
     // pending/maybe AnnouncementSuggestionReview counts — cheap enough to
     // compute on every page load without a client round trip before first
@@ -132,7 +134,7 @@ function toCustomizationPatchBody(updates: TaskCustomizationState) {
     };
 }
 
-export default function WeeklyPlannerView({ assignments, userName, userEmail, initialRundown }: WeeklyPlannerProps) {
+export default function WeeklyPlannerView({ assignments, userName, userEmail, isDev, initialRundown }: WeeklyPlannerProps) {
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -674,26 +676,35 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
     // Deliberately does NOT trigger the AI detection pass itself — that
     // only ever runs from DetectionTriggerControls' explicit button (see
     // app/api/ai/analyze-announcements/route.ts's rate limit) — this just
-    // reads whatever has already been persisted.
+    // reads whatever has already been persisted. Also re-run after every
+    // detection run/pause: a paused run's in-flight batches persist
+    // server-side after the client stopped listening, and a re-run replaces
+    // or deletes stale pending rows the stream never mentions.
+    async function reloadRundownCandidates() {
+        try {
+            const response = await fetch("/api/rundown-candidates");
+            if (!response.ok) return;
+
+            const data = await response.json() as {
+                pending?: PersistedCandidate[];
+                maybe?: PersistedCandidate[];
+                addedFromCanvas?: AddedFromCanvasItem[];
+            };
+
+            setPendingCandidates(data.pending ?? []);
+            setMaybeCandidates(data.maybe ?? []);
+            setAddedFromCanvas(data.addedFromCanvas ?? []);
+        } catch (error) {
+            console.error("Could not load rundown candidates", error);
+        }
+    }
+
     useEffect(() => {
         (async () => {
-            try {
-                const response = await fetch("/api/rundown-candidates");
-                if (!response.ok) return;
-
-                const data = await response.json() as {
-                    pending?: PersistedCandidate[];
-                    maybe?: PersistedCandidate[];
-                    addedFromCanvas?: AddedFromCanvasItem[];
-                };
-
-                setPendingCandidates(data.pending ?? []);
-                setMaybeCandidates(data.maybe ?? []);
-                setAddedFromCanvas(data.addedFromCanvas ?? []);
-            } catch (error) {
-                console.error("Could not load rundown candidates", error);
-            }
+            await reloadRundownCandidates();
         })();
+        // Mount-only, like the inline fetch this replaced.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Hoisted out of the mount effect above so a recurring-series change
@@ -1759,8 +1770,19 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
         ]);
     }
 
+    // A candidate already in the list is replaced, not skipped: a re-run
+    // carries a fresh duplicate-check verdict, and keeping the old snapshot
+    // would leave a stale "unavailable" on screen.
     function handleNewCandidates(newTasks: ProposedTask[]) {
         setPendingCandidates((current) => {
+            const fresh = new Map(newTasks.map((task) => [task.suggestionKey, task]));
+
+            const updated = current.map((existing) => {
+                const replacement = fresh.get(existing.suggestionKey);
+
+                return replacement ? { ...existing, ...replacement } : existing;
+            });
+
             const existingKeys = new Set(current.map((c) => c.suggestionKey));
             const additions = newTasks
                 .filter((task) => !existingKeys.has(task.suggestionKey))
@@ -1770,8 +1792,13 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                     firstSeenAt: new Date().toISOString(),
                 }));
 
-            return [...current, ...additions];
+            return [...updated, ...additions];
         });
+    }
+
+    function handleDetectionRunFinished() {
+        mergeNewCustomTasks();
+        void reloadRundownCandidates();
     }
 
     function handleCloseRundown() {
@@ -2305,6 +2332,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
             onManageRecurring={() => setIsRecurringPanelOpen(true)}
             userName={userName}
             userEmail={userEmail}
+            isDev={isDev}
             onOpenRundown={() => {
                 // Already-open-but-minimised needs a restore, not just state.
                 setShowRundown(true);
@@ -2327,7 +2355,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                 onMaybe={handleRundownMaybe}
                 onRemoveCanvasItem={handleRemoveCanvasItem}
                 onNewCandidates={handleNewCandidates}
-                onRunFinished={mergeNewCustomTasks}
+                onRunFinished={handleDetectionRunFinished}
                 onClose={handleCloseRundown}
             />
         )}

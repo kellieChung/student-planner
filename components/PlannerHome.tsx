@@ -2,6 +2,7 @@ import { getAllAssignments } from "@/lib/canvas";
 import WeeklyPlannerView from "@/components/WeeklyPlannerView";
 import { Assignment } from "@/types/assignment";
 import { prisma } from "@/lib/prisma";
+import { isDevAccountEmail } from "@/lib/devAccounts";
 import LaptopFrame, { type TourMode } from "@/components/world/LaptopFrame";
 import { StarChartState } from "@/lib/starChart";
 
@@ -75,6 +76,7 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
                         assignments={assignments}
                         userName={user.name}
                         userEmail={user.email}
+                        isDev={isDevAccountEmail(user.email)}
                         initialRundown={initialRundown}
                     />
                 </div>

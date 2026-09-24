@@ -8,13 +8,26 @@ export async function mapWithConcurrency<T, R>(
     items: T[],
     limit: number,
     fn: (item: T) => Promise<R>,
-    onItemComplete?: (result: R, item: T, index: number) => void
+    onItemComplete?: (result: R, item: T, index: number) => void,
+    // Checked before each item is started; in-flight items always finish.
+    // Items never started leave holes in the returned array.
+    shouldStop?: () => boolean | Promise<boolean>
 ): Promise<R[]> {
     const results: R[] = new Array(items.length);
     let nextIndex = 0;
 
     async function worker() {
-        while (nextIndex < items.length) {
+        while (true) {
+            if (shouldStop && (await shouldStop())) {
+                return;
+            }
+
+            // Re-checked after the await: another worker may have taken the
+            // last item while this one was waiting on shouldStop.
+            if (nextIndex >= items.length) {
+                return;
+            }
+
             const current = nextIndex++;
             results[current] = await fn(items[current]);
             onItemComplete?.(results[current], items[current], current);

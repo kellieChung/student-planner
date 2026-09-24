@@ -1,29 +1,15 @@
-import { auth } from "@/auth";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { requireDevUser } from "@/app/dev/requireDevUser";
 import { DEFAULT_WORLD_LAYOUT, isValidWorldLayoutData } from "@/lib/worldLayout";
 import { WorldLayoutData } from "@/types/worldLayout";
 import { TownState } from "@/types/townState";
 import MapEditor from "@/components/dev/MapEditor";
 
-// Unlinked dev/test route (same precedent as /dev/gamification,
-// /dev/sprite-check) — lets the World map be visually redesigned against
-// the real account without hand-editing spriteMap.ts/TownMap.tsx per
-// change. Never referenced from the main UI.
+// Launched from the dev dashboard (/dev) — lets the World map be visually
+// redesigned against the real account without hand-editing spriteMap.ts/
+// TownMap.tsx per change. Needs the full viewport, so it isn't a tab.
 export default async function MapEditorPage() {
-    const session = await auth();
-
-    if (!session?.user?.email) {
-        redirect("/login");
-    }
-
-    const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
-    });
-
-    if (!user) {
-        redirect("/login");
-    }
+    const user = await requireDevUser();
 
     const [worldLayoutRow, townStateRow] = await Promise.all([
         prisma.worldLayout.findUnique({ where: { userId: user.id } }),

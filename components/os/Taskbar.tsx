@@ -35,6 +35,7 @@ type Props = {
     onManageRecurring: () => void;
     userName?: string | null;
     userEmail?: string | null;
+    isDev?: boolean;
     onOpenRundown: () => void;
     onOpenStillDeciding: () => void;
     stillDecidingCount: number;
@@ -75,6 +76,7 @@ export default function Taskbar({
     onManageRecurring,
     userName,
     userEmail,
+    isDev,
     onOpenRundown,
     onOpenStillDeciding,
     stillDecidingCount,
@@ -270,6 +272,15 @@ export default function Taskbar({
                             >
                                 Credits
                             </Link>
+                            {isDev && (
+                                <Link
+                                    href="/dev"
+                                    className="mt-2 block text-xs font-semibold underline"
+                                    style={{ color: "var(--muted)" }}
+                                >
+                                    Dev dashboard
+                                </Link>
+                            )}
                         </div>
                     )}
                 </div>
