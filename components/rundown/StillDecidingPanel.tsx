@@ -6,7 +6,7 @@ import RundownCandidateCard from "@/components/rundown/RundownCandidateCard";
 
 // AutoTaskCreation.md's "still deciding" list — where a Maybe'd candidate
 // parks. Deliberately blocking modal chrome (EditTaskModal.tsx's
-// convention), unlike the ambient RundownOverlay: this only opens on an
+// convention), unlike the ambient RundownWindow: this only opens on an
 // intentional click (the Taskbar's "Still deciding" badge), not
 // automatically, so a full-block backdrop is fine here. Not gated by
 // lastRundownViewedAt at all — stays reachable for as long as anything is

@@ -32,7 +32,8 @@ import { useCoursesRemote } from "./os/CoursesRemoteContext";
 import { ProposedTask } from "@/types/proposedTask";
 import { PersistedCandidate, AddedFromCanvasItem } from "@/types/rundown";
 import { savePlannerSettings } from "@/lib/plannerSettings";
-import RundownOverlay from "./rundown/RundownOverlay";
+import RundownWindow from "./rundown/RundownWindow";
+import { useWindowManager } from "./os/WindowManagerContext";
 import StillDecidingPanel from "./rundown/StillDecidingPanel";
 
 function toDateKey(date: Date): string {
@@ -178,6 +179,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
     const [showStillDeciding, setShowStillDeciding] = useState(false);
     const [awardingXp, setAwardingXp] = useState(false);
     const { focusTaskId, setFocusTask, setFocusTaskSummary } = usePomodoroRemote();
+    const { openWindow } = useWindowManager();
     const { coursesVersion } = useCoursesRemote();
     const [procrastinationIndexByType, setProcrastinationIndexByType] = useState<Record<string, number | null>>({});
     const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("weekly");
@@ -1954,7 +1956,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
 
     return (
         <>
-        <div className = "theme-surface planner-shell w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
+        <div className = "theme-surface planner-shell w-full flex-1 bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
             <h1 data-tour="ships-log" className="mb-4 pr-28 text-3xl">Ship&apos;s Log</h1>
 
             {estimatingCount > 0 && (
@@ -1990,9 +1992,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                                 type="button"
                                 onClick={() => setFocusTask(upNext.task.id)}
                                 disabled={focusTaskId === upNext.task.id}
-                                className="rounded-lg border border-amber-500/60 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="rounded-lg border border-[var(--accent)] px-3 py-2 text-sm font-semibold text-[var(--accent)] hover:bg-[var(--accent-soft)] disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {focusTaskId === upNext.task.id ? "🎯 Focused" : "🎯 Focus in Pomodoro"}
+                                {focusTaskId === upNext.task.id ? "Focused" : "Focus on the Watch"}
                             </button>
                             <button
                                 type="button"
@@ -2303,7 +2305,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
             onManageRecurring={() => setIsRecurringPanelOpen(true)}
             userName={userName}
             userEmail={userEmail}
-            onOpenRundown={() => setShowRundown(true)}
+            onOpenRundown={() => {
+                // Already-open-but-minimised needs a restore, not just state.
+                setShowRundown(true);
+                openWindow("rundown");
+            }}
             onOpenStillDeciding={() => setShowStillDeciding(true)}
             stillDecidingCount={maybeCandidates.length}
             autoAcceptAiTasks={autoAcceptAiTasks}
@@ -2311,7 +2317,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
         />
 
         {showRundown && (
-            <RundownOverlay
+            <RundownWindow
                 pendingCandidates={pendingCandidates}
                 addedFromCanvas={addedFromCanvas}
                 courses={courses}

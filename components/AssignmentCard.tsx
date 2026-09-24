@@ -224,7 +224,7 @@ export default function AssignmentCard({
                             onFocus(id);
                         }}
                         className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${isFocused ? "text-indigo-300 opacity-100" : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-300"}`}
-                        title={isFocused ? "Stop focusing on this task" : "Focus on this task in the Pomodoro timer"}
+                        title={isFocused ? "Stop focusing on this task" : "Focus on this task on the Watch"}
                     >
                         🎯
                     </button>

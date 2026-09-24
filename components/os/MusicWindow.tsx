@@ -14,7 +14,7 @@ import { MusicIcon } from "@/components/brand/Icons";
 // the OS/World toggle elsewhere in this app.
 export default function MusicWindow() {
     return (
-        <Window app="music" title="Radio" icon={<MusicIcon size={14} />}>
+        <Window app="music" title="Comms" icon={<MusicIcon size={14} />}>
             <MusicPlayer />
         </Window>
     );

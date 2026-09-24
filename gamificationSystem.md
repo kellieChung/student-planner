@@ -36,6 +36,8 @@ The isekai/comedic mascot concept (Nano) is retired — it was built for the bus
 | The big-picture progress/reward view | Star Chart (or Observation Deck) |
 | Unlockable cosmetic effects/skins | Nebula |
 | The home/dashboard view | True North |
+| The focus/Pomodoro timer | The Watch |
+| The music player | Comms |
 
 ## Onboarding
 

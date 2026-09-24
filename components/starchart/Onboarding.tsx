@@ -126,11 +126,11 @@ export default function Onboarding({ onFinish }: Props) {
                 id: "tools",
                 target: "taskbar-tools",
                 before: onLog,
-                eyebrow: "Focus & Radio",
+                eyebrow: "The Watch & Comms",
                 title: "Tools that float alongside your work.",
                 body: (
                     <p>
-                        A focus timer for work-and-break sessions, and a radio that plays your own YouTube playlists.
+                        <strong>The Watch</strong> is a focus timer for work-and-break sessions, and <strong>Comms</strong> plays your own YouTube playlists.
                         Both open as windows you can drag anywhere, and keep running while you plan.
                     </p>
                 ),

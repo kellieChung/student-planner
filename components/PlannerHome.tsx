@@ -68,9 +68,9 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
     };
 
     return (
-        <main className="h-screen w-screen overflow-hidden p-3 sm:p-4">
+        <main className="h-dvh w-full overflow-hidden">
             <LaptopFrame starChart={starChart} tourMode={tourMode}>
-                <div className="app-header w-full px-4 mx-auto">
+                <div className="app-header mx-auto flex min-h-full w-full flex-col px-4">
                     <WeeklyPlannerView
                         assignments={assignments}
                         userName={user.name}

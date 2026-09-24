@@ -1843,7 +1843,7 @@ export default function MusicPlayer() {
         return (
             <div className="theme-surface flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)]">
                 <Spinner className="h-4 w-4" />
-                Loading Tavern Radio...
+                Loading Comms...
             </div>
         );
     }
@@ -1851,18 +1851,18 @@ export default function MusicPlayer() {
     return (
         <div className="theme-surface @container flex flex-col gap-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4">
             {error && (
-                <div className="rounded-lg border border-red-300 bg-red-50 p-2 text-xs text-red-700">
+                <div className="rounded-lg border border-red-500/40 p-2 text-xs text-red-400">
                     {error}
                 </div>
             )}
 
             <div>
                 <h1 className="text-lg font-bold">
-                    🎶 Tavern Radio
+                    Comms
                 </h1>
 
-                <p className="text-xs text-gray-500">
-                    The bard&apos;s enchanted lute — songs collected from traveling minstrels.
+                <p className="text-xs text-[var(--muted)]">
+                    Music for focused work. Play your own YouTube playlists while you plan.
                 </p>
             </div>
 
@@ -1872,7 +1872,7 @@ export default function MusicPlayer() {
                         No playlists yet
                     </h2>
 
-                    <p className="mt-2 text-sm text-gray-500">
+                    <p className="mt-2 text-sm text-[var(--muted)]">
                         Import a YouTube playlist or
                         create your first playlist.
                     </p>
@@ -1907,7 +1907,7 @@ export default function MusicPlayer() {
                                         }
                                     </h2>
 
-                                    <p className="text-xs text-gray-500">
+                                    <p className="text-xs text-[var(--muted)]">
                                         {
                                             selectedPlaylist
                                                 .tracks
@@ -1931,7 +1931,7 @@ export default function MusicPlayer() {
                                             </h3>
 
                                             {currentTrack && (
-                                                <p className="text-xs text-gray-500">
+                                                <p className="text-xs text-[var(--muted)]">
                                                     Track{" "}
                                                     {currentIndex +
                                                         1}{" "}
@@ -1962,7 +1962,7 @@ export default function MusicPlayer() {
                                                 }
                                             />
 
-                                            <div className="flex justify-between text-xs text-gray-500">
+                                            <div className="flex justify-between text-xs text-[var(--muted)]">
                                                 <span>
                                                     {formatTime(
                                                         currentTime
@@ -2122,7 +2122,7 @@ export default function MusicPlayer() {
                                                 className="flex-1"
                                             />
 
-                                            <span className="w-8 text-right text-xs text-gray-500">
+                                            <span className="w-8 text-right text-xs text-[var(--muted)]">
                                                 {volume}
                                             </span>
                                         </div>
@@ -2139,7 +2139,7 @@ export default function MusicPlayer() {
                                             .tracks
                                             .length ===
                                         0 ? (
-                                            <div className="p-4 text-center text-sm text-gray-500">
+                                            <div className="p-4 text-center text-sm text-[var(--muted)]">
                                                 No tracks yet.
                                             </div>
                                         ) : (
@@ -2247,7 +2247,7 @@ export default function MusicPlayer() {
                                                                                 track.title
                                                                             );
                                                                         }}
-                                                                        className="text-xs text-gray-500"
+                                                                        className="text-xs text-[var(--muted)]"
                                                                     >
                                                                         Edit
                                                                     </button>
@@ -2405,7 +2405,7 @@ export default function MusicPlayer() {
                                                         }
                                                     </span>
 
-                                                    <span className="text-xs text-gray-500">
+                                                    <span className="text-xs text-[var(--muted)]">
                                                         {
                                                             playlist
                                                                 .tracks
@@ -2425,7 +2425,7 @@ export default function MusicPlayer() {
                                                             playlist.name
                                                         );
                                                     }}
-                                                    className="px-2 text-xs text-gray-500"
+                                                    className="px-2 text-xs text-[var(--muted)]"
                                                 >
                                                     Edit
                                                 </button>
@@ -2602,10 +2602,8 @@ export default function MusicPlayer() {
                             Import YouTube Playlist
                         </h2>
 
-                        <p className="mt-1 text-sm text-gray-500">
-                            Add every video from a
-                            YouTube playlist to a
-                            Tavern Radio playlist.
+                        <p className="mt-1 text-sm text-[var(--muted)]">
+                            Add every video from a YouTube playlist to one of your playlists.
                         </p>
 
                         <label className="mt-4 block text-sm font-medium">

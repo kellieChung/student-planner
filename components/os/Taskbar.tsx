@@ -133,19 +133,25 @@ export default function Taskbar({
                 />
                 <div data-tour="taskbar-tools" className="flex items-center gap-1">
                 <TaskbarIconButton
-                    label="Focus"
+                    label="Watch"
                     icon={<TimerIcon />}
                     onClick={() => openWindow("pomodoro")}
                     running={windows.pomodoro.isOpen}
                 />
                 <TaskbarIconButton
-                    label="Radio"
+                    label="Comms"
                     icon={<MusicIcon />}
                     onClick={() => openWindow("music")}
                     running={windows.music.isOpen}
                 />
                 </div>
-                <TaskbarIconButton tourId="taskbar-rundown" label="Rundown" icon={<ListIcon />} onClick={onOpenRundown} />
+                <TaskbarIconButton
+                    tourId="taskbar-rundown"
+                    label="Rundown"
+                    icon={<ListIcon />}
+                    onClick={onOpenRundown}
+                    running={windows.rundown.isOpen}
+                />
                 {stillDecidingCount > 0 && (
                     <TaskbarIconButton
                         label="Still deciding"

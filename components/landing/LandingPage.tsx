@@ -35,7 +35,7 @@ const ALSO_INSIDE = [
     "A weekly planner you can drag tasks around in",
     "Priority and time estimates for every assignment",
     "Recurring tasks for the things you do every week",
-    "A focus timer and music for when it's time to work",
+    "The Watch, a focus timer, and Comms, music while you work",
 ];
 
 export default function LandingPage() {

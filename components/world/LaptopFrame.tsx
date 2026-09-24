@@ -9,6 +9,7 @@ import { CoursesRemoteProvider } from "@/components/os/CoursesRemoteContext";
 import PomodoroWindow from "@/components/os/PomodoroWindow";
 import MusicWindow from "@/components/os/MusicWindow";
 import CoursesWindow from "@/components/os/CoursesWindow";
+import { FloatingLayerContext } from "@/components/os/FloatingLayerContext";
 import { StarChartProvider, useStarChart } from "@/components/starchart/StarChartContext";
 import StarChartView from "@/components/starchart/StarChartView";
 import Onboarding from "@/components/starchart/Onboarding";
@@ -83,6 +84,7 @@ function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: Tou
     const [devNotice, setDevNotice] = useState<string | null>(null);
     // Bumped on every (re)start so the tour always remounts at step 1.
     const [tourRun, setTourRun] = useState(0);
+    const [floatingLayer, setFloatingLayer] = useState<HTMLDivElement | null>(null);
 
     // A ref, not a setState updater, holds the current view: updaters can be
     // invoked more than once, which would schedule the timers twice.
@@ -138,13 +140,15 @@ function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: Tou
                     <CoursesRemoteProvider>
                         <MascotContext.Provider value={{ say: () => {} }}>
                             <FrameContext.Provider value={{ openStarChart, openShipsLog: openLog, getView, replayOnboarding }}>
-                                {/* The "instrument panel" frame. Transforms are only applied
-                                    while a transition runs — a transform left on this ancestor
-                                    would make every position:fixed modal inside it position
-                                    relative to the frame instead of the viewport. */}
+                            <FloatingLayerContext.Provider value={floatingLayer}>
+                                {/* Full-bleed app surface, sized by <main>'s h-dvh so it always
+                                    matches the visible screen. Transforms are only applied while a
+                                    transition runs — a transform left on this ancestor would make
+                                    every position:fixed modal inside it position relative to the
+                                    frame instead of the viewport. */}
                                 <div
-                                    className={`relative h-full w-full overflow-hidden rounded-[24px] border shadow-2xl ${animationClass}`}
-                                    style={{ borderColor: "var(--border)", background: "var(--app-background)" }}
+                                    className={`relative h-full w-full overflow-hidden ${animationClass}`}
+                                    style={{ background: "var(--app-background)" }}
                                 >
                                     {/* The Ship's Log (and the floating windows) stay mounted while
                                         the Star Chart is showing — unmounting would restart music,
@@ -174,7 +178,7 @@ function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: Tou
                                         {/* Floating windows: a sibling layer so dragged windows stay
                                             put regardless of scroll; pointer-events pass through
                                             except on the windows themselves. */}
-                                        <div className="pointer-events-none absolute inset-0 z-30">
+                                        <div ref={setFloatingLayer} className="pointer-events-none absolute inset-0 z-30">
                                             <PomodoroWindow />
                                             <MusicWindow />
                                             <CoursesWindow />
@@ -216,6 +220,7 @@ function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: Tou
                                         {devNotice && <p className="text-[#b8bdd6]">{devNotice}</p>}
                                     </div>
                                 )}
+                            </FloatingLayerContext.Provider>
                             </FrameContext.Provider>
                         </MascotContext.Provider>
                     </CoursesRemoteProvider>

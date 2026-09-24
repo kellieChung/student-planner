@@ -16,7 +16,7 @@ export default function PomodoroWindow() {
     return (
         <Window
             app="pomodoro"
-            title="Focus Timer"
+            title="The Watch"
             icon={<TimerIcon size={14} />}
             // Unlike Music (unmounting the player already stops audio for
             // free), Pomodoro's countdown would otherwise keep silently

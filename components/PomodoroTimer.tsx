@@ -520,25 +520,25 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
         state.duration === DURATIONS[state.mode];
 
     return (
-        <section className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 p-3 shadow-lg">
+        <section className="w-full rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-3 shadow-lg">
             {/* Header */}
             <div className="mb-3 flex items-center justify-between">
                 <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                        Focus timer
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--muted)]">
+                        The Watch
                     </p>
 
-                    <h2 className="mt-0.5 text-sm font-bold text-slate-100">
+                    <h2 className="mt-0.5 text-sm font-bold text-[var(--foreground)]">
                         {MODE_LABELS[state.mode]}
                     </h2>
                 </div>
 
                 <div className="text-right">
-                    <p className="text-[10px] text-slate-500">
+                    <p className="text-[10px] text-[var(--muted)]">
                         Sessions
                     </p>
 
-                    <p className="text-sm font-bold text-indigo-300">
+                    <p className="text-sm font-bold text-[var(--accent)]">
                         {state.completedSessions} / 4
                     </p>
                 </div>
@@ -546,27 +546,27 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
 
             {/* Focus task */}
             {focusTask ? (
-                <div className="mb-3 rounded-xl border border-indigo-500/50 bg-indigo-950/30 p-2">
+                <div className="mb-3 rounded-xl border border-[var(--accent)]/50 bg-[var(--accent-soft)] p-2">
                     <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300">
-                                🎯 Working on
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)]">
+                                Working on
                             </p>
-                            <p className="truncate text-xs font-semibold text-slate-100">
+                            <p className="truncate text-xs font-semibold text-[var(--foreground)]">
                                 {focusTask.name}
                             </p>
-                            <p className="text-[11px] text-slate-400">
+                            <p className="text-[11px] text-[var(--muted)]">
                                 {focusTask.course || "General"}
                                 {focusTask.due ? ` · Due ${focusTask.due}` : ""}
                             </p>
-                            <p className="mt-1 text-[11px] text-indigo-200">
+                            <p className="mt-1 text-[11px] text-[var(--muted)]">
                                 {focusTask.priorityReason}
                             </p>
                         </div>
                         <button
                             type="button"
                             onClick={onClearFocusTask}
-                            className="shrink-0 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:text-slate-200"
+                            className="shrink-0 rounded px-1.5 py-0.5 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
                             title="Stop focusing on this task"
                         >
                             ✕
@@ -574,13 +574,13 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                     </div>
                 </div>
             ) : (
-                <p className="mb-3 text-[11px] text-slate-500">
-                    No task selected — pick &quot;🎯 Focus in Pomodoro&quot; on a task in your planner.
+                <p className="mb-3 text-[11px] text-[var(--muted)]">
+                    No task selected — pick &quot;Focus on the Watch&quot; on a task in your planner.
                 </p>
             )}
 
             {/* Mode buttons */}
-            <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-950 p-1">
+            <div className="mb-3 grid grid-cols-3 gap-1 rounded-xl bg-[var(--panel-muted)] p-1">
                 {(
                     [
                         ["focus", "Focus"],
@@ -596,8 +596,8 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                         }
                         className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition ${
                             state.mode === mode
-                                ? "bg-slate-700 text-white"
-                                : "text-slate-400 hover:text-slate-200"
+                                ? "bg-[var(--accent)] text-[var(--accent-contrast)]"
+                                : "text-[var(--muted)] hover:text-[var(--foreground)]"
                         }`}
                     >
                         {label}
@@ -623,10 +623,10 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                             }
                             placeholder="25:00"
                             aria-label="Timer duration"
-                            className="w-52 rounded-xl border border-indigo-500/60 bg-slate-950 px-3 py-2 text-center text-4xl font-bold tracking-tight text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500/30"
+                            className="w-52 rounded-xl border border-[var(--accent)] bg-[var(--panel-muted)] px-3 py-2 text-center font-[family-name:var(--font-spectral)] text-4xl font-medium tabular-nums tracking-tight text-[var(--foreground)] outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
                         />
 
-                        <p className="mt-2 text-xs text-slate-500">
+                        <p className="mt-2 text-xs text-[var(--muted)]">
                             Enter minutes or MM:SS
                         </p>
 
@@ -636,7 +636,7 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                                 onClick={
                                     saveCustomTime
                                 }
-                                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
+                                className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-contrast)] hover:bg-[var(--accent-hover)]"
                             >
                                 Save
                             </button>
@@ -646,7 +646,7 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                                 onClick={
                                     cancelEditingTime
                                 }
-                                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800"
+                                className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] hover:bg-[var(--panel-muted)]"
                             >
                                 Cancel
                             </button>
@@ -660,7 +660,7 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                             className="group"
                             title="Click to change timer duration"
                         >
-                            <div className="text-4xl font-bold tracking-tight text-slate-100 transition group-hover:text-indigo-300">
+                            <div className="font-[family-name:var(--font-spectral)] text-4xl font-medium tabular-nums tracking-tight text-[var(--foreground)] transition group-hover:text-[var(--accent)]">
                                 {formatTime(
                                     state.timeRemaining
                                 )}
@@ -670,19 +670,19 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                         <button
                             type="button"
                             onClick={startEditingTime}
-                            className="mt-1 text-[11px] font-semibold text-slate-500 transition hover:text-indigo-300"
+                            className="mx-auto mt-1 block text-[11px] font-semibold text-[var(--muted)] transition hover:text-[var(--accent)]"
                         >
-                            ✏️ Edit time
+                            Edit time
                         </button>
                     </>
                 )}
 
-                <p className="mt-2 text-xs text-slate-400">
+                <p className="mt-2 text-xs text-[var(--muted)]">
                     {MODE_MESSAGES[state.mode]}
                 </p>
 
                 {!isDefaultDuration && !isEditingTime && (
-                    <p className="mt-1 text-[11px] text-indigo-400">
+                    <p className="mt-1 text-[11px] text-[var(--accent)]">
                         Custom duration ·{" "}
                         {formatTime(state.duration)}
                     </p>
@@ -690,9 +690,9 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
             </div>
 
             {/* Progress */}
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-800">
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--xp-track)]">
                 <div
-                    className="h-full rounded-full bg-indigo-500 transition-[width] duration-300"
+                    className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300"
                     style={{
                         width: `${Math.min(
                             100,
@@ -707,20 +707,19 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                 <button
                     type="button"
                     onClick={toggleTimer}
-                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500"
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] transition hover:bg-[var(--accent-hover)]"
                 >
-                    {state.isRunning
-                        ? "❚❚ Pause"
-                        : "▶ Start"}
+                    {state.isRunning ? <PauseGlyph /> : <PlayGlyph />}
+                    {state.isRunning ? "Pause" : "Start"}
                 </button>
 
                 <button
                     type="button"
                     onClick={resetTimer}
-                    className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-slate-800"
+                    className="rounded-xl border border-[var(--border)] px-4 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--panel-muted)]"
                     aria-label="Reset timer"
                 >
-                    ↻
+                    <ResetGlyph />
                 </button>
             </div>
 
@@ -732,12 +731,37 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                         className={`h-2 w-2 rounded-full ${
                             session <
                             state.completedSessions % 4
-                                ? "bg-indigo-500"
-                                : "bg-slate-700"
+                                ? "bg-[var(--accent)]"
+                                : "bg-[var(--border)]"
                         }`}
                     />
                 ))}
             </div>
         </section>
+    );
+}
+
+function PlayGlyph() {
+    return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <path d="M7.5 5.14a1 1 0 0 1 1.5-.87l10.5 6.86a1 1 0 0 1 0 1.74L9 19.73a1 1 0 0 1-1.5-.87Z" />
+        </svg>
+    );
+}
+
+function PauseGlyph() {
+    return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+            <rect x="6" y="4" width="4" height="16" rx="1" />
+            <rect x="14" y="4" width="4" height="16" rx="1" />
+        </svg>
+    );
+}
+
+function ResetGlyph() {
+    return (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 12a8 8 0 1 0 2.5-5.8M4 4v4h4" />
+        </svg>
     );
 }

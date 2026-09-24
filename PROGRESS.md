@@ -6,6 +6,30 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Full-screen app, Rundown window, The Watch / Comms (2026-09-24)**
+- The app is full-bleed: `PlannerHome`'s `<main>` is `h-dvh w-full` (dvh
+  tracks the visible viewport; 100vh/`w-screen` left a strip and a
+  scrollbar-width overflow), and LaptopFrame has no border, rounding or
+  padding. `WindowManagerContext` clamps every window to the viewport on
+  open and on browser resize (`clampToViewport`).
+- The Rundown is a normal floating window (`WindowAppId` `"rundown"`,
+  `components/rundown/RundownWindow.tsx`, renamed from RundownOverlay).
+  Its state still lives in WeeklyPlannerView (`showRundown` + `onClose`
+  marks it viewed), so it **portals** into LaptopFrame's floating layer
+  (`useFloatingLayer()`); rendered in place it would scroll with the
+  planner. Its `isOpen` is never restored from localStorage, so it only
+  auto-opens when there's something new. The taskbar button calls
+  `openWindow("rundown")` too, which restores it if minimised.
+- Bottom gap: the taskbar is `sticky bottom-0` inside the scroller, so with
+  short content it hugged the content, not the screen. PlannerHome's wrapper
+  is `flex min-h-full flex-col` and the planner shell `flex-1`, pushing the
+  bar to the bottom edge. The Watch (`PomodoroTimer`) uses theme tokens
+  directly (it isn't inside `.theme-surface`, so raw slate/indigo classes
+  never got remapped).
+- Naming: the focus/Pomodoro timer is **The Watch**, the music player is
+  **Comms** (gamificationSystem.md naming table). Internal ids
+  (`pomodoro`, `music`) are unchanged.
+
 **Onboarding is a spotlight tour (2026-09-24)**
 - `components/starchart/TourSpotlight.tsx` is a generic engine: steps target
   real elements via **`data-tour="…"` anchors** (planner: `week-grid`,
@@ -733,6 +757,9 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- Full-screen/Rundown window (2026-09-24) needs a signed-in check: no gap
+  under the app at any browser size, Rundown drags/resizes/minimises and
+  stays put while the planner scrolls, closing still marks it viewed.
 - Onboarding tour (2026-09-24) not verified against the real planner:
   run `/dev/onboarding` signed in and check each stop lands on the right
   element, the Star Chart step switches views, and "Reset first-run flag"
