@@ -6,6 +6,78 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Per-check announcement cap (2026-09-24)**
+- `MAX_ANNOUNCEMENTS_PER_CHECK = 10` (`lib/analysisLimits.ts`, shared by route
+  and UI) bounds Anthropic spend per check. The route slices the eligible
+  (unanalyzed, or all for regenerate) announcements to the newest 10; an
+  explicit selection over 10 is a 400 before any charge. The Rundown controls
+  default-select the newest 10, block ticking an 11th, and say so in the quota
+  banner, the range warning and the button labels ("Check the newest 10 of 23").
+  Leftovers just stay unanalyzed for the next check.
+- A run's charged ids are stored on its `detection_pass_triggered` event
+  (`announcementIds`); a **resume** is restricted to those
+  (`findRunAnnouncementIds`), so pause/resume can't analyze past the cap.
+- Not live-verified in a signed-in browser (cap UI, 400 path, resume scoping
+  were checked by tsc/lint and a ledger script only).
+
+**Rundown candidate card: compact by default (2026-09-24)**
+- `RundownCandidateCard` is collapsed by default: name (+ pencil edit icon),
+  confidence pill, `Subject · TYPE`, compact `Due Fri, Sep 25` (click → inline
+  date input), a one-line `May duplicate: <name> (due 9/28)` when flagged, and
+  Maybe (ghost) / No (outline) / Yes (solid). "Show evidence" opens the
+  highlighted excerpt (±160 chars, "Show full announcement" for the whole text),
+  the AI's reading and the full Canvas comparison. Emoji replaced by stroke
+  icons (`components/brand/Icons.tsx`).
+- **Highlight root cause:** the model quotes the text from
+  `extractActionableHtml` (spaces where tags were) but the card searched
+  `stripHtmlForDisplay` output (tags deleted, no space) — 14 of 31 stored
+  quotes missed. `findEvidenceRange` now falls back to a whitespace/emoji-
+  selector/quote-insensitive match mapped back to real offsets (31/31 on
+  stored data). Gotcha: index maps must be per UTF-16 unit — per code point
+  drifted after emoji.
+- Gotcha: `app/globals.css` remaps any class *containing* `bg-red-50` /
+  `border-red-` under `.theme-surface`, so `hover:bg-red-500/10` is always on.
+  Use the `--status-overdue-text` token instead.
+
+**Announcement analyzer: quota, credits, pause/resume, regenerate, dev dashboard (2026-09-24)**
+- **Duplicate review diagnosis:** the Haiku duplicate checker works (live probe
+  returned real `checked` verdicts). The "unavailable" verdicts the user saw
+  were 30 stored snapshots from the Ollama era (written ~2h before the Haiku
+  commit), and nothing could re-run them: `aiAnalyzedHash` was null on all 34
+  announcements and every in-window one had review rows, so step 7a treated
+  them as "legacy reviewed" and skipped them forever. Fixes: **regenerate**
+  (`regenerate: true` skips the hash/backfill filter for the range, costs 1
+  check) and `handleNewCandidates` now *replaces* a same-key pending candidate
+  (it used to keep the stale snapshot).
+- **Quota** (`lib/aiRateLimit.ts`, `types/aiQuota.ts`): 2 weekly checks + bonus
+  credits, spent weekly-first. All derived from `AiTaskEvent` (no migration):
+  `detection_pass_triggered` (tagged `paidWithCredit` + `runId`),
+  `detection_credit_granted {amount, grantedBy}`, `detection_pass_paused`. A
+  credit-paid run is excluded from the weekly count. Quota rides in the
+  dry-run JSON, stream frames (`start`/`done`/`paused`) and the 429 body.
+- **The dev-account rate-limit bypass is gone.** `DEV_ACCOUNT_EMAILS` now only
+  unlocks `/dev` + `/api/dev/*`; dev accounts use credits like anyone.
+- **Pause/resume:** cooperative, one connection. `POST
+  /api/ai/analyze-announcements/pause {runId}` logs an event; the stream checks
+  it before starting each batch (`mapWithConcurrency`'s new `shouldStop`),
+  finishes in-flight batches, sends a `paused` frame. Resume = same body +
+  `resumeRunId`; free if the runId's original charge exists within 24h.
+  Client disconnect (`cancel()`) also stops new batches. After every run/pause
+  the planner refetches `/api/rundown-candidates` (paused in-flight results
+  persist server-side; stale pending rows are deleted on re-extraction).
+- **Regenerate caveat:** decided candidates stay decided, but a model
+  re-wording changes the `suggestionKey` and can resurface a declined item.
+- **Dev dashboard `/dev`** (`components/dev/DevDashboard.tsx`): Accounts &
+  credits, Analyzer tools (own-account reset: nulls `aiAnalyzedHash`, deletes
+  all suggestion reviews, optionally this week's used checks), onboarding
+  preview + map editor launchers, embedded gamification panel. All `/dev/*`
+  pages now go through `app/dev/requireDevUser.ts` (404 for non-dev) — they
+  were open to any logged-in user before. Settings popover shows a "Dev
+  dashboard" link for dev accounts.
+- Verified: `tsc`, `next build`, ledger script on test2@example.com (11 checks,
+  cleaned up), 401s on the new routes. **Not live-verified** (no signed-in
+  browser): the Rundown quota banner, pause/resume/regenerate UI, `/dev`.
+
 **Full-screen app, Rundown window, The Watch / Comms (2026-09-24)**
 - The app is full-bleed: `PlannerHome`'s `<main>` is `h-dvh w-full` (dvh
   tracks the visible viewport; 100vh/`w-screen` left a strip and a
@@ -114,7 +186,11 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   `app/icon.png` (192px) + `app/apple-icon.png` (180px) resized from it.
   `app/favicon.ico` was deleted — a hand-packed .ico failed Next's image
   pipeline (embedded PNGs must be RGBA), so `icon.png` is the favicon.
-  The PNG has wide navy padding, so `Wordmark` crops it with `scale-[1.6]`.
+  The source PNG has wide navy padding (mark is ~60% of the canvas), so
+  2026-09-24 the favicons and a new `public/brand/lodestar-mark-temp.png`
+  (256px, used by `Wordmark`) are cropped from it: 760px square at
+  (247, 220) of the 1254px original. `lodestar-logo-temp.png` itself is
+  untouched; the `scale-[1.6]` hack in `Wordmark` is gone.
 - `/` renders `components/landing/LandingPage.tsx` for logged-out visitors
   (and for a JWT whose user row was deleted) instead of redirecting to
   `/login`. Its palette is scoped under `.landing` in `globals.css`
@@ -757,6 +833,14 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- **Analyzer live pass (2026-09-24):** signed in as the dev account, open
+  `/dev` → Analyzer tools → reset (deletes your suggestion decisions), grant
+  credits, then run a check and confirm cards show real possible/definite/none
+  duplicate states, the quota banner counts down, pause → Resume is free,
+  "Re-check all" charges 1, and 0 left disables both buttons. Set
+  `DEV_ACCOUNT_EMAILS=kelliecpiano@gmail.com` in Vercel (added to local `.env`
+  only) and confirm `ANTHROPIC_API_KEY` is set there.
+
 - Full-screen/Rundown window (2026-09-24) needs a signed-in check: no gap
   under the app at any browser size, Rundown drags/resizes/minimises and
   stays put while the planner scrolls, closing still marks it viewed.
@@ -767,7 +851,8 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   with mock anchors: glide, above/below placement, centred fallback, 390px
   bottom sheet, arrow keys/Esc.
 - **Temporary logo** — replace `public/brand/lodestar-logo-temp.png`,
-  `app/icon.png`, `app/apple-icon.png` with the final Lodestar artwork.
+  `public/brand/lodestar-mark-temp.png`, `app/icon.png`, `app/apple-icon.png`
+  with the final Lodestar artwork (crop tight to the mark).
 - Star Chart (2026-09-24) not verified logged-in: earn on completion
   (balance persists after reload), chart a star, insufficient-Starlight
   error, completion moment (lines draw in), locked tile threshold,
@@ -823,8 +908,7 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 - Auto Task Creation / Rundown: not live-verified — see the dedicated
   architecture entry above for the exact list (auto-accept branches, rate
   limit 429/reset display, auto-show/dismiss gating, Maybe round trip,
-  AI-tag dismiss/delete logging). Set `DEV_ACCOUNT_EMAILS` in `.env`/Vercel
-  before relying on the rate-limit bypass for any account.
+  AI-tag dismiss/delete logging).
 - Canvas: of the 4 courses that reappeared before the 2026-09-21 fix, 3
   have been re-deleted (English Student Aide Workshop, STEM Mentors
   26-27, World Language Center); Calculus III wasn't — confirm with the

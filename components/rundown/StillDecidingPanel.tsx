@@ -53,7 +53,7 @@ export default function StillDecidingPanel({
                 {candidates.length === 0 ? (
                     <p className="text-sm text-slate-400">Nothing parked right now.</p>
                 ) : (
-                    <div className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-3">
                         {candidates.map((candidate) => (
                             <RundownCandidateCard
                                 key={candidate.suggestionKey}

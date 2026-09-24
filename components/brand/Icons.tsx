@@ -130,3 +130,45 @@ export function SunIcon(props: IconProps) {
         </Icon>
     );
 }
+
+export function CheckIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="m5 12.5 4.5 4.5L19 7.5" />
+        </Icon>
+    );
+}
+
+export function XIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="M6 6l12 12M18 6 6 18" />
+        </Icon>
+    );
+}
+
+export function PencilIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+            <path d="m14.5 7.5 3 3" />
+        </Icon>
+    );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="m6 9 6 6 6-6" />
+        </Icon>
+    );
+}
+
+export function AlertIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="M12 4 3 19.5h18L12 4Z" />
+            <path d="M12 10v4.5M12 17.2h.01" />
+        </Icon>
+    );
+}

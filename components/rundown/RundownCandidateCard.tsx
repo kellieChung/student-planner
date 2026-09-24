@@ -4,17 +4,27 @@ import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
 import { Course } from "@/types/course";
 import { stripHtmlForDisplay } from "@/lib/htmlText";
-import { findEvidenceRange } from "@/lib/evidenceHighlight";
+import { findEvidenceRange, getEvidenceExcerpt } from "@/lib/evidenceHighlight";
+import { parseLocalDate } from "@/lib/utils";
+import {
+    AlertIcon,
+    CheckIcon,
+    ChevronDownIcon,
+    PencilIcon,
+    QuestionIcon,
+    XIcon,
+} from "@/components/brand/Icons";
 import { resolveDueTextToDate } from "@/lib/dueText";
 import { classifyLabelType, LabelType } from "@/lib/taskLabel";
 import CourseSelect from "@/components/CourseSelect";
 
-// Ported from the retired components/AIReviewPanel.tsx's one-at-a-time
-// carousel (components/AIReviewCard.tsx) into the Rundown screen's
-// "AI found these" / Still-Deciding list renderer — editing UI, evidence
-// highlighting, and the Canvas-comparison block are unchanged; the footer
-// is Yes/No/Maybe instead of Accept/Reject (mode="resolve" drops Maybe,
-// for the Still-Deciding panel where only a final call makes sense).
+// The everyday review card for the Rundown's "AI found these" / Still-
+// Deciding lists. Collapsed by default to what a quick yes/no needs (name,
+// subject/type, due date, confidence, a one-line duplicate warning, the
+// actions); "Show evidence" opens the audit detail — the highlighted
+// announcement excerpt, the AI's reading, and the full Canvas comparison.
+// mode="resolve" drops Maybe, for the Still-Deciding panel where only a
+// final call makes sense.
 // AIReviewCard's scrollIntoView is deliberately not used here: it scrolls
 // every scrollable ancestor, so each card in the list would drag the whole
 // Rundown overlay to itself. Instead only the announcement box's own
@@ -39,6 +49,9 @@ export default function RundownCandidateCard({
     mode = "default",
 }: RundownCandidateCardProps) {
     const [isEditing, setIsEditing] = useState(false);
+    const [isEditingDue, setIsEditingDue] = useState(false);
+    const [expanded, setExpanded] = useState(false);
+    const [showFullAnnouncement, setShowFullAnnouncement] = useState(false);
     const [name, setName] = useState(task.name);
     const [course, setCourse] = useState(task.course);
     const [typeOverride, setTypeOverride] = useState(task.typeOverride ?? "");
@@ -104,7 +117,7 @@ export default function RundownCandidateCard({
             top: box.scrollTop + offsetInBox - (box.clientHeight - mark.offsetHeight) / 2,
             behavior: "smooth",
         });
-    }, [task.suggestionKey, evidenceRange?.start]);
+    }, [expanded, showFullAnnouncement, task.suggestionKey, evidenceRange?.start]);
 
     const assignmentDescription = task.canvasMatch.assignment?.description
         ? stripHtmlForDisplay(task.canvasMatch.assignment.description)
@@ -115,6 +128,20 @@ export default function RundownCandidateCard({
         course,
         isCustomCourse: courses.find((c) => c.name === course)?.isCustom,
     });
+
+    const excerpt = evidenceRange ? getEvidenceExcerpt(announcementText, evidenceRange) : null;
+
+    const assignmentDueShort = task.canvasMatch.assignment?.dueDate
+        ? `${Number(task.canvasMatch.assignment.dueDate.slice(5, 7))}/${Number(task.canvasMatch.assignment.dueDate.slice(8, 10))}`
+        : null;
+
+    const dueLabel = dueDate
+        ? `Due ${parseLocalDate(dueDate).toLocaleDateString(undefined, {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+          })}`
+        : null;
 
     function handleYes() {
         onYes({
@@ -127,398 +154,414 @@ export default function RundownCandidateCard({
     }
 
     return (
-        <div className="theme-surface w-full max-w-6xl overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--panel)] shadow-xl">
+        <div className="theme-surface w-full max-w-6xl overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)] shadow-md">
+            <div className="px-4 pt-4">
+                {/* Title, edit, confidence */}
 
-            {/* ================================================== */}
-            {/* HEADER */}
-            {/* ================================================== */}
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-2">
+                        <h2 className="text-lg font-bold leading-snug tracking-tight">{name}</h2>
 
-            <div className="border-b border-[var(--border)] px-7 py-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--muted)]">
-                            AI Suggestion
-                        </p>
-
-                        <h2 className="mt-2 text-3xl font-bold tracking-tight">
-                            {name}
-                        </h2>
-
-                        <p className="mt-1 text-sm text-[var(--muted)]">
-                            {course}{typeOverride ? ` · ${typeOverride}` : ` · ${autoTypeCode}`}
-                        </p>
+                        <button
+                            type="button"
+                            onClick={() => setIsEditing((editing) => !editing)}
+                            aria-label={isEditing ? "Done editing" : "Edit task"}
+                            title={isEditing ? "Done editing" : "Edit task"}
+                            className={`mt-0.5 shrink-0 rounded-md p-1 transition hover:text-[var(--accent)] ${
+                                isEditing ? "text-[var(--accent)]" : "text-[var(--muted)]"
+                            }`}
+                        >
+                            {isEditing ? <CheckIcon size={15} /> : <PencilIcon size={15} />}
+                        </button>
                     </div>
 
-                    <div className="w-fit rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-semibold capitalize">
+                    <span className="mt-0.5 shrink-0 rounded-full border border-[var(--border)] px-2.5 py-0.5 text-[11px] font-semibold capitalize text-[var(--muted)]">
                         {task.confidence} confidence
+                    </span>
+                </div>
+
+                {isEditing && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-[2fr_1.5fr_1fr]">
+                        <div>
+                            <label
+                                htmlFor="ai-task-name"
+                                className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]"
+                            >
+                                Name
+                            </label>
+                            <input
+                                id="ai-task-name"
+                                type="text"
+                                value={name}
+                                onChange={(event) => setName(event.target.value)}
+                                className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm font-semibold outline-none transition focus:ring-2 focus:ring-current/20"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                                Course
+                            </label>
+                            <CourseSelect
+                                courses={courses}
+                                value={course}
+                                onChange={setCourse}
+                                onCourseCreated={onCourseCreated}
+                            />
+                        </div>
+
+                        <div>
+                            <label
+                                htmlFor="ai-task-type"
+                                className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]"
+                            >
+                                Type
+                            </label>
+                            <select
+                                id="ai-task-type"
+                                value={typeOverride}
+                                onChange={(event) =>
+                                    setTypeOverride(event.target.value as LabelType | "")
+                                }
+                                className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-current/20"
+                            >
+                                <option value="">Auto ({autoTypeCode})</option>
+                                <option value="HW">HW</option>
+                                <option value="R">R (Reading)</option>
+                                <option value="EXAM">EXAM</option>
+                                <option value="TODO">TODO</option>
+                            </select>
+                        </div>
                     </div>
+                )}
+
+                {/* Subject / type and due date */}
+
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--muted)]">
+                    <span>
+                        {course} · {typeOverride || autoTypeCode}
+                    </span>
+
+                    <span aria-hidden="true">·</span>
+
+                    {isEditingDue ? (
+                        <input
+                            type="date"
+                            autoFocus
+                            value={dueDate}
+                            onChange={(event) => setDueDate(event.target.value)}
+                            onBlur={() => setIsEditingDue(false)}
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === "Escape") {
+                                    setIsEditingDue(false);
+                                }
+                            }}
+                            aria-label="Due date"
+                            className="rounded-md border border-[var(--border)] bg-transparent px-2 py-0.5 text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+                        />
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setIsEditingDue(true)}
+                            title={task.dueText ? `AI detected: ${task.dueText}` : "Set a due date"}
+                            className="rounded-md font-semibold text-[var(--foreground)] underline decoration-dotted decoration-[var(--muted)] underline-offset-4 transition hover:text-[var(--accent)]"
+                        >
+                            {dueLabel ?? "No due date · Add"}
+                        </button>
+                    )}
+                </div>
+
+                {/* One-line duplicate status */}
+
+                {isFlagged && (
+                    <p className="mt-2 flex items-center gap-1.5 text-sm text-amber-400">
+                        <AlertIcon size={15} className="shrink-0" />
+
+                        <span className="min-w-0 truncate">
+                            {hasMatch
+                                ? `May duplicate: ${task.canvasMatch.assignment?.name}${
+                                      assignmentDueShort ? ` (due ${assignmentDueShort})` : ""
+                                  }`
+                                : "May already be covered by an existing assignment"}
+                        </span>
+                    </p>
+                )}
+
+                {checkUnavailable && (
+                    <p className="mt-2 flex items-center gap-1.5 text-sm text-[var(--muted)]">
+                        <QuestionIcon size={15} className="shrink-0" />
+                        Duplicate check unavailable
+                    </p>
+                )}
+            </div>
+
+            {/* Actions */}
+
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] px-4 py-2.5">
+                <button
+                    type="button"
+                    onClick={() => setExpanded((open) => !open)}
+                    aria-expanded={expanded}
+                    className="flex items-center gap-1 rounded-md py-1 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]"
+                >
+                    <ChevronDownIcon
+                        size={16}
+                        className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+                    />
+                    {expanded ? "Hide evidence" : "Show evidence"}
+                </button>
+
+                <div className="flex items-center gap-2">
+                    {mode !== "resolve" && onMaybe && (
+                        <button
+                            type="button"
+                            onClick={onMaybe}
+                            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[var(--muted)] transition hover:bg-[var(--border)]/40 hover:text-[var(--foreground)]"
+                        >
+                            <QuestionIcon size={16} />
+                            Maybe
+                        </button>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={onNo}
+                        className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3.5 py-2 text-sm font-semibold transition hover:border-[var(--status-overdue-text)] hover:bg-[color-mix(in_srgb,var(--status-overdue-text)_12%,transparent)]"
+                    >
+                        <XIcon size={16} />
+                        No
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleYes}
+                        className="flex items-center gap-1.5 rounded-lg bg-[var(--accent)] px-5 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--accent-hover)]"
+                    >
+                        <CheckIcon size={16} />
+                        Yes
+                    </button>
                 </div>
             </div>
 
-            {/* ================================================== */}
-            {/* AI TASK + ORIGINAL ANNOUNCEMENT */}
-            {/* ================================================== */}
+            {/* Evidence (opt-in) */}
 
-            <div className="grid gap-6 border-b border-[var(--border)] p-7 lg:grid-cols-2">
+            {expanded && (
+                <div className="flex flex-col gap-5 border-t border-[var(--border)] bg-[var(--border)]/10 p-4">
+                    {/* Announcement excerpt */}
 
-                {/* AI SUGGESTION */}
-
-                <div>
-                    <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                        AI Interpretation
-                    </p>
-
-                    <div className="rounded-2xl border border-[var(--border)] p-5">
-                        {isEditing ? (
-                            <div className="flex flex-col gap-3">
-                                <div>
-                                    <label
-                                        htmlFor="ai-task-name"
-                                        className="mb-1 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]"
-                                    >
-                                        Name
-                                    </label>
-                                    <input
-                                        id="ai-task-name"
-                                        type="text"
-                                        value={name}
-                                        onChange={(event) => setName(event.target.value)}
-                                        className="w-full rounded-xl border border-[var(--border)] bg-transparent px-4 py-3 text-base font-semibold outline-none transition focus:ring-2 focus:ring-current/20"
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="mb-1 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                                            Course
-                                        </label>
-                                        <CourseSelect
-                                            courses={courses}
-                                            value={course}
-                                            onChange={setCourse}
-                                            onCourseCreated={onCourseCreated}
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label
-                                            htmlFor="ai-task-type"
-                                            className="mb-1 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]"
-                                        >
-                                            Type
-                                        </label>
-                                        <select
-                                            id="ai-task-type"
-                                            value={typeOverride}
-                                            onChange={(event) =>
-                                                setTypeOverride(event.target.value as LabelType | "")
-                                            }
-                                            className="w-full rounded-xl border border-[var(--border)] bg-transparent px-4 py-3 text-sm outline-none transition focus:ring-2 focus:ring-current/20"
-                                        >
-                                            <option value="">Auto ({autoTypeCode})</option>
-                                            <option value="HW">HW</option>
-                                            <option value="R">R (Reading)</option>
-                                            <option value="EXAM">EXAM</option>
-                                            <option value="TODO">TODO</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-xl font-bold">
-                                {name}
-                            </p>
-                        )}
-
-                        {task.description && (
-                            <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-                                {task.description}
-                            </p>
-                        )}
-
-                        {/* Due date */}
-
-                        <div className="mt-6">
-                            <label
-                                htmlFor="ai-due-date"
-                                className="mb-2 block text-xs font-bold uppercase tracking-widest text-[var(--muted)]"
-                            >
-                                Due Date
-                            </label>
-
-                            <input
-                                id="ai-due-date"
-                                type="date"
-                                value={dueDate}
-                                onChange={(event) => setDueDate(event.target.value)}
-                                className="w-full rounded-xl border border-[var(--border)] bg-transparent px-4 py-3 text-base font-semibold outline-none transition focus:ring-2 focus:ring-current/20"
-                            />
-
-                            {task.dueText && (
-                                <p className="mt-2 text-xs text-[var(--muted)]">
-                                    AI detected: {task.dueText}
-                                </p>
-                            )}
-                        </div>
-
-                        {/* Evidence */}
-
-                        {task.evidence && (
-                            <div className="mt-6">
-                                <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                                    Evidence
-                                </p>
-
-                                <p className="text-sm leading-6 text-[var(--muted)]">
-                                    {task.evidence}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* ORIGINAL ANNOUNCEMENT */}
-
-                <div>
-                    <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                        Original Announcement
-                    </p>
-
-                    <div className="rounded-2xl border border-[var(--border)] p-5">
+                    <div>
+                        <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                            From the announcement
+                        </p>
 
                         {task.sourceAnnouncement ? (
-                            <>
-                                <p className="text-xl font-bold">
-                                    {task.sourceAnnouncement.title}
-                                </p>
+                            <div className="rounded-xl border border-[var(--border)] p-4">
+                                <p className="font-bold">{task.sourceAnnouncement.title}</p>
 
-                                <p className="mt-1 text-sm text-[var(--muted)]">
+                                <p className="mt-0.5 text-xs text-[var(--muted)]">
                                     {task.sourceAnnouncement.course}
                                 </p>
 
-                                <div ref={announcementBoxRef} className="mt-4 max-h-80 overflow-y-auto pr-2">
-                                    <p className="whitespace-pre-wrap text-sm leading-7">
-                                        {evidenceRange ? (
-                                            <>
-                                                {announcementText.slice(0, evidenceRange.start)}
-                                                <mark ref={evidenceMarkRef} className="rounded bg-[var(--accent)] px-1 font-bold text-white">
-                                                    {announcementText.slice(
-                                                        evidenceRange.start,
-                                                        evidenceRange.end
-                                                    )}
-                                                </mark>
-                                                {announcementText.slice(evidenceRange.end)}
-                                            </>
-                                        ) : (
-                                            announcementText
-                                        )}
+                                {showFullAnnouncement ? (
+                                    <div ref={announcementBoxRef} className="mt-3 max-h-72 overflow-y-auto pr-2">
+                                        <p className="whitespace-pre-wrap text-sm leading-7">
+                                            {evidenceRange ? (
+                                                <>
+                                                    {announcementText.slice(0, evidenceRange.start)}
+                                                    <mark
+                                                        ref={evidenceMarkRef}
+                                                        className="rounded bg-[var(--accent)] px-1 font-bold text-white"
+                                                    >
+                                                        {announcementText.slice(
+                                                            evidenceRange.start,
+                                                            evidenceRange.end
+                                                        )}
+                                                    </mark>
+                                                    {announcementText.slice(evidenceRange.end)}
+                                                </>
+                                            ) : (
+                                                announcementText
+                                            )}
+                                        </p>
+                                    </div>
+                                ) : excerpt ? (
+                                    <p className="mt-3 whitespace-pre-wrap text-sm leading-7">
+                                        {excerpt.leadingEllipsis && "… "}
+                                        {excerpt.before}
+                                        <mark className="rounded bg-[var(--accent)] px-1 font-bold text-white">
+                                            {excerpt.match}
+                                        </mark>
+                                        {excerpt.after}
+                                        {excerpt.trailingEllipsis && " …"}
                                     </p>
-                                </div>
-                            </>
+                                ) : (
+                                    <div className="mt-3 text-sm leading-7">
+                                        {task.evidence && (
+                                            <p className="mb-2 italic text-[var(--muted)]">
+                                                AI quoted: &ldquo;{task.evidence}&rdquo;
+                                            </p>
+                                        )}
+
+                                        <p className="whitespace-pre-wrap">
+                                            {announcementText.slice(0, 300)}
+                                            {announcementText.length > 300 && " …"}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {announcementText.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowFullAnnouncement((full) => !full)}
+                                        className="mt-3 text-xs font-semibold text-[var(--accent)] underline underline-offset-2"
+                                    >
+                                        {showFullAnnouncement ? "Show less" : "Show full announcement"}
+                                    </button>
+                                )}
+                            </div>
                         ) : (
                             <p className="text-sm text-[var(--muted)]">
                                 Original announcement unavailable.
                             </p>
                         )}
                     </div>
-                </div>
-            </div>
 
-            {/* ================================================== */}
-            {/* CANVAS DUPLICATE COMPARISON */}
-            {/* ================================================== */}
+                    {/* AI interpretation */}
 
-            <div className="border-b border-[var(--border)] p-7">
-
-                <div className="mb-4 flex items-center gap-3">
-                    <p className="text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                        Canvas Comparison
-                    </p>
-
-                    {matchIsDefinite && (
-                        <span className="rounded-full border border-amber-500/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                            Likely Duplicate
-                        </span>
-                    )}
-
-                    {matchIsPossible && (
-                        <span className="rounded-full border border-yellow-500/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-yellow-400">
-                            Possible Duplicate
-                        </span>
-                    )}
-
-                    {matchIsUnresolved && (
-                        <span className="rounded-full border border-yellow-500/50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-yellow-400">
-                            Unresolved Match
-                        </span>
-                    )}
-                </div>
-
-                {hasMatch ? (
-                    <div className="grid gap-5 lg:grid-cols-2">
-
-                        {/* Proposed task */}
-
-                        <div className="rounded-2xl border border-amber-500/40 p-5">
-                            <p className="text-xs font-bold uppercase tracking-widest text-amber-400">
-                                AI Proposed
+                    {(task.description || task.dueText) && (
+                        <div>
+                            <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                                AI&apos;s reading
                             </p>
-
-                            <h3 className="mt-3 text-lg font-bold">
-                                {task.name}
-                            </h3>
 
                             {task.description && (
-                                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                                    {task.description}
+                                <p className="text-sm leading-6">{task.description}</p>
+                            )}
+
+                            {task.dueText && (
+                                <p className="mt-1 text-xs text-[var(--muted)]">
+                                    Due date detected: {task.dueText}
                                 </p>
                             )}
                         </div>
+                    )}
 
-                        {/* Existing Canvas assignment */}
+                    {/* Canvas comparison */}
 
-                        <div className="rounded-2xl border border-amber-500/40 p-5">
-                            <p className="text-xs font-bold uppercase tracking-widest text-amber-400">
-                                Existing Canvas Assignment
+                    <div>
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                                Canvas comparison
                             </p>
 
-                            <h3 className="mt-3 text-lg font-bold">
-                                {task.canvasMatch.assignment?.name}
-                            </h3>
-
-                            {assignmentDescription && (
-                                <p className="mt-2 max-h-40 overflow-y-auto text-sm leading-6 text-[var(--muted)]">
-                                    {assignmentDescription}
-                                </p>
+                            {matchIsDefinite && (
+                                <span className="rounded-full border border-amber-500/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-400">
+                                    Likely Duplicate
+                                </span>
                             )}
 
-                            {task.canvasMatch.assignment?.dueDate && (
-                                <p className="mt-4 text-xs text-[var(--muted)]">
-                                    Due: {task.canvasMatch.assignment.dueDate}
-                                </p>
+                            {matchIsPossible && (
+                                <span className="rounded-full border border-yellow-500/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-400">
+                                    Possible Duplicate
+                                </span>
+                            )}
+
+                            {matchIsUnresolved && (
+                                <span className="rounded-full border border-yellow-500/50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-yellow-400">
+                                    Unresolved Match
+                                </span>
                             )}
                         </div>
-                    </div>
-                ) : isFlaggedWithoutMatch ? (
-                    <div className="rounded-2xl border border-amber-500/40 p-6">
-                        <div className="flex items-start gap-4">
-                            <span className="text-2xl">⚠️</span>
 
-                            <div>
-                                <p className="font-semibold">
-                                    {matchIsUnresolved
-                                        ? "Possibly already covered"
-                                        : "Possible duplicate"}
-                                </p>
-
-                                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                                    {matchIsUnresolved
-                                        ? "The AI flagged this as possibly already covered by an existing assignment, but couldn't confirm which one."
-                                        : "The AI flagged this task as a possible duplicate but couldn't point to a specific Canvas assignment."}
-                                </p>
-
-                                {task.canvasMatch.reason && (
-                                    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-                                        {task.canvasMatch.reason}
+                        {hasMatch ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="rounded-xl border border-amber-500/40 p-4">
+                                    <p className="text-[11px] font-bold uppercase tracking-widest text-amber-400">
+                                        AI proposed
                                     </p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                ) : checkUnavailable ? (
-                    <div className="rounded-2xl border border-[var(--border)] bg-[var(--muted)]/10 p-6">
-                        <div className="flex items-start gap-4">
-                            <span className="text-2xl">❓</span>
 
-                            <div>
-                                <p className="font-semibold">
-                                    Duplicate check unavailable
-                                </p>
+                                    <h3 className="mt-2 font-bold">{task.name}</h3>
 
-                                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                                    The AI couldn&apos;t verify this task against your Canvas assignments.
-                                </p>
+                                    {task.description && (
+                                        <p className="mt-1.5 text-sm leading-6 text-[var(--muted)]">
+                                            {task.description}
+                                        </p>
+                                    )}
+                                </div>
 
-                                {task.canvasMatch.reason && (
-                                    <p className="mt-3 text-sm leading-6 text-[var(--muted)]">
-                                        {task.canvasMatch.reason}
+                                <div className="rounded-xl border border-amber-500/40 p-4">
+                                    <p className="text-[11px] font-bold uppercase tracking-widest text-amber-400">
+                                        Existing Canvas assignment
                                     </p>
-                                )}
+
+                                    <h3 className="mt-2 font-bold">
+                                        {task.canvasMatch.assignment?.name}
+                                    </h3>
+
+                                    {assignmentDescription && (
+                                        <p className="mt-1.5 max-h-40 overflow-y-auto text-sm leading-6 text-[var(--muted)]">
+                                            {assignmentDescription}
+                                        </p>
+                                    )}
+
+                                    {task.canvasMatch.assignment?.dueDate && (
+                                        <p className="mt-3 text-xs text-[var(--muted)]">
+                                            Due: {task.canvasMatch.assignment.dueDate}
+                                        </p>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                ) : (
-                    <div className="rounded-2xl border border-[var(--border)] p-6">
-                        <div className="flex items-start gap-4">
-                            <span className="text-2xl">✅</span>
+                        ) : isFlaggedWithoutMatch ? (
+                            <div className="flex items-start gap-3 rounded-xl border border-amber-500/40 p-4">
+                                <AlertIcon size={18} className="mt-0.5 shrink-0 text-amber-400" />
 
-                            <div>
-                                <p className="font-semibold">
-                                    No Canvas duplicate detected
-                                </p>
+                                <div>
+                                    <p className="font-semibold">
+                                        {matchIsUnresolved ? "Possibly already covered" : "Possible duplicate"}
+                                    </p>
 
-                                <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
-                                    The AI did not find an existing assignment that appears to represent this task.
-                                </p>
+                                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                                        {matchIsUnresolved
+                                            ? "The AI flagged this as possibly already covered by an existing assignment, but couldn't confirm which one."
+                                            : "The AI flagged this task as a possible duplicate but couldn't point to a specific Canvas assignment."}
+                                    </p>
+                                </div>
                             </div>
-                        </div>
+                        ) : checkUnavailable ? (
+                            <div className="flex items-start gap-3 rounded-xl border border-[var(--border)] p-4">
+                                <QuestionIcon size={18} className="mt-0.5 shrink-0 text-[var(--muted)]" />
+
+                                <div>
+                                    <p className="font-semibold">Duplicate check unavailable</p>
+
+                                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                                        The AI couldn&apos;t verify this task against your Canvas assignments.
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-start gap-3 rounded-xl border border-[var(--border)] p-4">
+                                <CheckIcon size={18} className="mt-0.5 shrink-0 text-[var(--accent)]" />
+
+                                <div>
+                                    <p className="font-semibold">No Canvas duplicate detected</p>
+
+                                    <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
+                                        The AI did not find an existing assignment that appears to represent this task.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {task.canvasMatch.reason && (isFlagged || checkUnavailable) && (
+                            <p className="mt-3 text-sm leading-6">
+                                <span className="font-semibold">Why the AI flagged this: </span>
+                                {task.canvasMatch.reason}
+                            </p>
+                        )}
                     </div>
-                )}
-
-                {/* AI duplicate reasoning */}
-
-                {hasMatch && task.canvasMatch.reason && (
-                    <div className="mt-5 rounded-2xl border border-[var(--border)] p-5">
-                        <p className="text-xs font-bold uppercase tracking-widest text-[var(--muted)]">
-                            Why AI Flagged This
-                        </p>
-
-                        <p className="mt-2 text-sm leading-6">
-                            {task.canvasMatch.reason}
-                        </p>
-                    </div>
-                )}
-            </div>
-
-            {/* ================================================== */}
-            {/* ACTIONS */}
-            {/* ================================================== */}
-
-            <div className={`grid gap-3 p-7 ${mode === "resolve" ? "grid-cols-3" : "grid-cols-4"}`}>
-                <button
-                    onClick={onNo}
-                    className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-red-500/10"
-                >
-                    ❌
-                    <span className="ml-2">No</span>
-                </button>
-
-                <button
-                    onClick={() => setIsEditing((editing) => !editing)}
-                    className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-yellow-500/10"
-                >
-                    {isEditing ? "✓" : "✏️"}
-                    <span className="ml-2">{isEditing ? "Done" : "Edit"}</span>
-                </button>
-
-                {mode !== "resolve" && onMaybe && (
-                    <button
-                        onClick={onMaybe}
-                        className="rounded-2xl border border-[var(--border)] px-4 py-4 font-semibold transition hover:bg-yellow-500/10"
-                    >
-                        🤔
-                        <span className="ml-2">Maybe</span>
-                    </button>
-                )}
-
-                <button
-                    onClick={handleYes}
-                    className="rounded-2xl bg-[var(--accent)] px-4 py-4 font-semibold text-white transition hover:bg-[var(--accent-hover)]"
-                >
-                    ✅
-                    <span className="ml-2">Yes</span>
-                </button>
-            </div>
+                </div>
+            )}
         </div>
     );
 }
