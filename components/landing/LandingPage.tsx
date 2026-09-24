@@ -229,14 +229,12 @@ function Wordmark({ small = false }: { small?: boolean }) {
 
     return (
         <Link href="/" className="flex items-center gap-3">
-            {/* The temp logo PNG has wide navy padding; crop into the mark. */}
             <span className="block overflow-hidden rounded-lg" style={{ width: size, height: size }}>
                 <Image
-                    src="/brand/lodestar-logo-temp.png"
+                    src="/brand/lodestar-mark-temp.png"
                     alt=""
                     width={size}
                     height={size}
-                    className="scale-[1.6]"
                     priority={!small}
                 />
             </span>
