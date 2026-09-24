@@ -111,7 +111,7 @@ export default function Taskbar({
             style={{ borderColor: "var(--border)", background: "var(--panel-raised)" }}
         >
             {/* "Start" — decorative branding, not interactive in v1 */}
-            <div className="flex shrink-0 items-center gap-1.5 pr-2">
+            <div data-tour="true-north" className="flex shrink-0 items-center gap-1.5 pr-2">
                 <CompassIcon size={18} className="text-[var(--accent)]" />
                 <span className="hidden text-xs font-bold sm:inline" style={{ color: "var(--heading)" }}>
                     True North
@@ -120,14 +120,18 @@ export default function Taskbar({
 
             {/* Pinned quick-launch icons */}
             <div className="flex shrink-0 items-center gap-1">
-                <TaskbarIconButton label="Add Task" icon={<PlusIcon />} onClick={onAddTask} />
-                <TaskbarIconButton label="Recurring" icon={<RepeatIcon />} onClick={onManageRecurring} />
+                <div data-tour="taskbar-add" className="flex items-center gap-1">
+                    <TaskbarIconButton label="Add Task" icon={<PlusIcon />} onClick={onAddTask} />
+                    <TaskbarIconButton label="Recurring" icon={<RepeatIcon />} onClick={onManageRecurring} />
+                </div>
                 <TaskbarIconButton
+                    tourId="taskbar-courses"
                     label="Courses"
                     icon={<BookIcon />}
                     onClick={() => openWindow("courses")}
                     running={windows.courses.isOpen}
                 />
+                <div data-tour="taskbar-tools" className="flex items-center gap-1">
                 <TaskbarIconButton
                     label="Focus"
                     icon={<TimerIcon />}
@@ -140,7 +144,8 @@ export default function Taskbar({
                     onClick={() => openWindow("music")}
                     running={windows.music.isOpen}
                 />
-                <TaskbarIconButton label="Rundown" icon={<ListIcon />} onClick={onOpenRundown} />
+                </div>
+                <TaskbarIconButton tourId="taskbar-rundown" label="Rundown" icon={<ListIcon />} onClick={onOpenRundown} />
                 {stillDecidingCount > 0 && (
                     <TaskbarIconButton
                         label="Still deciding"
@@ -153,6 +158,7 @@ export default function Taskbar({
 
             {/* System tray */}
             <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <div data-tour="taskbar-progress" className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <TrayPill>
                     <span className="font-bold" style={{ color: "var(--heading)" }}>Lv.{level}</span>
                     <span style={{ color: "var(--muted)" }}>{totalXp} XP</span>
@@ -177,6 +183,7 @@ export default function Taskbar({
                         {starlight} Starlight
                     </span>
                 </TrayPill>
+                </div>
                 <TrayPill>
                     <span className="tabular-nums" style={{ color: "var(--foreground)" }}>{clock}</span>
                 </TrayPill>
@@ -187,6 +194,7 @@ export default function Taskbar({
                         onClick={() => setIsSettingsOpen((open) => !open)}
                         aria-expanded={isSettingsOpen}
                         aria-label="Open settings"
+                        data-tour="taskbar-settings"
                         className="rounded-lg border px-2.5 py-1.5 text-sm transition-transform hover:scale-105"
                         style={{ borderColor: "var(--border)", background: "var(--panel-muted)" }}
                     >
@@ -267,12 +275,14 @@ export default function Taskbar({
 function TaskbarIconButton({
     label,
     icon,
+    tourId,
     onClick,
     running,
     badgeCount,
 }: {
     label: string;
     icon: React.ReactNode;
+    tourId?: string;
     onClick: () => void;
     running?: boolean;
     badgeCount?: number;
@@ -285,6 +295,7 @@ function TaskbarIconButton({
             onClick={onClick}
             aria-label={badgeLabel}
             title={badgeLabel}
+            data-tour={tourId}
             className="relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
             style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
         >

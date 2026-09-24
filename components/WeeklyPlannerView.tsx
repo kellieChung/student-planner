@@ -1955,7 +1955,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
     return (
         <>
         <div className = "theme-surface planner-shell w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
-            <h1 className="mb-4 pr-28 text-3xl">Ship&apos;s Log</h1>
+            <h1 data-tour="ships-log" className="mb-4 pr-28 text-3xl">Ship&apos;s Log</h1>
 
             {estimatingCount > 0 && (
                 <p className="mb-4 flex items-center gap-2 text-xs font-medium text-slate-400">
@@ -1965,7 +1965,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
             )}
 
             {upNext && (
-                <div className="mb-5 rounded-xl border border-amber-500/60 bg-amber-950/20 p-4">
+                <div data-tour="polaris" className="mb-5 rounded-xl border border-amber-500/60 bg-amber-950/20 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
@@ -2119,7 +2119,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                         ))}
                     </div>
 
-                    <div className = "relative min-h-[400px]">
+                    <div data-tour="week-grid" className = "relative min-h-[400px]">
                         <div className = "absolute inset-0 grid grid-cols-7 gap-2 pointer-events-none">
                             {Array.from({length: 7}).map((_, idx) => (
                                 <div key = {idx} className = "border-r border-slate-800/80 h-full rounded-lg bg-slate-900/30" />
@@ -2127,7 +2127,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                         </div>
 
                         <div className="relative z-10 py-2" style={{ height: weekTaskLayerHeight }}>
-                            {weekTaskLayouts.map(({ task, span }) => {
+                            {weekTaskLayouts.map(({ task, span }, layoutIndex) => {
                                 const taskCustomization = taskCustomizations[task.id];
                                 const estimate = taskPlanning[task.id];
                                 const { columnStart, columnEnd, endInsetPercent } = span;
@@ -2148,6 +2148,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                                         name = {task.name}
                                         courseAbbreviation = {taskCourseAbbreviation}
                                         typeCode = {taskTypeCode}
+                                        tourAnchor = {layoutIndex === 0}
                                         dayCode = {taskDayCode}
                                         due = {task.due}
                                         dueAt = {task.dueAt}

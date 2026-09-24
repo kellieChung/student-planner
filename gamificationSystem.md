@@ -37,6 +37,10 @@ The isekai/comedic mascot concept (Nano) is retired — it was built for the bus
 | Unlockable cosmetic effects/skins | Nebula |
 | The home/dashboard view | True North |
 
+## Onboarding
+
+A spotlight tour over the real UI (`components/starchart/Onboarding.tsx`) introduces this vocabulary in order: True North, the Ship's Log, **how to read a task label** (`COURSE - TYPE - DAY - name`, e.g. `MA - HW - F - Problem set 4`; types HW / R / EXAM / TODO), Courses, Polaris, adding tasks, the Rundown, Focus & Radio, Starlight & XP, and the Star Chart. Replay it any time from `/dev/onboarding` or settings → "Replay intro".
+
 ## Asset needs (much lighter than the old medieval system)
 
 No bespoke building sprites, no growth-stage art per category, no mascot pose sheets. What's actually needed:

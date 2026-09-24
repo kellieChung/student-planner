@@ -47,7 +47,7 @@ export default function StarChartView({ onBack }: Props) {
                     </button>
                 </div>
 
-                <dl className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <dl data-tour="chart-balance" className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                     <Stat label="Starlight to spend">
                         <span className="inline-flex items-center gap-1.5 text-[var(--ls-gold)]">
                             <StarIcon size={16} />
@@ -67,7 +67,7 @@ export default function StarChartView({ onBack }: Props) {
                     </Stat>
                 </dl>
 
-                <ul className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                <ul data-tour="chart-grid" className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                     {unlocked.map((constellation) => (
                         <li key={constellation.id}>
                             <ConstellationTile constellation={constellation} onOpen={() => setSelectedId(constellation.id)} />

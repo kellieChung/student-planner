@@ -13,6 +13,8 @@ type AssignmentCardProps = {
     courseAbbreviation: string;
     typeCode: string;
     dayCode: string;
+    // Marks this card's label as the onboarding tour's "task-label" stop.
+    tourAnchor?: boolean;
     due: string;
     // Raw UTC instant, if known (Canvas-synced tasks only) — formatted
     // below in the viewer's own local timezone.
@@ -64,6 +66,7 @@ export default function AssignmentCard({
     courseAbbreviation,
     typeCode,
     dayCode,
+    tourAnchor = false,
     due,
     dueAt,
     course,
@@ -165,7 +168,7 @@ export default function AssignmentCard({
                 <TaskStatusToggle status={status} onChange={onSetStatus} size="sm" />
 
                 {completed ? (
-                    <h3 title={name} className="min-w-0 truncate text-xs leading-none line-through">
+                    <h3 title={name} data-tour={tourAnchor ? "task-label" : undefined} className="min-w-0 truncate text-xs leading-none line-through">
                         {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
                     </h3>
                 ) : (
@@ -183,6 +186,7 @@ export default function AssignmentCard({
 
                         <h3
                             title={name}
+                            data-tour={tourAnchor ? "task-label" : undefined}
                             className="text-sm font-semibold leading-tight truncate"
                         >
                             {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}

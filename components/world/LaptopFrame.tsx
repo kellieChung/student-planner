@@ -29,22 +29,36 @@ export function useMascot(): MascotContextValue {
     return useContext(MascotContext);
 }
 
+type ViewMode = "log" | "chart";
+
 type FrameContextValue = {
     openStarChart: () => void;
+    openShipsLog: () => void;
+    // Stable accessor (reads a ref) so tour steps can check the current view
+    // without re-rendering whenever it changes.
+    getView: () => ViewMode;
     replayOnboarding: () => void;
 };
 
-const FrameContext = createContext<FrameContextValue>({ openStarChart: () => {}, replayOnboarding: () => {} });
+const FrameContext = createContext<FrameContextValue>({
+    openStarChart: () => {},
+    openShipsLog: () => {},
+    getView: () => "log",
+    replayOnboarding: () => {},
+});
 
 export function useLodestarFrame(): FrameContextValue {
     return useContext(FrameContext);
 }
 
-type ViewMode = "log" | "chart";
+// "preview" (the /dev/onboarding page) opens the tour immediately and never
+// writes the real first-run flag.
+export type TourMode = "normal" | "preview";
 
 type Props = {
     children: ReactNode;
     starChart: StarChartState;
+    tourMode?: TourMode;
 };
 
 // Ship's Log → Star Chart pulls back to the sky; the reverse pushes in toward
@@ -53,19 +67,22 @@ type Transition = { from: ViewMode; to: ViewMode; phase: "out" | "in" } | null;
 const OUT_MS = 320;
 const IN_MS = 420;
 
-export default function LaptopFrame({ children, starChart }: Props) {
+export default function LaptopFrame({ children, starChart, tourMode = "normal" }: Props) {
     return (
         <StarChartProvider initialState={starChart}>
-            <FrameInner>{children}</FrameInner>
+            <FrameInner tourMode={tourMode}>{children}</FrameInner>
         </StarChartProvider>
     );
 }
 
-function FrameInner({ children }: { children: ReactNode }) {
+function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: TourMode }) {
     const { state, markOnboarded } = useStarChart();
     const [view, setView] = useState<ViewMode>("log");
     const [transition, setTransition] = useState<Transition>(null);
-    const [showOnboarding, setShowOnboarding] = useState(state.onboardedAt === null);
+    const [showOnboarding, setShowOnboarding] = useState(tourMode === "preview" || state.onboardedAt === null);
+    const [devNotice, setDevNotice] = useState<string | null>(null);
+    // Bumped on every (re)start so the tour always remounts at step 1.
+    const [tourRun, setTourRun] = useState(0);
 
     // A ref, not a setState updater, holds the current view: updaters can be
     // invoked more than once, which would schedule the timers twice.
@@ -88,17 +105,27 @@ function FrameInner({ children }: { children: ReactNode }) {
 
     const openStarChart = useCallback(() => switchView("chart"), [switchView]);
     const openLog = useCallback(() => switchView("log"), [switchView]);
-    const replayOnboarding = useCallback(() => setShowOnboarding(true), []);
+    const getView = useCallback(() => viewRef.current, []);
+    const replayOnboarding = useCallback(() => {
+        openLog();
+        setTourRun((run) => run + 1);
+        setShowOnboarding(true);
+    }, [openLog]);
 
     const finishOnboarding = useCallback(() => {
         setShowOnboarding(false);
 
-        if (state.onboardedAt === null) {
+        if (tourMode !== "preview" && state.onboardedAt === null) {
             const onboardedAt = new Date().toISOString();
             markOnboarded(onboardedAt);
             void saveOnboarded(onboardedAt);
         }
-    }, [markOnboarded, state.onboardedAt]);
+    }, [markOnboarded, state.onboardedAt, tourMode]);
+
+    const resetFirstRun = useCallback(() => {
+        markOnboarded(null);
+        void saveOnboarded(null).then(() => setDevNotice("First-run flag cleared. The tour will show on / next load."));
+    }, [markOnboarded]);
 
     const animationClass = transition
         ? `${transition.to === "chart" ? "view-pull-back" : "view-push-in"}--${transition.phase}`
@@ -110,7 +137,7 @@ function FrameInner({ children }: { children: ReactNode }) {
                 <MusicRemoteProvider>
                     <CoursesRemoteProvider>
                         <MascotContext.Provider value={{ say: () => {} }}>
-                            <FrameContext.Provider value={{ openStarChart, replayOnboarding }}>
+                            <FrameContext.Provider value={{ openStarChart, openShipsLog: openLog, getView, replayOnboarding }}>
                                 {/* The "instrument panel" frame. Transforms are only applied
                                     while a transition runs — a transform left on this ancestor
                                     would make every position:fixed modal inside it position
@@ -134,6 +161,7 @@ function FrameInner({ children }: { children: ReactNode }) {
                                             <button
                                                 type="button"
                                                 onClick={openStarChart}
+                                                data-tour="star-chart-button"
                                                 className="absolute right-4 top-4 z-20 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors hover:bg-[var(--accent-soft)]"
                                                 style={{ borderColor: "var(--accent)", color: "var(--heading)" }}
                                             >
@@ -160,7 +188,34 @@ function FrameInner({ children }: { children: ReactNode }) {
                                     )}
                                 </div>
 
-                                {showOnboarding && <Onboarding onFinish={finishOnboarding} />}
+                                {showOnboarding && <Onboarding key={tourRun} onFinish={finishOnboarding} />}
+
+                                {tourMode === "preview" && (
+                                    <div className="fixed bottom-3 left-3 z-[80] flex max-w-xs flex-col gap-1.5 rounded-2xl border border-[#3a4470] bg-[#10142a] p-3 text-xs text-[#f7f3ec] shadow-2xl">
+                                        <p className="font-bold uppercase tracking-wider text-[#e9c46a]">Dev · onboarding preview</p>
+                                        <p className="text-[#b8bdd6]">Finishing here doesn&apos;t mark you as onboarded.</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setDevNotice(null);
+                                                    replayOnboarding();
+                                                }}
+                                                className="rounded-full bg-[#e9c46a] px-3 py-1 font-bold text-[#161b33]"
+                                            >
+                                                Restart tour
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={resetFirstRun}
+                                                className="rounded-full border border-[#3a4470] px-3 py-1 font-semibold"
+                                            >
+                                                Reset first-run flag
+                                            </button>
+                                        </div>
+                                        {devNotice && <p className="text-[#b8bdd6]">{devNotice}</p>}
+                                    </div>
+                                )}
                             </FrameContext.Provider>
                         </MascotContext.Provider>
                     </CoursesRemoteProvider>

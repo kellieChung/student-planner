@@ -6,6 +6,33 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Onboarding is a spotlight tour (2026-09-24)**
+- `components/starchart/TourSpotlight.tsx` is a generic engine: steps target
+  real elements via **`data-tour="…"` anchors** (planner: `week-grid`,
+  `task-label` on the first card via `AssignmentCard`'s `tourAnchor`,
+  `polaris`, `ships-log`; taskbar: `true-north`, `taskbar-add`,
+  `taskbar-courses`, `taskbar-rundown`, `taskbar-tools`,
+  `taskbar-progress`, `taskbar-settings`; frame: `star-chart-button`; Star
+  Chart: `chart-balance`, `chart-grid`). **Add an anchor alongside any new
+  tour step.** A missing or hidden target (checked with `checkVisibility`,
+  since the inactive view is visibility:hidden) falls back to a centred card.
+- A rAF loop keeps the spotlight glued to its target through inner-div
+  scrolling and view transitions. The spotlight's box-shadow keeps the
+  same 3-layer shape in both states (only alphas change); switching layer
+  counts made the dimming layer animate through gold.
+- Steps (`components/starchart/Onboarding.tsx`) are `useMemo`-stable. The
+  engine's effect is keyed on the step object, so an unstable step list
+  would re-run `before()` (view switches) on every render. View checks go
+  through the stable `useLodestarFrame().getView()` (reads a ref) for this
+  reason. The label step decodes the user's real first card label
+  (`lib/taskLabel.ts` format), falling back to `MA - HW - F - Problem set 4`.
+- `/dev/onboarding` renders the real planner (`components/PlannerHome.tsx`,
+  shared with `/`) with `tourMode="preview"`. The tour opens immediately,
+  finishing never writes `onboardedAt`, and a dev pill offers "Restart
+  tour" and "Reset first-run flag". Restart/replay bump a `tourRun` key so
+  the tour always remounts at step 1. The Rundown never auto-opens while
+  the tour will show.
+
 **Star Chart replaces the medieval town (2026-09-24)**
 - Reward loop per `gamificationSystem.md`: completing a task earns
   **Starlight** = the existing task-xp award (XP still awarded as before);
@@ -706,6 +733,12 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- Onboarding tour (2026-09-24) not verified against the real planner:
+  run `/dev/onboarding` signed in and check each stop lands on the right
+  element, the Star Chart step switches views, and "Reset first-run flag"
+  makes `/` show the tour again. Verified so far only on a throwaway page
+  with mock anchors: glide, above/below placement, centred fallback, 390px
+  bottom sheet, arrow keys/Esc.
 - **Temporary logo** — replace `public/brand/lodestar-logo-temp.png`,
   `app/icon.png`, `app/apple-icon.png` with the final Lodestar artwork.
 - Star Chart (2026-09-24) not verified logged-in: earn on completion
