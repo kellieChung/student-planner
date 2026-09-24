@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {signIn, auth} from "@/auth";
 import {redirect} from "next/navigation";
 import {prisma} from "@/lib/prisma";
@@ -14,6 +15,7 @@ export default async function LoginPage({
 }: {
     searchParams: Promise<{
         error?: string;
+        mode?: string;
     }>;
 }) {
     const session = await auth();
@@ -24,14 +26,17 @@ export default async function LoginPage({
         redirect("/");
     }
 
-    const {error} = await searchParams;
+    const {error, mode} = await searchParams;
     const errorMessage = error ? AUTH_ERROR_MESSAGES[error] ?? "Sign-in failed. Please try again." : null;
 
     return (
-        <main className = "min-h-screen flex items-center justify-center p-4">
+        <main className = "min-h-screen flex flex-col items-center justify-center gap-4 p-4">
+            <Link href="/" className="text-xs font-semibold underline" style={{color: "var(--muted)"}}>
+                ← Back to Lodestar home
+            </Link>
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
-                <h1 className="text-2xl font-bold text-[var(--heading)]">Student Planner</h1>
-                <p className="mt-1 text-sm text-[var(--muted)]">Your weekly quest log awaits.</p>
+                <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
+                <p className="mt-1 text-sm text-[var(--muted)]">Your Ship&apos;s Log awaits.</p>
 
                 {errorMessage && (
                     <p className="mt-4 rounded-lg border border-red-500/40 px-3 py-2 text-xs text-red-400">{errorMessage}</p>
@@ -59,7 +64,7 @@ export default async function LoginPage({
                     <span className="h-px flex-1 bg-[var(--border)]" />
                 </div>
 
-                <CredentialsForm />
+                <CredentialsForm initialMode={mode === "signup" ? "signUp" : "signIn"} />
             </div>
         </main>
     )

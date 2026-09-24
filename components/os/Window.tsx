@@ -6,7 +6,7 @@ import { useWindowManager, type WindowAppId } from "./WindowManagerContext";
 type Props = {
     app: WindowAppId;
     title: string;
-    icon: string;
+    icon: React.ReactNode;
     children: ReactNode;
     // Called right before closeWindow fires — for apps where "closed"
     // needs to mean more than "the window disappears" (Pomodoro: closing

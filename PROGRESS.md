@@ -6,6 +6,85 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Star Chart replaces the medieval town (2026-09-24)**
+- Reward loop per `gamificationSystem.md`: completing a task earns
+  **Starlight** = the existing task-xp award (XP still awarded as before);
+  Starlight is spent to chart stars in **real IAU constellations** (not tied
+  to classes), catalog in `lib/constellations.ts` (15 of 88 so far). A
+  constellation appears once **lifetime Starlight** reaches its `unlockAt`
+  (0,0,0 for Orion/Ursa Major/Cassiopeia, then 150 … 5100); price per star
+  = 25 + 5 × catalog index.
+- Data: `StarChart` (starlight, lifetimeStarlight, onboardedAt) +
+  `ChartedStar` (unique userId+constellationId+starIndex). Migration
+  `add_star_chart` copied every `TownState.currency` into starlight AND
+  lifetimeStarlight (town coins were never spendable). Applied to the shared
+  DB 2026-09-24; verified 0 mismatched balances.
+- **Starlight is only ever changed server-side by increment/decrement**
+  (`app/api/star-chart`, actions `earn` / `chart`) — unlike the town's
+  "client PATCHes the new total" pattern, so a stale client copy can't
+  undo a purchase. `chart` is one transaction: unlock check → already-
+  charted check → conditional `updateMany(starlight >= price)` decrement →
+  create row; P2002 (double-click race) maps to 409. `earn` clamps 0–200.
+- Client state is one `StarChartProvider` (components/starchart/) under
+  `LaptopFrame`, shared by the Taskbar balance, `awardXpForTask`
+  (`starChart.earn(award.xp)`) and `StarChartView`.
+- **Retired but kept** (header comment "RETIRED (2026-09-24)"): WorldView/
+  town components, `lib/townGrowth.ts`, `lib/townState.ts`,
+  `lib/mascotDialogue.ts`, `/api/town-state`, `/dev/*`. `LaptopFrame` no
+  longer renders World/Nano/CRT scanlines; `useMascot().say` is a no-op
+  stub so call sites compile. TownState rows are no longer written.
+- Onboarding: `components/starchart/Onboarding.tsx` (6 steps: True North,
+  Ship's Log, Polaris, Rundown, Starlight, Star Chart) shows while
+  `StarChart.onboardedAt` is null — a new field, so existing users see it
+  once too. Replay via settings popover "Replay intro"
+  (`useLodestarFrame().replayOnboarding`).
+- View switch uses the spec's pull-back / push-in zoom
+  (`view-pull-back--*` / `view-push-in--*` in globals.css), applied only
+  while animating (a lingering transform would re-anchor fixed modals).
+- Theme: `data-theme` keys unchanged (`dark` = **Night** navy/gold, `light`
+  = **Day** cream/ink/deep gold `#8a6418` for contrast). New token
+  `--accent-contrast` = text on accent; a global rule forces it on
+  `bg-[var(--accent)] text-white` buttons. The existing slate→token remap
+  under `.theme-surface`/`.planner-shell` carries the palette into the
+  planner without editing each component. Fonts: Manrope body + Spectral
+  headings, loaded once in `app/layout.tsx` (Geist removed). Star/sky CSS
+  (`--ls-*`, `.ls-*`) is shared by `.landing` and the always-night `.sky`.
+- Naming (spec table): taskbar "True North", planner heading "Ship's Log",
+  frog card "Polaris", "Star Chart" view, currency "Starlight". Taskbar/
+  window emoji replaced by `components/brand/Icons.tsx` stroke icons.
+
+**Lodestar rebrand, landing page, account settings (2026-09-24)**
+- Product renamed **Lodestar** in all user-facing strings (tab title,
+  login/accept-terms/extension pages, Terms/Privacy, Taskbar "Lodestar
+  OS", extension popup + manifest name). Code comments/console logs still
+  say "Student Planner" — deliberately left. No `TERMS_VERSION` bump (a
+  rename isn't a material policy change).
+- **Temporary logo:** `public/brand/lodestar-logo-temp.png`; favicon is
+  `app/icon.png` (192px) + `app/apple-icon.png` (180px) resized from it.
+  `app/favicon.ico` was deleted — a hand-packed .ico failed Next's image
+  pipeline (embedded PNGs must be RGBA), so `icon.png` is the favicon.
+  The PNG has wide navy padding, so `Wordmark` crops it with `scale-[1.6]`.
+- `/` renders `components/landing/LandingPage.tsx` for logged-out visitors
+  (and for a JWT whose user row was deleted) instead of redirecting to
+  `/login`. Its palette is scoped under `.landing` in `globals.css`
+  (`--ls-*` tokens) so Forest/Tavern themes don't leak in; fonts are
+  Spectral + Manrope via `next/font/google`. Scroll reveal is
+  `Reveal.tsx` (IntersectionObserver) — hidden only under
+  `@media (scripting: enabled)`, disabled under reduced motion. Note for
+  browser automation: background tabs report `visibilityState: hidden`
+  and IntersectionObserver won't fire, so sections look blank until the
+  tab is shown — not a bug.
+- The homepage advertises a **star map** (constellation per class) that
+  doesn't exist yet — the user plans to replace the town with it.
+- `/login?mode=signup` opens the Create account tab (`CredentialsForm`
+  `initialMode`).
+- `/settings/account` (linked from `UserMenu` → "Account Settings"): edit
+  name, change password (current password required) or set one (Google-
+  only users). Delete Account moved here from `UserMenu`. **Email is
+  read-only** — without verification a changed email can't be trusted.
+  `app/page.tsx` now passes `user.name`/`user.email` from the DB row, not
+  the JWT, so an edited name shows immediately.
+
 **Auth: email/password + consent gate (2026-09-22)**
 - Sessions are **JWT** (`auth.ts`), not database — Auth.js's Credentials
   provider can't use DB sessions. Switching logged everyone out once; the
@@ -627,6 +706,27 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Active TODOs
 
+- **Temporary logo** — replace `public/brand/lodestar-logo-temp.png`,
+  `app/icon.png`, `app/apple-icon.png` with the final Lodestar artwork.
+- Star Chart (2026-09-24) not verified logged-in: earn on completion
+  (balance persists after reload), chart a star, insufficient-Starlight
+  error, completion moment (lines draw in), locked tile threshold,
+  onboarding once + replay, Ship's Log ↔ Star Chart transition with modals
+  still positioned correctly, Night/Day across planner/modals/windows.
+  Verified: build, catalog sanity script, and a throwaway preview page
+  (onboarding steps, chart grid, detail panel, 401 error path).
+- Add the remaining 73 constellations to `lib/constellations.ts`; Nebula
+  cosmetics (spec) not started. Delete the retired town code once sure.
+- Inline emoji still appear inside some planner content (e.g. 🧠
+  estimating line, task badges) — only chrome/taskbar/windows were swapped.
+- Landing page / settings (2026-09-24) not verified logged-in: name edit,
+  password change/set, delete from `/settings/account`. Landing verified
+  logged-out at desktop + 390px width (no horizontal scroll).
+- Email change on `/settings/account` once email verification exists.
+  Changing a password doesn't sign out other devices (JWT sessions).
+- Stale pre-JWT session cookies log `JWTSessionError` on every request
+  until the browser drops them — harmless (treated as logged out).
+- Footer has no contact/feedback link yet (waiting on the contact email).
 - **Legal pages are missing a contact email** — `/terms` and `/privacy`
   still show the literal `[CONTACT EMAIL]` placeholder in production
   (pushed 2026-09-22 without it). Replace once the custom-domain email

@@ -12,7 +12,7 @@ export default function TermsPage() {
         <LegalPage title="Terms of Service">
             <section>
                 <p>
-                    These Terms of Service (&quot;Terms&quot;) govern your use of Student Planner (the
+                    These Terms of Service (&quot;Terms&quot;) govern your use of Lodestar (the
                     &quot;Service&quot;), operated by Kellie Chung (&quot;we&quot;, &quot;us&quot;). By creating an
                     account or using the Service, you agree to these Terms and to our Privacy Policy. If you don&apos;t
                     agree, don&apos;t use the Service.
@@ -45,7 +45,7 @@ export default function TermsPage() {
                     If you install our companion browser extension, it uses your existing, signed-in Canvas session
                     to read your courses, assignments, discussions, and announcements and copy them into your
                     planner. You authorize the Service to do this on your behalf. You are responsible for making sure
-                    this use is allowed by your school&apos;s policies. Student Planner is not affiliated with,
+                    this use is allowed by your school&apos;s policies. Lodestar is not affiliated with,
                     endorsed by, or operated by Instructure (the maker of Canvas) or your school.
                 </p>
             </section>

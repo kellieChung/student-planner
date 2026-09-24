@@ -22,7 +22,7 @@ export async function acceptTerms(_prevState: AcceptTermsState, formData: FormDa
     }
 
     if (formData.get("termsAccepted") !== "on") {
-        return { error: "You need to agree to the Terms of Service and Privacy Policy to keep using Student Planner." };
+        return { error: "You need to agree to the Terms of Service and Privacy Policy to keep using Lodestar." };
     }
 
     const user = await prisma.user.findUnique({ where: { email: session.user.email } });

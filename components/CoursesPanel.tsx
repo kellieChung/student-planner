@@ -239,7 +239,7 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                     on its own, even if Canvas still calls it active. A deleted
                     course also disappears from this list, since it no longer has a
                     row here. Deleted one by mistake (or need one back from a past
-                    term)? Open the Student Planner extension popup and use
+                    term)? Open the Lodestar extension popup and use
                     &quot;Find Canvas Courses&quot; to restore it — that&apos;s the
                     only way to bring a deleted course back.
                 </p>

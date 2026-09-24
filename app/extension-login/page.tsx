@@ -16,7 +16,7 @@ export default async function ExtensionLoginPage({
     return (
         <main className="min-h-screen flex items-center justify-center p-4">
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
-                <h1 className="text-2xl font-bold text-[var(--heading)]">Student Planner</h1>
+                <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
                 <p className="mt-1 text-sm text-[var(--muted)]">Sign in to connect the Canvas extension.</p>
 
                 <form

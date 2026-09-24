@@ -1,176 +1,48 @@
-# Gamification System Spec
+# Lodestar — Gamification Spec
 
-## Overview
+This replaces the earlier medieval-kingdom gamification spec. The kingdom-builder concept, the pixel-art sourcing work, and the isekai mascot (Nano) have all been retired in favor of the system below. Nothing in this system depends on the old medieval assets — no building sprites, no pixel-art tileset, no mascot poses.
 
-The planner is framed as a medieval kingdom-builder. Completing real
-schoolwork grows a visual town into a kingdom over a semester/school
-year. A mascot — a modern tech assistant accidentally reincarnated into
-this medieval world — narrates the experience and lives inside a
-broken/scuffed laptop that serves as the actual functional planner
-interface.
+## Core concept
 
-Two visually distinct modes:
-- **Outside the laptop (the World):** pixel art, RPG/medieval aesthetic,
-  the growing town/kingdom, the mascot's character form.
-- **Inside the laptop (the OS):** clean, modern, polished productivity
-  UI — the actual task list, schedule bars, Pomodoro timer, and
-  prioritization view. Framed as "tech from another world" the mascot
-  brought with it.
+The player is a lone navigator charting an unmapped stretch of sky. This is a personal, exploratory frame — not commerce, not ownership. Completing real schoolwork generates **Starlight** (the in-game currency), which is spent to chart new stars and build out constellations. Constellations are the real IAU constellations (Orion, Cassiopeia, …), not tied to the player's classes. Over a semester, the sky fills in as a direct visual record of real effort — "how much of the sky have I mapped," never "how much of the sky do I own."
 
-(Status: built and shipped — see `PROGRESS.md`'s "Gamification / World
-layer" architecture decisions for what actually landed and what's still
-deferred.)
+## Economy
 
----
+- **Earning:** every completed task generates Starlight. Amount varies by task weight (a quick reading nets less than a big project or exam) — implemented as exactly the existing XP award (`app/api/task-xp`: estimated minutes → 10–100, with the late penalty), so XP and Starlight are earned together.
+- **Spending:** Starlight is spent to chart individual stars and complete constellations. This is a deliberate player choice, not an automatic 1:1 mapping — part of the point is giving the player agency over which part of their sky to build out next, and it leaves room to add upgrades or new spendable items later without redesigning the core loop.
+- **Constellations (decision, 2026-09-24):** the real IAU constellations, **not tied to classes**. They surface in a fixed sequence gated by **lifetime Starlight** (total ever earned, never reduced by spending): a few instantly recognisable ones first (Orion, the Big Dipper / Ursa Major, Cassiopeia — all open from 0) so early progress feels satisfying, then gradually more obscure ones as lifetime Starlight accumulates. The official 88 give a long runway; the first 15 ship now (`lib/constellations.ts`: thresholds 0, 0, 0, 150, 350, 600, … 5100), the rest are planned. Star price rises gently with position in the sequence (25 + 5 × index Starlight). Completing a full constellation is a genuine milestone moment, not something that happens incidentally — reserve the biggest visual payoffs (a constellation fully lighting up, a new region of sky unlocking) for real milestones (finishing a unit, surviving exam week, end of semester) rather than letting them trickle in from routine spending. Small, frequent Starlight spending should feel good in the moment; the big "whoa" moments should still feel earned, not routine.
+- **Future extensibility:** because progress is currency-based rather than hardcoded to specific completions, later upgrades (special star types, cosmetic effects, new spendable categories) can slot into the same economy without restructuring it.
 
-## Core Mechanic: Task Completion → Town Growth
+## The two views, and the story that connects them
 
-Growth is **typed**, not generic — the *category* of task completed
-determines *which* building/feature grows, not just an abstract point
-total. The town's overall stage (village → town → kingdom) advances on
-cumulative growth across all categories combined.
+**Planner view = the ship's log / instrument panel.** This is where the actual work happens — the daily/weekly task list, schedule, prioritization. Functional, calm, low-friction, matching the "utility screen stays simple" principle from earlier in this project. Closing out a day's tasks can read narratively as "logging the day's course" — a small satisfying beat, not just a checkbox tap.
 
-Actual task-type taxonomy used by the app: **HW**, **R** (reading), **EXAM**.
+**Galaxy view = the observation window / star chart.** This is the reward/big-picture screen — where Starlight gets spent, where constellations are viewed, where the player sees how far they've actually traveled. This is the emotionally rewarding side of the "utility vs. reward screen" split.
 
-| Task Type | Building/Feature | Growth Flavor |
-|---|---|---|
-| **R** (reading) | **Library** | Shelves fill in, new wings, a reading nook |
-| **HW** | **Workshop / Forge** | Tools, gears, machinery upgrade |
-| **EXAM** | **Training Grounds / Arena** | Banners, trophy racks accumulate |
+**Transition between them:** a gentle pull-back/zoom-out — the camera moving from a close-up on the instrument panel out through the observation window to the wide star field. This should read as "stepping back from the work to see your progress," not a jarring cut between two unrelated screens. Keep the reverse transition (going back into the planner) equally smooth — a push-in toward the console — so the two views feel like one continuous space, not two separate apps bolted together.
 
-Behavior-based (track *how* the student works, not *what* they completed):
+## No separate mascot character
 
-| Signal | Building/Feature | Growth Flavor |
-|---|---|---|
-| On-time completion streak | **Watchtower** | Height/detail increases with consistency |
-| General activity / overall progress | **Market / Town Square** | Stalls, decorations, NPCs; also the stage-progression anchor |
+The isekai/comedic mascot concept (Nano) is retired — it was built for the busy, whimsical medieval-kingdom world and doesn't fit Lodestar's calmer, more contemplative tone. Decision: **no illustrated companion character.** The player's own lodestar (their personal star, growing with real effort) is the emotional anchor — it doesn't need a face or a separate personality attached to it. Any encouragement/notification copy should have a warm, consistent voice through writing alone, without a character delivering it. This also meaningfully reduces production scope — no pose sheets, no character consistency to maintain across screens, no dialogue-writing burden.
 
-If more task types get added (projects, presentations, group work), new
-buildings can slot in the same way — Castle/Keep, Amphitheater, Guild
-Hall are natural options, not needed for the current 3-category taxonomy.
+## Feature naming (consistent vocabulary across the app)
 
----
+| Concept | Name |
+|---|---|
+| In-game currency | Starlight |
+| A real star cluster you chart with Starlight | Constellation |
+| The single highest-priority task (Eat-the-Frog output) | Polaris |
+| The daily/weekly task view | Ship's Log (or Instrument Panel) |
+| The big-picture progress/reward view | Star Chart (or Observation Deck) |
+| Unlockable cosmetic effects/skins | Nebula |
+| The home/dashboard view | True North |
 
-## Progression Structure
+## Asset needs (much lighter than the old medieval system)
 
-- Stages: Village → Town → City → Kingdom (~4-5 major visual stages).
-  Thresholds scale up per stage so highly active users don't exhaust
-  content instantly, roughly mapping to a semester/school year.
-- Major visual jumps (kingdom-wide stage changes) are milestone-gated, not
-  raw-task-count-live: day-to-day completions feed *incremental*
-  per-building growth immediately, but the persisted kingdom-wide stage
-  only advances at a checkpoint (currently every 5th completed task),
-  jumping straight to whatever stage is eligible. See `PROGRESS.md`'s
-  "Kingdom-wide stage is milestone-gated" note for the exact mechanism.
+No bespoke building sprites, no growth-stage art per category, no mascot pose sheets. What's actually needed:
+- A small set of star mark variants (point count/style, reusing the favicon exploration work) for different constellation states (unlit, partially charted, fully lit)
+- A soft glow/twinkle effect (simple, reusable, not a static image per star — ideally a shared animation/shader applied to any star)
+- Constellation connecting-line rendering (procedural, not hand-drawn per constellation)
+- A small number of background treatments for the star chart (a base night-sky field, maybe a subtle nebula-cloud texture for depth)
 
----
-
-## The Mascot
-
-- **Concept:** A modern tech assistant (AI/device) pulled into this
-  medieval world through unexplained means — exists partly as a
-  character in the world, partly as the laptop's "spirit."
-- **Voice:** Plays the isekai "you have been reincarnated as—" trope
-  straight, with comedic anachronism — modern tech concepts (Wi-Fi,
-  notifications) treated as lost magic or common knowledge nobody else
-  understands.
-- **Function, not just flavor:** narrates AI-parsed announcement
-  discoveries in character; appears when a student **starts** a task
-  (not just completes one) to reduce activation friction; serves as
-  onboarding guide and the app's "face"; same character in two forms
-  (robed figure in the world, "OS voice" inside the laptop). Named
-  **Nano** in the actual build.
-
----
-
-## The Laptop
-
-- **Appearance:** Visibly broken/scuffed (cracked corner, wonky hinge,
-  worn stickers) — cosmetic only, must never imply real unreliability.
-- **Function:** The literal container for the real productivity UI —
-  task list, schedule bar view, Pomodoro timer, music player,
-  prioritization view — deliberately contrasting with the pixel-art
-  world outside.
-- **Transition:** A lid-open/lid-close animation between "World" and "OS".
-- **Customization — Stickers:** Earned through the same reward economy
-  as town-building. Purely cosmetic (stickers, case colors, small
-  cosmetic repairs). **Not yet built** — deferred, per Active TODOs.
-  Build as a small set of modular, combinable assets (a handful of
-  sticker designs, a few case colors) rather than many bespoke skins.
-
----
-
-## Reskinned Tools (in-world flavor text, real functionality underneath)
-
-| Real Feature | In-World Framing | Status |
-|---|---|---|
-| Pomodoro timer | "Ancient time magic" / hourglass ritual | Shipped |
-| Music player | Bard's enchanted lute; imports = "songs collected from traveling minstrels" | Shipped |
-| Schedule / bar-chart view | The kingdom's road map — each bar a path to its due date; completed = paved road | Not reskinned |
-| Customization/shop | Royal treasury and market stalls | Not built |
-| Notifications/reminders | Royal decrees or scout reports | Not reskinned |
-| AI announcement parsing | Scrying / divination | Not reskinned |
-
----
-
-## Reward Economy
-
-Single currency earned through real productive behavior (task
-completion, on-time finishing per the personalized timing signal,
-consistent usage) — not arbitrary login streaks disconnected from actual
-schoolwork. Spendable on town decorations, building cosmetics, laptop
-stickers/case cosmetics (shop UI not yet built). **The streak/grace-token
-mechanic described in earlier drafts of this doc was built, then removed
-entirely** (per explicit user instruction — "goes against the principles
-of the game," see `PROGRESS.md`). Currency/growth now come from a flat
-on-time-completion bonus with no consecutive-day tracking; don't
-reintroduce streak mechanics without re-litigating with the user first.
-
----
-
-## Image Asset Specification
-
-Town/building art is sourced (see below) and **fully wired in** — real
-sprite art renders for every building stage (`Building.tsx`, driven by
-`WorldLayoutData.buildingStageSprites`, not a static constant);
-`PixelBlock` (colored divs + emoji/label) is gone from building rendering,
-still used for a couple of decorations with no sprite equivalent. The
-World map itself is now user-designed data, hand-edited via `/dev/map-
-editor` (a real in-app tool: sprite picker, drag-to-place, pan/zoom
-preview) rather than hardcoded terrain arrays — see `PROGRESS.md`'s
-"Gamification / World layer" section for the full design and gotchas
-before touching map-rendering code.
-
-**Style guide:** pixel art, 16-bit/SNES-RPG era (Stardew Valley
-proportions, not 8-bit NES chunkiness). Base tile/sprite unit is the
-sourced pack's native 16×16px, rendered at an integer scale (2x, i.e.
-effectively 32px on screen) via `components/world/TileSprite.tsx` — see
-`lib/spriteSheet.ts`/`lib/spriteMap.ts`. Limited, warm,
-muted medieval palette (parchment beige, forest green, brick red/
-terracotta, slate blue, weathered wood brown) — reuse the same ~12-16
-colors across every asset. Consistent 1px dark outline. Transparent PNG
-background on all sprites/icons.
-
-**Asset list:**
-- *Mascot (world form):* idle, talking/gesturing, celebrating, and a
-  small "confused/glitching" comedic pose.
-- *Mascot (OS form):* a simple icon/avatar for the laptop UI's "voice"
-  (doesn't need a full sprite).
-- *Town, 2-4 growth-stage variants each (empty plot → basic → upgraded):*
-  Library (R), Workshop/Forge (HW), Training Grounds/Arena (EXAM),
-  Watchtower (streak), Market/Town Square (overall stage anchor).
-- *Terrain:* grass base tile, dirt path, stone/plaza tile, a few
-  decorative filler sprites (trees, fences, lanterns).
-- *The Laptop:* closed-lid sprite (scuffed details), open-lid sprite,
-  4-6 sticker overlay designs, 2-3 alternate case-color recolors.
-- *UI icons (~16-24px, flatter than world sprites):* clock, lute/note,
-  scroll, coin/crown, book, quill, hammer/gear.
-
-**Sourcing:** town/building/terrain/road tiles come from Toen's Medieval
-Strategy Sprite Pack (`public/tiles/toen-medieval-strategy.png`, a 7x52
-grid of 16×16 tiles), **CC-BY 4.0** — unlike Kenney's CC0 packs, this
-requires attribution, which lives on `/credits` (linked from the Taskbar's
-⚙️ menu). Don't add a new asset under this attribution requirement without
-also adding it to that page. The mascot itself still needs a custom design
-(it's the app's unique character); generic building/terrain/road tiles are
-covered by the sourced pack.
+This is inherently scalable without new art per level — solves the exact "running out of content" problem the old building-based system had to work around.

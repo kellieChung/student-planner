@@ -11,15 +11,23 @@ any new decisions, and adjust the TODO list.
 
 ## What this project is
 
-A Next.js (App Router) student planner that syncs assignments, discussions,
+**Lodestar** is a Next.js (App Router) student planner that syncs assignments, discussions,
 and announcements from Canvas LMS (via a companion Chrome extension in
-`canvas-extension/` that bridges Canvas session cookies to the app), uses a
-local Ollama LLM to estimate assignment importance/difficulty/time and turn
-that into a priority score and XP reward, and presents it all in a weekly
+`canvas-extension/` that bridges Canvas session cookies to the app), uses an
+LLM to estimate assignment importance/difficulty/time and turn that into a
+priority score and an XP + Starlight reward (Starlight charts stars in real
+constellations on the Star Chart; the old medieval town/Nano is retired but
+kept in the repo), and presents it all in a weekly
 drag-grid planner UI alongside a Pomodoro timer and a YouTube-backed music
 player. Auth is Google OAuth or email/password (Credentials, JWT sessions)
 via NextAuth v5 (beta), with a terms/13+ consent gate, data lives in Postgres
 via Prisma 7.
+
+**Branding:** the product is named Lodestar. The logo is **temporary** —
+`public/brand/lodestar-logo-temp.png` (plus `app/icon.png` /
+`app/apple-icon.png` resized from it) is a placeholder to be replaced with
+the final artwork. Logged-out visitors to `/` see the marketing page in
+`components/landing/` (built to `HomepageSpec.md`).
 
 ## Session Protocol
 - At the start of every session, read PROGRESS.md before doing anything else.

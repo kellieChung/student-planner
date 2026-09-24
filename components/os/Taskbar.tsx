@@ -6,6 +6,21 @@ import Spinner from "@/components/Spinner";
 import UserMenu from "@/components/UserMenu";
 import { XpAward } from "@/types/gamification";
 import { useWindowManager } from "./WindowManagerContext";
+import { useLodestarFrame } from "@/components/world/LaptopFrame";
+import {
+    BookIcon,
+    CompassIcon,
+    GearIcon,
+    ListIcon,
+    MoonIcon,
+    MusicIcon,
+    PlusIcon,
+    QuestionIcon,
+    RepeatIcon,
+    StarIcon,
+    SunIcon,
+    TimerIcon,
+} from "@/components/brand/Icons";
 
 type Props = {
     theme: "dark" | "light";
@@ -15,7 +30,7 @@ type Props = {
     xpTowardsNextLevel: number;
     awardingXp: boolean;
     latestXpAward: XpAward | null;
-    currency: number;
+    starlight: number;
     onAddTask: () => void;
     onManageRecurring: () => void;
     userName?: string | null;
@@ -55,7 +70,7 @@ export default function Taskbar({
     xpTowardsNextLevel,
     awardingXp,
     latestXpAward,
-    currency,
+    starlight,
     onAddTask,
     onManageRecurring,
     userName,
@@ -67,6 +82,7 @@ export default function Taskbar({
     onSetAutoAcceptAiTasks,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const { replayOnboarding } = useLodestarFrame();
     const settingsRootRef = useRef<HTMLDivElement>(null);
     const clock = useClock();
     const { windows, openWindow } = useWindowManager();
@@ -96,39 +112,39 @@ export default function Taskbar({
         >
             {/* "Start" — decorative branding, not interactive in v1 */}
             <div className="flex shrink-0 items-center gap-1.5 pr-2">
-                <span className="text-lg leading-none" aria-hidden="true">🖥️</span>
+                <CompassIcon size={18} className="text-[var(--accent)]" />
                 <span className="hidden text-xs font-bold sm:inline" style={{ color: "var(--heading)" }}>
-                    ATLAS OS
+                    True North
                 </span>
             </div>
 
             {/* Pinned quick-launch icons */}
             <div className="flex shrink-0 items-center gap-1">
-                <TaskbarIconButton label="Add Task" emoji="➕" onClick={onAddTask} />
-                <TaskbarIconButton label="Recurring" emoji="🔁" onClick={onManageRecurring} />
+                <TaskbarIconButton label="Add Task" icon={<PlusIcon />} onClick={onAddTask} />
+                <TaskbarIconButton label="Recurring" icon={<RepeatIcon />} onClick={onManageRecurring} />
                 <TaskbarIconButton
                     label="Courses"
-                    emoji="📚"
+                    icon={<BookIcon />}
                     onClick={() => openWindow("courses")}
                     running={windows.courses.isOpen}
                 />
                 <TaskbarIconButton
                     label="Focus"
-                    emoji="⏳"
+                    icon={<TimerIcon />}
                     onClick={() => openWindow("pomodoro")}
                     running={windows.pomodoro.isOpen}
                 />
                 <TaskbarIconButton
                     label="Radio"
-                    emoji="🎶"
+                    icon={<MusicIcon />}
                     onClick={() => openWindow("music")}
                     running={windows.music.isOpen}
                 />
-                <TaskbarIconButton label="Rundown" emoji="📋" onClick={onOpenRundown} />
+                <TaskbarIconButton label="Rundown" icon={<ListIcon />} onClick={onOpenRundown} />
                 {stillDecidingCount > 0 && (
                     <TaskbarIconButton
                         label="Still deciding"
-                        emoji="🤔"
+                        icon={<QuestionIcon />}
                         onClick={onOpenStillDeciding}
                         badgeCount={stillDecidingCount}
                     />
@@ -156,7 +172,10 @@ export default function Taskbar({
                     </TrayPill>
                 )}
                 <TrayPill>
-                    <span>🪙 {currency}</span>
+                    <span className="flex items-center gap-1" title="Starlight to spend on the Star Chart">
+                        <StarIcon size={12} className="text-[var(--accent)]" />
+                        {starlight} Starlight
+                    </span>
                 </TrayPill>
                 <TrayPill>
                     <span className="tabular-nums" style={{ color: "var(--foreground)" }}>{clock}</span>
@@ -171,7 +190,7 @@ export default function Taskbar({
                         className="rounded-lg border px-2.5 py-1.5 text-sm transition-transform hover:scale-105"
                         style={{ borderColor: "var(--border)", background: "var(--panel-muted)" }}
                     >
-                        ⚙️
+                        <GearIcon />
                     </button>
                     {isSettingsOpen && (
                         <div
@@ -185,20 +204,20 @@ export default function Taskbar({
                                 <button
                                     type="button"
                                     onClick={() => handleSetTheme("dark")}
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
-                                        theme === "dark" ? "bg-emerald-900/80 text-emerald-100" : "text-slate-400 hover:text-slate-200"
+                                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
+                                        theme === "dark" ? "bg-[#161b33] text-[#e9c46a]" : "text-[var(--muted)] hover:text-[var(--foreground)]"
                                     }`}
                                 >
-                                    🌲 Forest
+                                    <MoonIcon size={13} /> Night
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => handleSetTheme("light")}
-                                    className={`flex-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
-                                        theme === "light" ? "bg-orange-500 text-white" : "text-slate-400 hover:text-slate-200"
+                                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition-colors ${
+                                        theme === "light" ? "bg-[#f7f3ec] text-[#1b2140]" : "text-[var(--muted)] hover:text-[var(--foreground)]"
                                     }`}
                                 >
-                                    🍺 Tavern
+                                    <SunIcon size={13} /> Day
                                 </button>
                             </div>
 
@@ -219,9 +238,20 @@ export default function Taskbar({
                             </p>
                             <UserMenu name={userName} email={userEmail} />
 
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsSettingsOpen(false);
+                                    replayOnboarding();
+                                }}
+                                className="mt-3 block text-xs font-semibold underline"
+                                style={{ color: "var(--muted)" }}
+                            >
+                                Replay intro
+                            </button>
                             <Link
                                 href="/credits"
-                                className="mt-3 block text-xs font-semibold underline"
+                                className="mt-2 block text-xs font-semibold underline"
                                 style={{ color: "var(--muted)" }}
                             >
                                 Credits
@@ -236,13 +266,13 @@ export default function Taskbar({
 
 function TaskbarIconButton({
     label,
-    emoji,
+    icon,
     onClick,
     running,
     badgeCount,
 }: {
     label: string;
-    emoji: string;
+    icon: React.ReactNode;
     onClick: () => void;
     running?: boolean;
     badgeCount?: number;
@@ -258,11 +288,11 @@ function TaskbarIconButton({
             className="relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
             style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
         >
-            <span aria-hidden="true">{emoji}</span>
+            <span aria-hidden="true">{icon}</span>
             <span className="hidden md:inline">{label}</span>
             {badgeCount ? (
                 <span
-                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
+                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-[var(--accent-contrast)]"
                     style={{ background: "var(--accent)" }}
                     aria-hidden="true"
                 >

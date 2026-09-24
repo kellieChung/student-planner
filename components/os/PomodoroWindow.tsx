@@ -3,6 +3,7 @@
 import PomodoroTimer, { STORAGE_KEY } from "@/components/PomodoroTimer";
 import { usePomodoroRemote } from "@/components/os/PomodoroRemoteContext";
 import Window from "./Window";
+import { TimerIcon } from "@/components/brand/Icons";
 
 // Wraps the real, unmodified PomodoroTimer in draggable window chrome.
 // Safe to mount/unmount freely with Window's own isOpen check — the
@@ -15,8 +16,8 @@ export default function PomodoroWindow() {
     return (
         <Window
             app="pomodoro"
-            title="Ancient Time Magic"
-            icon="⏳"
+            title="Focus Timer"
+            icon={<TimerIcon size={14} />}
             // Unlike Music (unmounting the player already stops audio for
             // free), Pomodoro's countdown would otherwise keep silently
             // ticking toward its endTime in the background after the

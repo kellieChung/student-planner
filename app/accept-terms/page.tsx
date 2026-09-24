@@ -38,7 +38,7 @@ export default async function AcceptTermsPage({
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
                 <h1 className="text-2xl font-bold text-[var(--heading)]">Before you continue</h1>
                 <p className="mt-1 text-sm text-[var(--muted)]">
-                    Please review and accept our Terms of Service and Privacy Policy to use Student Planner.
+                    Please review and accept our Terms of Service and Privacy Policy to use Lodestar.
                 </p>
 
                 <AcceptTermsForm next={next} />

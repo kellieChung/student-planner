@@ -141,7 +141,7 @@ export async function POST(request: Request) {
             return NextResponse.json(
                 {
                     error:
-                        "Student Planner playlist ID is required.",
+                        "Lodestar playlist ID is required.",
                 },
                 { status: 400 }
             );

@@ -37,6 +37,8 @@ model User {
   worldLayout                   WorldLayout?
   plannerSettings               PlannerSettings?
   aiTaskEvents                  AiTaskEvent[]
+  starChart                     StarChart?
+  chartedStars                  ChartedStar[]
 }
 
 model Account {
@@ -480,6 +482,34 @@ model WorldLayout {
 
   data      Json
   updatedAt DateTime @updatedAt
+}
+
+// Lodestar's reward layer (gamificationSystem.md), replacing TownState in
+// the live app. Starlight is only ever changed server-side by increment/
+// decrement (app/api/star-chart) — never by a client sending a new total —
+// so a stale client copy can't undo a purchase or double an award.
+model StarChart {
+  id                String    @id @default(cuid())
+  userId            String    @unique
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  starlight         Int       @default(0)
+  // Total ever earned, never decremented; drives constellation unlocks.
+  lifetimeStarlight Int       @default(0)
+  onboardedAt       DateTime?
+  updatedAt         DateTime  @updatedAt
+}
+
+// constellationId is a key into lib/constellations.ts's catalog.
+model ChartedStar {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  constellationId String
+  starIndex       Int
+  chartedAt       DateTime @default(now())
+
+  @@unique([userId, constellationId, starIndex])
+  @@index([userId])
 }
 
 model MusicPlaylist {

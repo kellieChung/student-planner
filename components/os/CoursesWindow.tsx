@@ -3,6 +3,7 @@
 import CoursesPanel from "@/components/CoursesPanel";
 import { useCoursesRemote } from "@/components/os/CoursesRemoteContext";
 import Window from "./Window";
+import { BookIcon } from "@/components/brand/Icons";
 
 // Wraps the course-management panel in the same draggable/resizable/
 // minimizable/closable chrome as Pomodoro and Music. No World-panel
@@ -14,7 +15,7 @@ export default function CoursesWindow() {
     const { bumpCoursesVersion } = useCoursesRemote();
 
     return (
-        <Window app="courses" title="Course Ledger" icon="📚">
+        <Window app="courses" title="Courses" icon={<BookIcon size={14} />}>
             <CoursesPanel onChanged={bumpCoursesVersion} />
         </Window>
     );

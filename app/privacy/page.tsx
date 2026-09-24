@@ -13,7 +13,7 @@ export default function PrivacyPage() {
         <LegalPage title="Privacy Policy">
             <section>
                 <p>
-                    This Privacy Policy explains what information Student Planner (the &quot;Service&quot;), operated
+                    This Privacy Policy explains what information Lodestar (the &quot;Service&quot;), operated
                     by Kellie Chung, collects, how it&apos;s used, and the choices you have.
                 </p>
             </section>
@@ -90,7 +90,7 @@ export default function PrivacyPage() {
             <section>
                 <h2>Student records</h2>
                 <p>
-                    Student Planner is a personal tool you choose to use; it is not provided by or affiliated with
+                    Lodestar is a personal tool you choose to use; it is not provided by or affiliated with
                     your school or Instructure. You control the Canvas data you bring into it and can remove it at
                     any time by deleting courses in the app or deleting your account.
                 </p>
@@ -100,7 +100,7 @@ export default function PrivacyPage() {
                 <h2>Retention and deletion</h2>
                 <p>
                     We keep your data for as long as your account exists. You can permanently delete your account
-                    and all associated data at any time from the account menu in the app (&quot;Delete
+                    and all associated data at any time from Account settings in the app (from the account menu in the app (&quot;Deletequot;Delete
                     Account&quot;). Deletion is immediate and can&apos;t be undone.
                 </p>
             </section>

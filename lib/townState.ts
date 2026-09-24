@@ -1,3 +1,6 @@
+// RETIRED (2026-09-24): the medieval town/mascot layer is no longer used by the
+// live app — Lodestar's Star Chart replaced it (gamificationSystem.md). Kept
+// deliberately so it can be restored; not deleted.
 import { KingdomStage, TownState } from "@/types/townState";
 
 const KINGDOM_STAGES: KingdomStage[] = ["village", "town", "city", "kingdom"];

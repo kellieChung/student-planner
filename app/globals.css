@@ -1,60 +1,62 @@
 @import "tailwindcss";
 
-/* ── Dark: Enchanted Forest ── */
+/* ── Night (data-theme="dark") ── Lodestar navy + gold.
+   The "dark"/"light" keys are kept so ThemeScript and the Canvas
+   extension's theme-sync.js keep working unchanged. */
 :root,
 html[data-theme="dark"] {
-  --background: #e8f5e9;
-  --foreground: #ecfdf5;
-  --app-background: #0a1410;
-  --app-gradient: radial-gradient(ellipse 120% 80% at 50% -20%, rgb(34 88 58 / 0.45), transparent 55%),
-    radial-gradient(ellipse 60% 50% at 100% 100%, rgb(88 28 135 / 0.12), transparent 50%),
-    linear-gradient(180deg, #0c1812 0%, #0a1210 45%, #071008 100%);
-  --heading: #a7f3d0;
-  --heading-glow: rgb(52 211 153 / 0.35);
-  --muted: #86b09a;
-  --panel: #142820;
-  --panel-raised: #1c3528;
-  --panel-muted: #254232;
-  --border: #3d6b52;
-  --accent: #34d399;
-  --accent-hover: #6ee7b7;
-  --accent-soft: rgb(52 211 153 / 0.16);
-  --accent-secondary: #a78bfa;
-  --xp-bar: #fbbf24;
-  --xp-track: #1c3528;
-  --quest-glow: rgb(52 211 153 / 0.14);
-  --overlay: rgb(4 12 8 / 0.78);
-  --shadow: 0 24px 70px rgb(4 20 12 / 0.55);
-  --status-overdue-bg: rgb(127 29 29 / 0.55);
+  --background: #f7f3ec;
+  --foreground: #eef0f8;
+  --app-background: #161b33;
+  --app-gradient: radial-gradient(ellipse 120% 70% at 50% -10%, rgb(58 68 112 / 0.35), transparent 60%),
+    linear-gradient(180deg, #161b33 0%, #121630 100%);
+  --heading: #f7f3ec;
+  --heading-glow: rgb(233 196 106 / 0.18);
+  --muted: #b8bdd6;
+  --panel: #1c2240;
+  --panel-raised: #232a4d;
+  --panel-muted: #2c355e;
+  --border: #3a4470;
+  --accent: #e9c46a;
+  --accent-hover: #f1d68e;
+  --accent-soft: rgb(233 196 106 / 0.14);
+  --accent-contrast: #161b33;
+  --accent-secondary: #9fb4ff;
+  --xp-bar: #e9c46a;
+  --xp-track: #232a4d;
+  --quest-glow: rgb(233 196 106 / 0.1);
+  --overlay: rgb(10 12 28 / 0.78);
+  --shadow: 0 24px 70px rgb(4 6 20 / 0.55);
+  --status-overdue-bg: rgb(127 29 29 / 0.5);
   --status-overdue-text: #fecaca;
-  --status-done-bg: rgb(20 83 45 / 0.45);
-  --status-done-text: #86efac;
+  --status-done-bg: rgb(22 78 64 / 0.5);
+  --status-done-text: #a7f3d0;
 }
 
-/* ── Light: Cozy Tavern ── */
+/* ── Day (data-theme="light") ── cream + ink; deep gold holds contrast on cream. */
 html[data-theme="light"] {
-  --background: #431407;
-  --foreground: #431407;
-  --app-background: #fff7ed;
-  --app-gradient: radial-gradient(ellipse 100% 60% at 50% 0%, rgb(251 146 60 / 0.28), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 0% 100%, rgb(234 88 12 / 0.12), transparent 45%),
-    linear-gradient(180deg, #fff7ed 0%, #ffedd5 50%, #fed7aa 100%);
-  --heading: #c2410c;
-  --heading-glow: rgb(234 88 12 / 0.2);
-  --muted: #9a3412;
-  --panel: #fffbeb;
-  --panel-raised: #fef3c7;
-  --panel-muted: #fde68a;
-  --border: #fdba74;
-  --accent: #ea580c;
-  --accent-hover: #c2410c;
-  --accent-soft: rgb(234 88 12 / 0.14);
-  --accent-secondary: #b45309;
-  --xp-bar: #f59e0b;
-  --xp-track: #fed7aa;
-  --quest-glow: rgb(234 88 12 / 0.1);
-  --overlay: rgb(67 20 7 / 0.42);
-  --shadow: 0 24px 70px rgb(180 83 9 / 0.18);
+  --background: #1b2140;
+  --foreground: #1b2140;
+  --app-background: #f7f3ec;
+  --app-gradient: radial-gradient(ellipse 100% 60% at 50% 0%, rgb(233 196 106 / 0.18), transparent 60%),
+    linear-gradient(180deg, #f7f3ec 0%, #f1ebdf 100%);
+  --heading: #1b2140;
+  --heading-glow: rgb(183 137 42 / 0.15);
+  --muted: #4a5070;
+  --panel: #fffdf8;
+  --panel-raised: #f6f0e4;
+  --panel-muted: #ece3d1;
+  --border: #d9cdb4;
+  --accent: #8a6418;
+  --accent-hover: #6f4f10;
+  --accent-soft: rgb(183 137 42 / 0.14);
+  --accent-contrast: #fffdf8;
+  --accent-secondary: #3a4a8c;
+  --xp-bar: #b7892a;
+  --xp-track: #ece3d1;
+  --quest-glow: rgb(183 137 42 / 0.1);
+  --overlay: rgb(27 33 64 / 0.4);
+  --shadow: 0 24px 70px rgb(27 33 64 / 0.12);
   --status-overdue-bg: rgb(254 202 202 / 0.85);
   --status-overdue-text: #991b1b;
   --status-done-bg: rgb(187 247 208 / 0.7);
@@ -64,8 +66,8 @@ html[data-theme="light"] {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-manrope);
+  --font-serif: var(--font-spectral);
 }
 
 body {
@@ -73,11 +75,17 @@ body {
   background-image: var(--app-gradient);
   background-attachment: fixed;
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-manrope), system-ui, sans-serif;
   transition: background-color 220ms ease, color 220ms ease;
 }
 
 /* Full-page header theming */
+.app-header h1,
+.app-header h2 {
+  font-family: var(--font-spectral), Georgia, serif;
+  font-weight: 500;
+}
+
 .app-header h1 {
   color: var(--heading);
   transition: color 220ms ease, text-shadow 220ms ease;
@@ -134,14 +142,14 @@ html[data-theme="light"] .app-header h1 {
 .planner-shell [class*="bg-blue-600"],
 .planner-shell [class*="bg-indigo-600"] {
   background-color: var(--accent) !important;
-  color: #fff !important;
+  color: var(--accent-contrast) !important;
 }
 
 html[data-theme="light"] .theme-surface [class*="bg-blue-600"],
 html[data-theme="light"] .theme-surface [class*="bg-indigo-600"],
 html[data-theme="light"] .planner-shell [class*="bg-blue-600"],
 html[data-theme="light"] .planner-shell [class*="bg-indigo-600"] {
-  color: #fffbeb !important;
+  color: var(--accent-contrast) !important;
 }
 
 .theme-surface [class*="hover:bg-blue-500"]:hover,
@@ -409,4 +417,281 @@ html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
 
 .laptop-lid--opening {
   animation: lid-open 280ms ease-out forwards;
+}
+
+/* ── Lodestar landing page (public "/") ──
+   Scoped palette so the app's Forest/Tavern themes never leak in. */
+.landing,
+.sky {
+  --ls-navy: #161b33;
+  --ls-navy-raised: #1f2645;
+  --ls-night: #10142a;
+  --ls-line: rgb(233 196 106 / 0.18);
+  --ls-gold: #e9c46a;
+  --ls-gold-hover: #f1d68e;
+  --ls-gold-deep: #b7892a;
+  --ls-ivory: #f7f3ec;
+  --ls-muted: #b8bdd6;
+  --ls-cream: #f7f3ec;
+  --ls-ink: #1b2140;
+  --ls-ink-muted: #4a5070;
+}
+
+.landing {
+  background: var(--ls-navy);
+  color: var(--ls-ivory);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+:is(.landing, .sky) .ls-serif {
+  font-family: var(--font-spectral), Georgia, serif;
+  font-weight: 500;
+}
+
+:is(.landing, .sky) .ls-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+:is(.landing, .sky) .ls-button-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--ls-gold);
+  color: var(--ls-navy);
+  font-weight: 700;
+  padding: 0.85rem 2rem;
+  transition: background-color 200ms ease, box-shadow 200ms ease;
+}
+
+:is(.landing, .sky) .ls-button-gold:hover {
+  background: var(--ls-gold-hover);
+  box-shadow: 0 0 32px rgb(233 196 106 / 0.35);
+}
+
+:is(.landing, .sky) .ls-link-quiet {
+  color: var(--ls-muted);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition: color 200ms ease, text-decoration-color 200ms ease;
+}
+
+:is(.landing, .sky) .ls-link-quiet:hover {
+  color: var(--ls-ivory);
+  text-decoration-color: currentColor;
+}
+
+.landing a:focus-visible,
+:is(.landing, .sky) .ls-constellation:focus-visible {
+  outline: 2px solid var(--ls-gold);
+  outline-offset: 4px;
+}
+
+:is(.landing, .sky) .ls-highlight {
+  color: var(--ls-ivory);
+  background: linear-gradient(transparent 60%, rgb(233 196 106 / 0.35) 60%);
+}
+
+/* Stars */
+:is(.landing, .sky) .ls-star-lit {
+  fill: var(--ls-gold);
+  filter: drop-shadow(0 0 3px rgb(233 196 106 / 0.8));
+}
+
+:is(.landing, .sky) .ls-star-dim {
+  fill: var(--ls-ivory);
+  opacity: 0.45;
+}
+
+:is(.landing, .sky) .ls-map-unlit {
+  fill: none;
+  stroke: var(--ls-muted);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+:is(.landing, .sky) .ls-edge-lit {
+  stroke: var(--ls-gold);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+
+:is(.landing, .sky) .ls-edge-dim {
+  stroke: var(--ls-muted);
+  stroke-width: 0.8;
+  stroke-dasharray: 3 4;
+  opacity: 0.3;
+}
+
+:is(.landing, .sky) .ls-map-halo {
+  fill: rgb(233 196 106 / 0.12);
+  transition: fill 300ms ease;
+}
+
+:is(.landing, .sky) .ls-map-star .ls-star-lit {
+  transition: filter 300ms ease;
+}
+
+:is(.landing, .sky) .ls-constellation .ls-edge-lit {
+  transition: opacity 300ms ease;
+}
+
+:is(.landing, .sky) .ls-constellation:hover .ls-map-halo,
+:is(.landing, .sky) .ls-constellation:focus-visible .ls-map-halo {
+  fill: rgb(233 196 106 / 0.28);
+}
+
+:is(.landing, .sky) .ls-constellation:hover .ls-star-lit,
+:is(.landing, .sky) .ls-constellation:focus-visible .ls-star-lit {
+  filter: drop-shadow(0 0 8px rgb(233 196 106 / 1));
+}
+
+:is(.landing, .sky) .ls-constellation:hover .ls-edge-lit,
+:is(.landing, .sky) .ls-constellation:focus-visible .ls-edge-lit {
+  opacity: 0.9;
+}
+
+:is(.landing, .sky) .ls-constellation {
+  transition: transform 400ms ease;
+}
+
+@keyframes ls-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+:is(.landing, .sky) .ls-twinkle {
+  animation-name: ls-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+
+@keyframes ls-sync-in {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
+:is(.landing, .sky) .ls-sync-row {
+  animation: ls-sync-in 1.6s ease-in-out infinite alternate;
+}
+
+/* Scroll reveal: only hidden when JS can reveal it again. */
+@media (scripting: enabled) {
+  :is(.landing, .sky) .ls-reveal {
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 700ms ease, transform 700ms ease;
+  }
+
+  :is(.landing, .sky) .ls-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.landing, .sky) .ls-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  :is(.landing, .sky) .ls-twinkle,
+  :is(.landing, .sky) .ls-sync-row {
+    animation: none;
+  }
+}
+
+/* ── Star Chart moments ── */
+@keyframes ls-ignite {
+  0% { transform: scale(0.2); opacity: 0; }
+  60% { transform: scale(1.6); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+:is(.landing, .sky) .ls-ignite {
+  animation: ls-ignite 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes ls-draw {
+  from { stroke-dashoffset: 120; opacity: 0.2; }
+  to { stroke-dashoffset: 0; opacity: 0.95; }
+}
+
+:is(.landing, .sky) .ls-draw {
+  stroke-dasharray: 120;
+  stroke-width: 1.4;
+  animation: ls-draw 1.1s ease-out both;
+}
+
+@keyframes ls-celebrate {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+:is(.landing, .sky) .ls-celebrate {
+  animation: ls-celebrate 800ms ease-out 1s both;
+}
+
+:is(.landing, .sky) .ls-celebrate-fast {
+  animation: ls-celebrate 400ms ease-out both;
+}
+
+/* Ship's Log ↔ Star Chart: pull back to the sky / push in to the console
+   (gamificationSystem.md). Only applied while animating — a transform left
+   on the frame would re-anchor every position:fixed modal to it. */
+@keyframes view-pull-back-out {
+  from { transform: scale(1); opacity: 1; filter: blur(0); }
+  to { transform: scale(0.9); opacity: 0; filter: blur(3px); }
+}
+
+@keyframes view-pull-back-in {
+  from { transform: scale(1.08); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes view-push-in-out {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(1.08); opacity: 0; }
+}
+
+@keyframes view-push-in-in {
+  from { transform: scale(0.92); opacity: 0; filter: blur(3px); }
+  to { transform: scale(1); opacity: 1; filter: blur(0); }
+}
+
+.view-pull-back--out { animation: view-pull-back-out 320ms ease-in forwards; }
+.view-pull-back--in { animation: view-pull-back-in 420ms ease-out forwards; }
+.view-push-in--out { animation: view-push-in-out 320ms ease-in forwards; }
+.view-push-in--in { animation: view-push-in-in 420ms ease-out forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.landing, .sky) .ls-ignite,
+  :is(.landing, .sky) .ls-draw,
+  :is(.landing, .sky) .ls-celebrate,
+  :is(.landing, .sky) .ls-celebrate-fast,
+  .view-pull-back--out,
+  .view-pull-back--in,
+  .view-push-in--out,
+  .view-push-in--in {
+    animation: none;
+  }
+}
+
+/* Text sitting on the accent colour: navy on Night's gold, cream on Day's
+   deep gold. Overrides the text-white → --foreground remap above. */
+[class*="bg-[var(--accent)]"][class*="text-white"],
+.theme-surface [class*="bg-[var(--accent)]"][class*="text-white"],
+.planner-shell [class*="bg-[var(--accent)]"][class*="text-white"] {
+  color: var(--accent-contrast) !important;
+}
+
+.theme-surface h1 {
+  font-family: var(--font-spectral), Georgia, serif;
+  font-weight: 500;
 }

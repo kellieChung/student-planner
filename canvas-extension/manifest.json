@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Student Planner Canvas",
+  "name": "Lodestar Canvas",
   "version": "0.1.0",
-  "description": "Connects Canvas to Student Planner.",
+  "description": "Connects Canvas to Lodestar.",
 
   "permissions": [
     "storage",

@@ -32,7 +32,7 @@ export default async function ExtensionCallbackPage({
 
     if (!user) {
         return (
-            <ExtensionCallbackMessage text="❌ Could not find your Student Planner account." />
+            <ExtensionCallbackMessage text="❌ Could not find your Lodestar account." />
         );
     }
 
@@ -85,7 +85,7 @@ export default async function ExtensionCallbackPage({
     return (
         <main className="min-h-screen flex items-center justify-center p-4">
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
-                <h1 className="text-2xl font-bold text-[var(--heading)]">Student Planner</h1>
+                <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
 
                 <p className="mt-4 text-sm font-semibold text-[var(--foreground)]">✅ You&apos;re signed in!</p>
 
@@ -101,7 +101,7 @@ function ExtensionCallbackMessage({ text }: { text: string }) {
     return (
         <main className="min-h-screen flex items-center justify-center p-4">
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
-                <h1 className="text-2xl font-bold text-[var(--heading)]">Student Planner</h1>
+                <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
                 <p className="mt-4 text-sm font-semibold text-[var(--status-overdue-text)]">{text}</p>
             </div>
         </main>

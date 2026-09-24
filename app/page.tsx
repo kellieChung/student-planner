@@ -5,25 +5,25 @@ import {auth} from "@/auth"
 import {redirect} from "next/navigation";
 import {prisma} from "@/lib/prisma";
 import LaptopFrame from "@/components/world/LaptopFrame";
-import { TownState } from "@/types/townState";
-import { WorldLayoutData } from "@/types/worldLayout";
-import { DEFAULT_WORLD_LAYOUT, isValidWorldLayoutData } from "@/lib/worldLayout";
+import { StarChartState } from "@/lib/starChart";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
+import LandingPage from "@/components/landing/LandingPage";
 
 
 export default async function TestPage() {
     const session = await auth();
 
     if (!session?.user?.email) {
-        redirect("/login");
+        return <LandingPage />;
     }
 
     const user = await prisma.user.findUnique({
         where: { email: session.user.email },
     });
 
+    // A JWT can outlive a deleted account; treat that visitor as logged out.
     if (!user) {
-        redirect("/login");
+        return <LandingPage />;
     }
 
     if (!hasAcceptedCurrentTerms(user)) {
@@ -35,26 +35,21 @@ export default async function TestPage() {
         due: assignment.due ?? "",
     }));
 
-    const townStateRow = await prisma.townState.findUnique({
-        where: { userId: user.id },
-    });
+    const [starChartRow, chartedStars] = await Promise.all([
+        prisma.starChart.findUnique({ where: { userId: user.id } }),
+        prisma.chartedStar.findMany({
+            where: { userId: user.id },
+            select: { constellationId: true, starIndex: true },
+            orderBy: { chartedAt: "asc" },
+        }),
+    ]);
 
-    const townState: TownState = {
-        currency: townStateRow?.currency ?? 0,
-        libraryGrowth: townStateRow?.libraryGrowth ?? 0,
-        workshopGrowth: townStateRow?.workshopGrowth ?? 0,
-        trainingGroundsGrowth: townStateRow?.trainingGroundsGrowth ?? 0,
-        watchtowerGrowth: townStateRow?.watchtowerGrowth ?? 0,
-        townSquareGrowth: townStateRow?.townSquareGrowth ?? 0,
-        kingdomStage: (townStateRow?.kingdomStage as TownState["kingdomStage"]) ?? "village",
-        onboardingCompletedAt: townStateRow?.onboardingCompletedAt?.toISOString() ?? null,
+    const starChart: StarChartState = {
+        starlight: starChartRow?.starlight ?? 0,
+        lifetimeStarlight: starChartRow?.lifetimeStarlight ?? 0,
+        onboardedAt: starChartRow?.onboardedAt?.toISOString() ?? null,
+        charted: chartedStars,
     };
-
-    const worldLayoutRow = await prisma.worldLayout.findUnique({
-        where: { userId: user.id },
-    });
-
-    const layout: WorldLayoutData = isValidWorldLayoutData(worldLayoutRow?.data) ? worldLayoutRow.data : DEFAULT_WORLD_LAYOUT;
 
     // AutoTaskCreation.md's Rundown screen: "is there anything new since
     // last visit" computed once here (three indexed point-lookups, no
@@ -88,16 +83,12 @@ export default async function TestPage() {
 
     return (
         <main className="h-screen w-screen overflow-hidden p-3 sm:p-4">
-            <LaptopFrame
-                initialView={townState.onboardingCompletedAt ? "os" : "onboarding"}
-                townState={townState}
-                layout={layout}
-            >
+            <LaptopFrame starChart={starChart}>
                 <div className="app-header w-full px-4 mx-auto">
                     <WeeklyPlannerView
                         assignments={assignments}
-                        userName={session.user.name}
-                        userEmail={session.user.email}
+                        userName={user.name}
+                        userEmail={user.email}
                         initialRundown={initialRundown}
                     />
                 </div>

@@ -14,9 +14,8 @@ import EditTaskModal, {RecurrenceScope} from "./EditTaskModal";
 import RecurringTasksPanel from "./RecurringTasksPanel";
 import {getGamificationState, saveGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
-import {getTownState, saveTownGrowth} from "@/lib/townState";
-import {TownState} from "@/types/townState";
-import {applyGrowthAward, applyWatchtowerBonus, computeGrowthAward, isCompletionOnTime, maybeAdvanceKingdomStage} from "@/lib/townGrowth";
+import {useStarChart} from "@/components/starchart/StarChartContext";
+import {StarIcon} from "@/components/brand/Icons";
 import {useMascot} from "./world/LaptopFrame";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
@@ -140,21 +139,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
-    const [townState, setTownState] = useState<TownState>({
-        currency: 0,
-        libraryGrowth: 0,
-        workshopGrowth: 0,
-        trainingGroundsGrowth: 0,
-        watchtowerGrowth: 0,
-        townSquareGrowth: 0,
-        kingdomStage: "village",
-        onboardingCompletedAt: null,
-    });
     // Scratch space for awardXpForTask's persistence calls — see the comment
     // there for why the actual PATCHes must not live inside a setState
     // updater body.
     const latestGamificationRef = useRef<GamificationState | null>(null);
-    const latestTownStateRef = useRef<TownState | null>(null);
+    const starChart = useStarChart();
     const mascot = useMascot();
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
@@ -630,13 +619,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
             if (!cancelled) {
                 latestGamificationRef.current = savedGamification;
                 setGamification(savedGamification);
-            }
-        });
-
-        void getTownState().then((savedTownState) => {
-            if (!cancelled) {
-                latestTownStateRef.current = savedTownState;
-                setTownState(savedTownState);
             }
         });
 
@@ -1405,15 +1387,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
             setAwardingXp(false);
         }
 
-        const taskCourse = courses.find((c) => c.name === task.course);
-        const typeCode = task.typeOverride || classifyLabelType({
-            name: task.name,
-            course: task.course,
-            isCustomCourse: taskCourse?.isCustom,
-        });
-        const growthAward = computeGrowthAward(typeCode, award.xp);
-        const onTime = completedAt !== null && isCompletionOnTime(task.due, completedAt);
-
         // Dedup and state computation happen synchronously against these
         // refs (not via a setState updater function): React does not
         // invoke a functional setState updater synchronously at the call
@@ -1437,16 +1410,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
         latestGamificationRef.current = nextGamification;
         setGamification(nextGamification);
 
-        const currentTown = latestTownStateRef.current ?? townState;
-        const withGrowth = applyGrowthAward(currentTown, growthAward);
-        const withWatchtower = applyWatchtowerBonus(withGrowth, onTime);
-        const nextTown = maybeAdvanceKingdomStage(withWatchtower, nextGamification.awardedTaskIds.length);
-
-        latestTownStateRef.current = nextTown;
-        setTownState(nextTown);
-
+        // Starlight mirrors the XP award (difficulty-weighted, with the late
+        // penalty already applied). The medieval town growth this used to feed
+        // is retired — see lib/townGrowth.ts.
         saveGamificationState(nextGamification);
-        void saveTownGrowth(nextTown);
+        void starChart.earn(award.xp);
         setLatestXpAward(award);
     };
 
@@ -1987,6 +1955,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
     return (
         <>
         <div className = "theme-surface planner-shell w-full bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
+            <h1 className="mb-4 pr-28 text-3xl">Ship&apos;s Log</h1>
 
             {estimatingCount > 0 && (
                 <p className="mb-4 flex items-center gap-2 text-xs font-medium text-slate-400">
@@ -1999,8 +1968,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
                 <div className="mb-5 rounded-xl border border-amber-500/60 bg-amber-950/20 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                            <p className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                                🐸 Eat this frog next
+                            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
+                                <StarIcon size={12} /> Polaris · your next best task
                             </p>
                             <h2 className="mt-0.5 text-lg font-semibold text-white">{upNext.task.name}</h2>
                             <p className="text-sm text-slate-400">
@@ -2328,7 +2297,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, in
             xpTowardsNextLevel={xpTowardsNextLevel}
             awardingXp={awardingXp}
             latestXpAward={latestXpAward}
-            currency={townState.currency}
+            starlight={starChart.state.starlight}
             onAddTask={openAddTask}
             onManageRecurring={() => setIsRecurringPanelOpen(true)}
             userName={userName}

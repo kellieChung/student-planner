@@ -4,19 +4,20 @@ import { useActionState, useState } from "react";
 import Link from "next/link";
 import { signInWithPassword, signUp, type CredentialsFormState } from "@/app/login/actions";
 
+export type Mode = "signIn" | "signUp";
+
 type Props = {
     redirectTo?: string;
+    initialMode?: Mode;
 };
-
-type Mode = "signIn" | "signUp";
 
 const INITIAL_STATE: CredentialsFormState = { error: null };
 
 const INPUT_CLASS =
     "w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--foreground)] placeholder:text-[var(--muted)] focus:border-[var(--accent)] focus:outline-none";
 
-export default function CredentialsForm({ redirectTo = "/" }: Props) {
-    const [mode, setMode] = useState<Mode>("signIn");
+export default function CredentialsForm({ redirectTo = "/", initialMode = "signIn" }: Props) {
+    const [mode, setMode] = useState<Mode>(initialMode);
     const [signInState, signInAction, signInPending] = useActionState(signInWithPassword, INITIAL_STATE);
     const [signUpState, signUpAction, signUpPending] = useActionState(signUp, INITIAL_STATE);
 
