@@ -14,10 +14,26 @@ export function hasAcceptedCurrentTerms(user: { termsAcceptedAt: Date | null; te
 }
 
 // Only same-site relative paths — never let a form field redirect off-site.
+// Backslashes and control characters are rejected outright (browsers treat
+// "/\evil.com" like "//evil.com" and strip tabs/newlines); parsing against a
+// dummy origin then catches anything else that resolves off-site, including
+// dot segments that normalize to a protocol-relative "//host".
+const DUMMY_ORIGIN = "http://lodestar.invalid";
+
 export function safeRedirectPath(value: FormDataEntryValue | string | null | undefined): string {
-    if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) {
+    if (typeof value !== "string" || !value.startsWith("/") || /[\\\u0000-\u001f\u007f]/.test(value)) {
         return "/";
     }
 
-    return value;
+    try {
+        const url = new URL(value, DUMMY_ORIGIN);
+
+        if (url.origin !== DUMMY_ORIGIN || url.pathname.startsWith("//")) {
+            return "/";
+        }
+
+        return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+        return "/";
+    }
 }
