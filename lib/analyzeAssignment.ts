@@ -118,7 +118,7 @@ export function classifyAssignmentType(text: {
 
 // Deterministic keyword-based fallback used whenever the Ollama call fails
 // or returns something malformed — see CLAUDE.md's "must degrade
-// gracefully" convention for lib/analyzeAssignment.ts and app/api/task-xp.
+// gracefully" convention for lib/analyzeAssignment.ts and lib/xp.ts.
 function fallbackAssignmentAnalysis(
     assignment: AssignmentInput
 ): AssignmentAnalysis {

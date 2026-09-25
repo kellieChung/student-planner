@@ -15,6 +15,8 @@ import {resolveDueTime, formatTimeInputValue, formatEstimatedMinutes} from "@/li
 import {classifyLabelType, courseAbbreviationDefault, formatTaskLabel, LabelType} from "@/lib/taskLabel";
 import {TaskStatus} from "@/lib/taskStatus";
 import {describeRecurrenceRule} from "@/lib/recurrence";
+import useEscapeToClose from "@/components/ui/useEscapeToClose";
+import {RepeatIcon} from "@/components/brand/Icons";
 
 export type RecurrenceScope = "this" | "following";
 
@@ -88,6 +90,11 @@ export default function EditTaskModal({
         }
     }, [task, startDate, initialNotes, initialStatus]);
 
+    useEscapeToClose(isOpen && task !== null, () => {
+        if (pendingAction) setPendingAction(null);
+        else onClose();
+    });
+
     if (!isOpen ||!task) return null;
 
     const startAfterDue = Boolean(start && due && start > due);
@@ -118,7 +125,8 @@ export default function EditTaskModal({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if(!name) return;
+        const trimmedName = name.trim();
+        if (!trimmedName) return;
         if (startAfterDue) return;
 
         if (recurrence.enabled && !isRecurringOccurrence) {
@@ -126,7 +134,7 @@ export default function EditTaskModal({
 
             onConvertToRecurring({
                 ...task,
-                name,
+                name: trimmedName,
                 course,
                 due,
                 typeOverride: (typeOverride || null) as Assignment["typeOverride"],
@@ -139,7 +147,7 @@ export default function EditTaskModal({
 
         const updatedTask: Assignment = {
             ...task,
-            name,
+            name: trimmedName,
             course,
             due,
             typeOverride: (typeOverride || null) as Assignment["typeOverride"],
@@ -171,7 +179,7 @@ export default function EditTaskModal({
     if (pendingAction) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
-                <div className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl text-white space-y-4">
+                <div role="dialog" aria-modal="true" aria-label="Choose which occurrences" className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-sm shadow-2xl text-white space-y-4">
                     <h2 className="text-lg font-bold text-slate-100">
                         {pendingAction.kind === "delete" ? "Delete recurring task" : "Edit recurring task"}
                     </h2>
@@ -208,7 +216,7 @@ export default function EditTaskModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
-            <div className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl text-white">
+            <div role="dialog" aria-modal="true" aria-label="Edit task details" className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl text-white">
                 <div className="flex justify-between items-start mb-4">
                     <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-slate-700 bg-slate-800 text-slate-300">
@@ -221,6 +229,7 @@ export default function EditTaskModal({
                     <button
                         type="button"
                         onClick={onClose}
+                        aria-label="Close"
                         className="text-slate-400 hover:text-white text-lg px-2"
                     >
                         ✕
@@ -237,7 +246,7 @@ export default function EditTaskModal({
                             required
                             value = {name}
                             onChange = {(e) => setName(e.target.value)}
-                            className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+                            className = "w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 resize-none"
                         />
                         <p className="mt-1.5 text-xs text-slate-500 font-mono">{cardLabel}</p>
                     </div>
@@ -303,7 +312,7 @@ export default function EditTaskModal({
               />
             </div>
 
-            <DueTimeField value={dueTime} onChange={setDueTime} />
+            <DueTimeField value={dueTime} onChange={setDueTime} disabled={!due} />
 
             <StartDateField value={start} onChange={setStart} />
 
@@ -327,7 +336,7 @@ export default function EditTaskModal({
 
           {isRecurringOccurrence && recurringTaskRule && (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800/60 p-2.5 text-sm">
-              <span className="text-slate-300">🔁 {describeRecurrenceRule(recurringTaskRule)}</span>
+              <span className="flex items-center gap-1.5 text-slate-300"><RepeatIcon size={14} />{describeRecurrenceRule(recurringTaskRule)}</span>
               <button
                 type="button"
                 onClick={() => onManageSeries(task.recurrenceId as string)}
@@ -364,7 +373,7 @@ export default function EditTaskModal({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add any notes about this task..."
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
+              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 resize-none"
             />
           </div>
 

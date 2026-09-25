@@ -9,6 +9,7 @@ import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import RecurrenceField, {DEFAULT_RECURRENCE_VALUE, RecurrenceFieldValue} from "./RecurrenceField";
 import {resolveDueTime} from "@/lib/utils";
+import useEscapeToClose from "@/components/ui/useEscapeToClose";
 
 type AddTaskModalProps = {
     isOpen: boolean;
@@ -46,6 +47,8 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
         }
     }, [isOpen, defaultDue]);
 
+    useEscapeToClose(isOpen, onClose);
+
     if (!isOpen) return null;
 
     const startAfterDue = Boolean(start && due && start > due);
@@ -53,16 +56,17 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if(!name) return;
+        const trimmedName = name.trim();
+        if (!trimmedName) return;
         if (startAfterDue) return;
         if (recurrenceInvalid) return;
 
         if (recurrence.enabled && due) {
-            onAddRecurringTask(name, course, due, dueTime, recurrence, notes);
+            onAddRecurringTask(trimmedName, course, due, dueTime, recurrence, notes);
         } else {
             const newTask: Assignment = {
                 id: `custom-${Date.now()}`,
-                name,
+                name: trimmedName,
                 course,
                 due,
                 completed: false,
@@ -85,10 +89,13 @@ export default function AddTaskModal({isOpen, defaultDue, courses, onCourseCreat
 return (
     <div className="fixed inset-0 flex items-center justify-center z-50 bg-[var(--overlay)] backdrop-blur-sm p-4">
         <form
+            role = "dialog"
+            aria-modal = "true"
+            aria-labelledby = "add-task-title"
             onSubmit = {handleSubmit}
             className = "theme-surface planner-shell bg-slate-900 rounded-xl p-6 w-[90vw] max-w-[400px] max-h-[90vh] overflow-y-auto space-y-4 border border-slate-700 shadow-2xl"
         >
-            <h2 className = "text-xl font-semibold">
+            <h2 id = "add-task-title" className = "text-xl font-semibold">
                 Add Task
             </h2>
 
@@ -125,7 +132,7 @@ return (
                 />
             </div>
 
-            <DueTimeField value={dueTime} onChange={setDueTime} />
+            <DueTimeField value={dueTime} onChange={setDueTime} disabled={!due} />
 
             <StartDateField value={start} onChange={setStart} />
 
@@ -162,7 +169,7 @@ return (
 
                 <button
                     type = "submit"
-                    disabled = {startAfterDue || recurrenceInvalid}
+                    disabled = {!name.trim() || startAfterDue || recurrenceInvalid}
                     className = "px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     Add Task

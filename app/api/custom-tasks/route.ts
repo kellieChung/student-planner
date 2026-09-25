@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_TEXT_LENGTH = 300;
 
 export async function GET() {
     try {
@@ -179,17 +180,38 @@ export async function POST(request: Request) {
         }
 
         const data = {
-            name: name.trim(),
-            course: course.trim(),
+            name: name.trim().slice(0, MAX_TEXT_LENGTH),
+            course: course.trim().slice(0, MAX_TEXT_LENGTH),
             due,
             dueAt: dueAtDate,
             dueFraction,
             sourceAnnouncementId,
         };
 
-        const customTask = existing
-            ? await prisma.customTask.update({ where: { id }, data })
-            : await prisma.customTask.create({ data: { id, userId: user.id, ...data } });
+        let customTask;
+
+        if (existing) {
+            customTask = await prisma.customTask.update({ where: { id }, data });
+        } else {
+            try {
+                customTask = await prisma.customTask.create({ data: { id, userId: user.id, ...data } });
+            } catch (error) {
+                // Two tabs creating the same id at once: whoever lost the race
+                // treats it as the same-user replay above.
+                if ((error as { code?: string }).code !== "P2002") throw error;
+
+                const raced = await prisma.customTask.findUnique({ where: { id } });
+
+                if (!raced || raced.userId !== user.id) {
+                    return NextResponse.json(
+                        { success: false, error: "That task id is already in use." },
+                        { status: 409 }
+                    );
+                }
+
+                customTask = await prisma.customTask.update({ where: { id }, data });
+            }
+        }
 
         return NextResponse.json({
             success: true,

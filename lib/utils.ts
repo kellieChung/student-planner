@@ -241,6 +241,25 @@ export function getTodayString(): string{
     return toDateKey(new Date());
 }
 
+// True only for a real calendar day in "YYYY-MM-DD" form ("2026-02-30" and
+// "2026-13-01" are rejected, unlike a bare regex).
+export function isDateKey(value: unknown): value is string {
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+    return toDateKey(parseLocalDate(value)) === value;
+}
+
+// The user's "today", sent by the browser (the server's clock is UTC on
+// Vercel, a day ahead of US evenings). Trusted only within a day of the
+// server's date; anything else falls back to the server's.
+export function resolveClientToday(value: unknown): string {
+    const serverToday = getTodayString();
+
+    if (!isDateKey(value)) return serverToday;
+
+    return Math.abs(daysBetween(parseLocalDate(value), parseLocalDate(serverToday))) <= 1 ? value : serverToday;
+}
+
 export function parseLocalDate(dateString: string): Date {
     const [year, month, day] = dateString.split("-").map(Number);
 
@@ -276,7 +295,9 @@ export function resolveDueTime(
     dueDateKey: string,
     time: string
 ): { dueAt: string | null; dueFraction: number | undefined } {
-    if (!time) {
+    // A time without a date can't be an instant (and parseLocalDate("")
+    // would make toISOString() throw).
+    if (!time || !dueDateKey) {
         return { dueAt: null, dueFraction: undefined };
     }
 
@@ -295,11 +316,23 @@ export function resolveDueTime(
 // (no override wanted yet), but a due-DATE edit made while in auto mode
 // still needs a real instant to persist as dueAtOverride, or the new date
 // is silently dropped.
+// Returns "" (no override) for an empty date.
 export function endOfDayInstant(dueDateKey: string): string {
+    if (!dueDateKey) return "";
+
     const due = parseLocalDate(dueDateKey);
     due.setHours(23, 59, 59, 999);
 
     return due.toISOString();
+}
+
+// Due instants compared at minute precision: the edit form only carries
+// hours and minutes, so Canvas's "23:59:59" and the form's "23:59:00" are the
+// same due time.
+export function sameMinute(a: string | null | undefined, b: string | null | undefined): boolean {
+    if (!a || !b) return !a && !b;
+
+    return Math.floor(new Date(a).getTime() / 60_000) === Math.floor(new Date(b).getTime() / 60_000);
 }
 
 // Inverse of resolveDueTime's time component, for hydrating an

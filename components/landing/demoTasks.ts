@@ -12,7 +12,7 @@ type Seed = {
     name: string;
     minutes: number;
     due: string;
-    // Illustrative only; the real award is time-based (app/api/task-xp).
+    // Illustrative only; the real award is time-based (lib/xp.ts).
     starlight: number;
     fromAnnouncement?: boolean;
 };

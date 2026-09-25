@@ -29,23 +29,6 @@ export async function getStarChart(): Promise<StarChartState | null> {
     }
 }
 
-export async function earnStarlight(amount: number): Promise<{ starlight: number; lifetimeStarlight: number } | null> {
-    try {
-        const response = await fetch("/api/star-chart", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "earn", amount }),
-        });
-
-        if (!response.ok) return null;
-
-        return await response.json() as { starlight: number; lifetimeStarlight: number };
-    } catch (error) {
-        console.error("Could not save Starlight", error);
-        return null;
-    }
-}
-
 export async function chartStar(constellationId: string, starIndex: number): Promise<ChartStarResult> {
     try {
         const response = await fetch("/api/star-chart", {

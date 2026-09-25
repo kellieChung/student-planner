@@ -3,7 +3,7 @@
 import Tooltip from "@/components/ui/Tooltip";
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useRouter} from "next/navigation";
-import {CARD_HEIGHT_PX, calculateGridSpan, endOfDayInstant, formatTimeInputValue, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate, resolveDueTime} from "@/lib/utils";
+import {CARD_HEIGHT_PX, calculateGridSpan, endOfDayInstant, formatTimeInputValue, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate, resolveDueTime, sameMinute} from "@/lib/utils";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import {RecurringTask} from "@/types/recurringTask";
@@ -13,7 +13,7 @@ import AssignmentCard from "./AssignmentCard";
 import AddTaskModal from "./AddTaskModal";
 import EditTaskModal, {RecurrenceScope} from "./EditTaskModal";
 import RecurringTasksPanel from "./RecurringTasksPanel";
-import {getGamificationState, saveGamificationState} from "@/lib/gamification";
+import {awardTaskXp, getGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {useStarChart} from "@/components/starchart/StarChartContext";
 import {StarIcon} from "@/components/brand/Icons";
@@ -36,6 +36,7 @@ import { savePlannerSettings } from "@/lib/plannerSettings";
 import RundownWindow from "./rundown/RundownWindow";
 import { useWindowManager } from "./os/WindowManagerContext";
 import StillDecidingPanel from "./rundown/StillDecidingPanel";
+import ConfirmDialog from "./ui/ConfirmDialog";
 
 function toDateKey(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -135,6 +136,20 @@ function toCustomizationPatchBody(updates: TaskCustomizationState) {
     };
 }
 
+function customTaskPostBody(task: Assignment) {
+    return {
+        id: task.id,
+        name: task.name,
+        course: task.course,
+        due: task.due || null,
+        dueAt: task.dueAt ?? null,
+        dueFraction: task.dueFraction ?? null,
+        sourceAnnouncementId: task.sourceAnnouncementId ?? null,
+    };
+}
+
+const SAVE_ERROR = "Couldn't save your change, so it was undone. Check your connection and try again.";
+
 export default function WeeklyPlannerView({ assignments, userName, userEmail, isDev, initialRundown }: WeeklyPlannerProps) {
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
@@ -143,15 +158,18 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
     const [gamification, setGamification] = useState<GamificationState>({ totalXp: 0, awardedTaskIds: [] });
     const [latestXpAward, setLatestXpAward] = useState<XpAward | null>(null);
-    // Scratch space for awardXpForTask's persistence calls — see the comment
-    // there for why the actual PATCHes must not live inside a setState
-    // updater body.
+    // Latest known XP state for awardXpForTask's fast-path dedup (the server
+    // is the real dedup; this only avoids a pointless request).
     const latestGamificationRef = useRef<GamificationState | null>(null);
     const starChart = useStarChart();
     const mascot = useMascot();
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
     const [taskCustomizations, setTaskCustomizations] = useState<Record<string, TaskCustomizationState>>({});
+
+    useEffect(() => {
+        taskCustomizationsRef.current = taskCustomizations;
+    }, [taskCustomizations]);
     // Refreshed on a timer (not just at mount) so a custom start date that
     // passes while the tab stays open flips back to auto live, without a
     // reload — see hasCustomStartDatePassed's call sites below.
@@ -164,6 +182,19 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [pulsingIds, setPulsingIds] = useState<Set<string>>(new Set());
     const [customTasksLoaded, setCustomTasksLoaded] = useState(false);
     const [customizationsLoaded, setCustomizationsLoaded] = useState(false);
+    // A failed load must block writes: persistCustomization replaces the
+    // whole row, so writing on top of an empty map would wipe a task's saved
+    // overrides, notes, completion and deletion.
+    const [customizationsLoadFailed, setCustomizationsLoadFailed] = useState(false);
+    const [customTasksLoadFailed, setCustomTasksLoadFailed] = useState(false);
+    const [plannerError, setPlannerError] = useState<string | null>(null);
+    const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; isCustom: boolean } | null>(null);
+    const taskCustomizationsRef = useRef<Record<string, TaskCustomizationState>>({});
+    const customizationsReadyRef = useRef(false);
+    // Task ids with a customization write in flight; a background reload
+    // keeps the local value for these instead of reverting to the server's
+    // pre-write copy.
+    const pendingCustomizationWritesRef = useRef<Map<string, number>>(new Map());
     const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
     const [isRecurringPanelOpen, setIsRecurringPanelOpen] = useState(false);
     const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
@@ -474,10 +505,27 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // Declared before any effect (several below reference it) rather than
     // near the other task handlers — a forward reference from inside a
     // useEffect callback to a const declared later in the component body.
+    const canWriteCustomizations = () => {
+        if (customizationsReadyRef.current) return true;
+
+        setPlannerError("Your saved task details haven't loaded yet, so changes are paused. Reload the page to try again.");
+        return false;
+    };
+
+    // Optimistic, with rollback: a failed save restores the previous value
+    // (unless a newer edit already replaced it) and tells the user.
     const persistCustomization = (
         taskId: string,
         updates: TaskCustomizationState
     ) => {
+        if (!canWriteCustomizations()) return;
+
+        const previous = taskCustomizationsRef.current[taskId];
+        const pending = pendingCustomizationWritesRef.current;
+
+        pending.set(taskId, (pending.get(taskId) ?? 0) + 1);
+        taskCustomizationsRef.current = { ...taskCustomizationsRef.current, [taskId]: updates };
+
         setTaskCustomizations((current) => ({
             ...current,
             [taskId]: updates,
@@ -487,9 +535,28 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(toCustomizationPatchBody(updates)),
-        }).catch((error) => {
-            console.error("Could not save task customization", error);
-        });
+        })
+            .then((response) => {
+                if (!response.ok) throw new Error(`Saving returned ${response.status}`);
+            })
+            .catch((error) => {
+                console.error("Could not save task customization", error);
+
+                setTaskCustomizations((current) => {
+                    if (current[taskId] !== updates) return current;
+
+                    const next = { ...current };
+                    if (previous) next[taskId] = previous;
+                    else delete next[taskId];
+                    return next;
+                });
+                setPlannerError(SAVE_ERROR);
+            })
+            .finally(() => {
+                const remaining = (pending.get(taskId) ?? 1) - 1;
+                if (remaining > 0) pending.set(taskId, remaining);
+                else pending.delete(taskId);
+            });
     };
 
     // Awaited variant used only by the one-time legacy-localStorage
@@ -621,7 +688,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         let cancelled = false;
 
         void getGamificationState().then((savedGamification) => {
-            if (!cancelled) {
+            if (!cancelled && savedGamification) {
                 latestGamificationRef.current = savedGamification;
                 setGamification(savedGamification);
             }
@@ -656,15 +723,23 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         const loadCustomTasks = async () => {
             try {
                 const response = await fetch("/api/custom-tasks");
-                if (!response.ok) return;
+                if (!response.ok) throw new Error(`Loading custom tasks returned ${response.status}`);
 
                 const data = await response.json() as { customTasks?: Assignment[] };
 
                 setTasks([...resolvedAssignments, ...(data.customTasks ?? [])]);
+                setCustomTasksLoadFailed(false);
+                setCustomTasksLoaded(true);
             } catch (error) {
                 console.error("Could not load custom tasks", error);
-            } finally {
-                setCustomTasksLoaded(true);
+
+                // Still show the Canvas tasks (and any custom ones already on
+                // screen) instead of an empty planner.
+                setTasks((current) => [
+                    ...resolvedAssignments,
+                    ...current.filter((task) => task.id.startsWith("custom-")),
+                ]);
+                setCustomTasksLoadFailed(true);
             }
         };
 
@@ -716,7 +791,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     async function loadTaskCustomizations() {
         try {
             const response = await fetch("/api/task-customizations");
-            if (!response.ok) return;
+            if (!response.ok) throw new Error(`Loading task customizations returned ${response.status}`);
 
             const data = await response.json() as {
                 customizations: Array<{
@@ -750,11 +825,25 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 };
             }
 
-            setTaskCustomizations(next);
+            // Keep local values for tasks with a save still in flight — the
+            // server's copy may predate that save.
+            setTaskCustomizations((current) => {
+                for (const taskId of pendingCustomizationWritesRef.current.keys()) {
+                    if (current[taskId]) next[taskId] = current[taskId];
+                }
+
+                taskCustomizationsRef.current = next;
+                return next;
+            });
+            customizationsReadyRef.current = true;
+            setCustomizationsLoadFailed(false);
+            setCustomizationsLoaded(true);
         } catch (error) {
             console.error("Could not load task customizations", error);
-        } finally {
-            setCustomizationsLoaded(true);
+
+            if (!customizationsReadyRef.current) {
+                setCustomizationsLoadFailed(true);
+            }
         }
     }
 
@@ -1225,7 +1314,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
         const tasksNeedingEstimates = selectTasksNeedingEstimates(tasks, taskPlanning);
 
-        if (tasksNeedingEstimates.length === 0) return;
+        if (tasksNeedingEstimates.length === 0) {
+            // An earlier run may have been aborted by this re-run.
+            setEstimatingCount(0);
+            return;
+        }
 
         const controller = new AbortController();
 
@@ -1302,134 +1395,58 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         });
     }, [taskPlanning, procrastinationHistory]);
 
-    useEffect(() => {
-        const handleAIPlannerTask = (
-            event: Event
-        ) => {
-            const customEvent =
-                event as CustomEvent<Assignment>;
+    // Adds a custom task optimistically and saves it; on failure the task is
+    // removed again and the user is told. Resolves to whether it saved.
+    const createCustomTask = async (newTask: Assignment): Promise<boolean> => {
+        setTasks((current) => current.some((task) => task.id === newTask.id) ? current : [...current, newTask]);
 
-            const newTask =
-                customEvent.detail;
-
-            if (!newTask) return;
-
-            setTasks((currentTasks) => {
-                /*
-                * Prevent accidental duplicate insertion if the
-                * event somehow fires more than once.
-                */
-                if (
-                    currentTasks.some(
-                        (task) =>
-                            task.id === newTask.id
-                    )
-                ) {
-                    return currentTasks;
-                }
-
-                return [
-                    ...currentTasks,
-                    newTask,
-                ];
-            });
-
-            // Keep AI-created tasks in the exact same DB-backed collection
-            // (CustomTask) as manually-created tasks.
-            fetch("/api/custom-tasks", {
+        try {
+            const response = await fetch("/api/custom-tasks", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    id: newTask.id,
-                    name: newTask.name,
-                    course: newTask.course,
-                    due: newTask.due ?? null,
-                    dueAt: newTask.dueAt ?? null,
-                    dueFraction: newTask.dueFraction ?? null,
-                    sourceAnnouncementId: newTask.sourceAnnouncementId ?? null,
-                }),
-            }).catch((error) => {
-                console.error("Could not save custom task", error);
+                body: JSON.stringify(customTaskPostBody(newTask)),
             });
 
-            // Type has no CustomTask column of its own — persist it the
-            // same way EditTaskModal does for any task, via
-            // TaskCustomization (see the read-side merge in effectiveTasks
-            // above). Only written when the user actually picked one in
-            // the review card, so a plain-accept without one skips this.
-            if (newTask.typeOverride) {
-                persistCustomization(newTask.id, {
-                    ...EMPTY_CUSTOMIZATION,
-                    typeOverride: newTask.typeOverride,
-                });
-            }
-        };
+            if (!response.ok) throw new Error(`Saving the task returned ${response.status}`);
 
-        window.addEventListener(
-            "planner:add-task",
-            handleAIPlannerTask
-        );
+            return true;
+        } catch (error) {
+            console.error("Could not save custom task", error);
+            setTasks((current) => current.filter((task) => task.id !== newTask.id));
+            setPlannerError(`Couldn't add "${newTask.name}". Check your connection and try again.`);
+            return false;
+        }
+    };
 
-        return () => {
-            window.removeEventListener(
-                "planner:add-task",
-                handleAIPlannerTask
-            );
-        };
-    }, []);
-
-    const awardXpForTask = async (task: Assignment, completedAt: string | null, estimatedMinutes?: number) => {
-        if (gamification.awardedTaskIds.includes(task.id)) return;
-
-        let award: XpAward = { xp: 20, source: "fallback" };
+    const awardXpForTask = async (task: Assignment, completedAt: string, estimatedMinutes?: number) => {
+        if (latestGamificationRef.current?.awardedTaskIds.includes(task.id)) return;
 
         setAwardingXp(true);
 
-        try {
-            const response = await fetch("/api/task-xp", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: task.name, course: task.course, due: task.due, completedAt, estimatedMinutes }),
-            });
+        const result = await awardTaskXp({
+            taskId: task.id,
+            due: task.due || null,
+            completedAt,
+            estimatedMinutes,
+        });
 
-            if (response.ok) {
-                award = await response.json() as XpAward;
-            }
-        } catch {
-            // The fallback award keeps completion usable if the API is unavailable.
-        } finally {
-            setAwardingXp(false);
-        }
+        setAwardingXp(false);
 
-        // Dedup and state computation happen synchronously against these
-        // refs (not via a setState updater function): React does not
-        // invoke a functional setState updater synchronously at the call
-        // site here (confirmed live — an updater's own side effects ran
-        // *after* the code following its setGamification/setTownState
-        // call), so gating this function's control flow on a variable an
-        // updater assigns silently made every award a no-op (the task-xp
-        // POST fired, but the gamification/town-state PATCHes never did).
-        // The refs are the single synchronous source of truth; plain state
-        // *values* (not updater functions) are pushed to React afterward
-        // purely to trigger a re-render.
-        const currentGamification = latestGamificationRef.current ?? gamification;
+        if (!result) return;
 
-        if (currentGamification.awardedTaskIds.includes(task.id)) return;
-
+        const awardedTaskIds = latestGamificationRef.current?.awardedTaskIds ?? [];
         const nextGamification: GamificationState = {
-            totalXp: currentGamification.totalXp + award.xp,
-            awardedTaskIds: [...currentGamification.awardedTaskIds, task.id],
+            totalXp: result.totalXp,
+            awardedTaskIds: awardedTaskIds.includes(task.id) ? awardedTaskIds : [...awardedTaskIds, task.id],
         };
 
         latestGamificationRef.current = nextGamification;
         setGamification(nextGamification);
+        starChart.applyBalance(result);
 
-        // Starlight mirrors the XP award (difficulty-weighted, with the late
-        // penalty already applied). The medieval town growth this used to feed
-        // is retired — see lib/townGrowth.ts.
-        saveGamificationState(nextGamification);
-        void starChart.earn(award.xp);
-        setLatestXpAward(award);
+        if (result.awarded) {
+            setLatestXpAward({ xp: result.xp, source: "fallback" });
+        }
     };
 
     // Plays the green completion pulse (app/globals.css's task-complete-
@@ -1461,7 +1478,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             const record = {
                 taskType: assignmentType,
                 addedAt,
-                dueAt: `${task.due}T23:59:59`,
+                // A real instant: a bare "YYYY-MM-DDT23:59:59" would be read
+                // in the server's timezone (UTC on Vercel).
+                dueAt: task.dueAt ?? endOfDayInstant(task.due),
                 completedAt: new Date().toISOString(),
             };
 
@@ -1484,6 +1503,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     };
 
     const handleSetStatus = (task: Assignment, newStatus: TaskStatus, estimatedMinutes?: number) => {
+        if (!canWriteCustomizations()) return;
+
         const { id } = task;
         const current = taskCustomizations[id] ?? EMPTY_CUSTOMIZATION;
         const wasCompleted = current.completed;
@@ -1505,26 +1526,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             awardCompletionSideEffects(task, estimatedMinutes);
         }
     }
-    const handleAddTask = (newTask: Assignment, startDate: string, notes: string) => {
-        setTasks((current) => [...current, newTask]);
+    const handleAddTask = async (newTask: Assignment, startDate: string, notes: string) => {
+        const saved = await createCustomTask(newTask);
 
-        fetch("/api/custom-tasks", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                id: newTask.id,
-                name: newTask.name,
-                course: newTask.course,
-                due: newTask.due ?? null,
-                dueAt: newTask.dueAt ?? null,
-                dueFraction: newTask.dueFraction ?? null,
-                sourceAnnouncementId: newTask.sourceAnnouncementId ?? null,
-            }),
-        }).catch((error) => {
-            console.error("Could not save custom task", error);
-        });
-
-        if (startDate || notes) {
+        if (saved && (startDate || notes)) {
             persistCustomization(newTask.id, { ...EMPTY_CUSTOMIZATION, startAt: startDate, notes });
         }
     }
@@ -1561,7 +1566,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             });
 
             if (!response.ok) {
-                console.error("Could not create recurring task", await response.text());
+                const data = await response.json().catch(() => null) as { error?: string } | null;
+                console.error("Could not create recurring task", data);
+                setPlannerError(data?.error ? `Couldn't create the repeating task: ${data.error}` : "Couldn't create the repeating task. Please try again.");
                 return;
             }
 
@@ -1590,6 +1597,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             void materializeRecurringTasks();
         } catch (error) {
             console.error("Could not create recurring task", error);
+            setPlannerError("Couldn't create the repeating task. Check your connection and try again.");
         }
     };
 
@@ -1630,56 +1638,68 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         setIsModalOpen(true);
     };
 
+    const requestDelete = (id: string) => {
+        const task = effectiveTasks.find((candidate) => candidate.id === id) ?? tasks.find((candidate) => candidate.id === id);
+        if (!task) return;
+
+        setPendingDelete({ id, name: task.name, isCustom: id.startsWith("custom-") });
+    };
+
     const handleDelete = (id: string, recurrenceScope: RecurrenceScope = "this") => {
         const rawTask = tasks.find((task) => task.id === id);
         const deleteFollowing = Boolean(rawTask?.recurrenceId) && recurrenceScope === "following" && Boolean(rawTask?.due);
 
-        setTasks((current) =>
-            deleteFollowing
-                ? current.filter((task) => !(task.recurrenceId === rawTask!.recurrenceId && task.due && task.due >= rawTask!.due!))
-                : current.filter((task) => task.id !== id)
-        );
-
         if (deleteFollowing) {
+            const removed = tasks.filter((task) => task.recurrenceId === rawTask!.recurrenceId && task.due && task.due >= rawTask!.due!);
+            const removedIds = new Set(removed.map((task) => task.id));
+
+            setTasks((current) => current.filter((task) => !removedIds.has(task.id)));
+
             // Shrinks the series' endDate to the day before this occurrence
             // and tombstones every occurrence from here forward — see
             // app/api/recurring-tasks/[id]/route.ts's "deleteFrom" mode.
             fetch(`/api/recurring-tasks/${rawTask!.recurrenceId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ deleteFrom: rawTask!.due }),
-            }).catch((error) => {
-                console.error("Could not delete future occurrences", error);
-            });
+                body: JSON.stringify({ deleteFrom: rawTask!.due, today: getTodayString() }),
+            })
+                .then((response) => {
+                    if (!response.ok) throw new Error(`Deleting returned ${response.status}`);
+                    handleRecurringSeriesChanged();
+                })
+                .catch((error) => {
+                    console.error("Could not delete future occurrences", error);
+                    setTasks((current) => [...current, ...removed.filter((task) => !current.some((c) => c.id === task.id))]);
+                    setPlannerError(SAVE_ERROR);
+                });
             return;
         }
 
-        if (rawTask?.recurrenceId) {
-            // A single occurrence of a series is tombstoned, not hard-
-            // deleted, even though its id starts with "custom-" — a hard
-            // delete would just get resurrected by the next materialization
-            // pass, which only checks whether a row still exists.
+        if (rawTask?.recurrenceId || !id.startsWith("custom-")) {
+            // A Canvas task (which would reappear on resync) or a single
+            // occurrence of a series (which the next materialization would
+            // resurrect) is tombstoned rather than deleted.
             persistCustomization(id, {
-                ...(taskCustomizations[id] ?? EMPTY_CUSTOMIZATION),
+                ...(taskCustomizationsRef.current[id] ?? EMPTY_CUSTOMIZATION),
                 deleted: true,
             });
             return;
         }
 
-        if (id.startsWith("custom-")) {
-            // Real row delete — a plain custom task needs no tombstone,
-            // unlike a Canvas-synced one (which would just reappear on
-            // resync).
-            fetch(`/api/custom-tasks/${id}`, { method: "DELETE" }).catch((error) => {
-                console.error("Could not delete custom task", error);
-            });
-            return;
-        }
+        // Real row delete — a plain custom task needs no tombstone.
+        if (!rawTask) return;
 
-        persistCustomization(id, {
-            ...(taskCustomizations[id] ?? EMPTY_CUSTOMIZATION),
-            deleted: true,
-        });
+        setTasks((current) => current.filter((task) => task.id !== id));
+
+        fetch(`/api/custom-tasks/${id}`, { method: "DELETE" })
+            .then((response) => {
+                if (!response.ok && response.status !== 404) throw new Error(`Deleting returned ${response.status}`);
+            })
+            .catch((error) => {
+                console.error("Could not delete custom task", error);
+                setTasks((current) => current.some((task) => task.id === id) ? current : [...current, rawTask]);
+                setPlannerError(SAVE_ERROR);
+            });
     }
 
     // Dismissing the "AI-detected" badge (AssignmentCard's 🤖 button) is
@@ -1700,9 +1720,17 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ aiTagDismissedAt: dismissedAt }),
-        }).catch((error) => {
-            console.error("Could not dismiss AI tag", error);
-        });
+        })
+            .then((response) => {
+                if (!response.ok) throw new Error(`Saving returned ${response.status}`);
+            })
+            .catch((error) => {
+                console.error("Could not dismiss AI tag", error);
+                setTasks((current) =>
+                    current.map((task) => task.id === id ? { ...task, aiTagDismissedAt: undefined } : task)
+                );
+                setPlannerError(SAVE_ERROR);
+            });
     }
 
     // ==================================================
@@ -1710,9 +1738,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // ==================================================
 
     function saveRundownDecision(task: ProposedTask, status: "accepted" | "rejected" | "maybe") {
-        // Fire-and-forget, same as the retired AIReviewPanel's
-        // saveSuggestionReview — a failed write shouldn't block the review
-        // flow, at worst causing one stale resurfacing later.
+        // Doesn't block the review flow; a failed write at worst resurfaces
+        // the suggestion later, so the user is told rather than rolled back.
         fetch("/api/ai/suggestion-review", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1722,9 +1749,14 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 status,
                 duplicateSuspected: task.canvasMatch.status !== "none",
             }),
-        }).catch((error) => {
-            console.error("❌ Failed to save suggestion review:", error);
-        });
+        })
+            .then((response) => {
+                if (!response.ok) throw new Error(`Saving returned ${response.status}`);
+            })
+            .catch((error) => {
+                console.error("Failed to save suggestion review:", error);
+                setPlannerError("Couldn't save your Rundown choice; that suggestion may show up again.");
+            });
     }
 
     function removeCandidateFromLists(suggestionKey: string) {
@@ -1732,12 +1764,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         setMaybeCandidates((current) => current.filter((c) => c.suggestionKey !== suggestionKey));
     }
 
-    function handleRundownYes(task: ProposedTask) {
-        // Converts the AI task into the same Assignment shape used by the
-        // planner, exactly like the retired AIReviewPanel's handleAccept —
-        // the existing "planner:add-task" listener below is the single
-        // source of truth for actually creating + persisting a CustomTask,
-        // reused here rather than duplicated.
+    async function handleRundownYes(task: ProposedTask) {
+        const wasMaybe = maybeCandidates.some((c) => c.suggestionKey === task.suggestionKey);
+        const candidate = (wasMaybe ? maybeCandidates : pendingCandidates).find((c) => c.suggestionKey === task.suggestionKey);
+
         const plannerTask: Assignment = {
             id: `custom-ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             name: task.name,
@@ -1748,12 +1778,26 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             typeOverride: task.typeOverride ?? undefined,
         };
 
-        window.dispatchEvent(
-            new CustomEvent<Assignment>("planner:add-task", { detail: plannerTask })
-        );
+        removeCandidateFromLists(task.suggestionKey);
+
+        // The decision is recorded only once the task really exists, so a
+        // failed save leaves the suggestion reviewable instead of lost.
+        if (!(await createCustomTask(plannerTask))) {
+            if (candidate) {
+                (wasMaybe ? setMaybeCandidates : setPendingCandidates)((current) => [...current, candidate]);
+            }
+            return;
+        }
 
         saveRundownDecision(task, "accepted");
-        removeCandidateFromLists(task.suggestionKey);
+
+        // Type has no CustomTask column — TaskCustomization is its storage.
+        if (plannerTask.typeOverride) {
+            persistCustomization(plannerTask.id, {
+                ...EMPTY_CUSTOMIZATION,
+                typeOverride: plannerTask.typeOverride,
+            });
+        }
     }
 
     function handleRundownNo(task: ProposedTask) {
@@ -1827,6 +1871,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         status: TaskStatus,
         recurrenceScope: RecurrenceScope = "this"
     ) => {
+        if (!canWriteCustomizations()) return;
+
         setTasks((current) =>
             current.map((task) => (task.id === updatedTask.id ? updatedTask : task))
         );
@@ -1853,9 +1899,20 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     // overwriting what was just saved here.
                     ...(isRecurringOccurrence ? { recurrenceOverridden: recurrenceScope === "this" } : {}),
                 }),
-            }).catch((error) => {
-                console.error("Could not save custom task", error);
-            });
+            })
+                .then((response) => {
+                    if (!response.ok) throw new Error(`Saving returned ${response.status}`);
+                })
+                .catch((error) => {
+                    console.error("Could not save custom task", error);
+
+                    if (rawTaskBefore) {
+                        setTasks((current) =>
+                            current.map((task) => (task.id === updatedTask.id ? rawTaskBefore : task))
+                        );
+                    }
+                    setPlannerError(SAVE_ERROR);
+                });
         }
 
         // "This and following": propagate name/course/type to every future,
@@ -1891,7 +1948,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             });
         }
 
-        const current = taskCustomizations[updatedTask.id];
+        const current = taskCustomizationsRef.current[updatedTask.id];
         const rawTask = rawTaskBefore;
 
         // Only freeze a course override when the user actually picked a
@@ -1929,7 +1986,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         const dueAtOverride = isCustomTask
             ? ""
             : updatedTask.dueAt
-                ? (updatedTask.dueAt !== previousEffectiveDueAt ? updatedTask.dueAt : (current?.dueAtOverride ?? ""))
+                // Minute precision: the form drops seconds, and Canvas's 23:59:59
+                // must not read as a change that freezes the due date.
+                ? (!sameMinute(updatedTask.dueAt, previousEffectiveDueAt) ? updatedTask.dueAt : (current?.dueAtOverride ?? ""))
                 : (updatedTask.due !== previousEffectiveDue ? endOfDayInstant(updatedTask.due) : "");
 
         // EditTaskModal offers an explicit "Auto" option for type, so no
@@ -1987,10 +2046,41 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         <div className = "theme-surface planner-shell w-full flex-1 bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
             <h1 data-tour="ships-log" className="mb-4 pr-28 text-3xl">Ship&apos;s Log</h1>
 
+            {(customizationsLoadFailed || customTasksLoadFailed) && (
+                <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] px-4 py-3 text-sm text-[var(--status-overdue-text)]">
+                    <span>
+                        {customizationsLoadFailed
+                            ? "Some of your saved task details didn't load, so changes are paused to protect them."
+                            : "Your own tasks didn't load; only Canvas tasks are showing."}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold text-[var(--foreground)] hover:bg-[var(--accent-soft)]"
+                    >
+                        Reload
+                    </button>
+                </div>
+            )}
+
+            {plannerError && (
+                <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-[var(--border)] px-4 py-3 text-sm text-[var(--status-overdue-text)]">
+                    <span>{plannerError}</span>
+                    <button
+                        type="button"
+                        onClick={() => setPlannerError(null)}
+                        className="shrink-0 rounded px-2 text-[var(--muted)] hover:text-[var(--foreground)]"
+                        aria-label="Dismiss message"
+                    >
+                        ✕
+                    </button>
+                </div>
+            )}
+
             {estimatingCount > 0 && (
                 <p className="mb-4 flex items-center gap-2 text-xs font-medium text-slate-400">
                     <Spinner className="h-3.5 w-3.5" />
-                    🧠 Estimating priority for {estimatingCount} task{estimatingCount === 1 ? "" : "s"} in the background...
+                    Estimating priority for {estimatingCount} task{estimatingCount === 1 ? "" : "s"} in the background...
                 </p>
             )}
 
@@ -2004,7 +2094,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             <h2 className="mt-0.5 text-lg font-semibold text-white">{upNext.task.name}</h2>
                             <p className="text-sm text-slate-400">
                                 {upNext.task.course || "General"}
-                                {upNext.task.due ? ` · Due ${upNext.task.due}` : ""}
+                                {upNext.task.due
+                                    ? ` · Due ${parseLocalDate(upNext.task.due).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
+                                    : ""}
                             </p>
                             <p className="mt-1 text-sm text-amber-200">{upNext.priority.reason}</p>
                         </div>
@@ -2061,7 +2153,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 onCourseCreated = {handleCourseCreated}
                 onClose = {() => setSelectedTask(null)}
                 onSaveTask = {handleSaveTask}
-                onDeleteTask = {handleDelete}
+                // A series occurrence's scope choice is already a confirmation
+                // step; everything else asks first.
+                onDeleteTask = {(id, scope) => scope ? handleDelete(id, scope) : requestDelete(id)}
                 onConvertToRecurring = {handleConvertToRecurring}
                 onManageSeries = {() => { setSelectedTask(null); setIsRecurringPanelOpen(true); }}
             />
@@ -2197,7 +2291,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         isAiDetected={Boolean(task.sourceAnnouncementId) && !task.aiTagDismissedAt}
                                         onDismissAiTag={handleDismissAiTag}
                                         onSetStatus = {(newStatus) => handleSetStatus(task, newStatus, estimate?.estimatedMinutes)}
-                                        onDelete = {handleDelete}
+                                        onDelete = {requestDelete}
                                         onFocus={(id) => setFocusTask(id === focusTaskId ? null : id)}
                                         onOpen={() => setSelectedTask(task)}
                                     />
@@ -2306,7 +2400,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         type="button"
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            handleDelete(task.id);
+                                            requestDelete(task.id);
                                         }}
                                         className="rounded px-2 py-1 text-xs text-slate-400 opacity-0 transition-opacity hover:bg-rose-950/40 hover:text-rose-400 group-hover:opacity-100 focus:opacity-100"
                                         aria-label={`Delete ${task.name}`}
@@ -2362,6 +2456,21 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 onClose={handleCloseRundown}
             />
         )}
+
+        <ConfirmDialog
+            open={pendingDelete !== null}
+            onOpenChange={(open) => { if (!open) setPendingDelete(null); }}
+            title={pendingDelete ? `Delete "${pendingDelete.name}"?` : "Delete task?"}
+            description={
+                pendingDelete?.isCustom
+                    ? "This can't be undone."
+                    : "It will be removed from your planner and won't come back when Canvas syncs."
+            }
+            onConfirm={() => {
+                if (pendingDelete) handleDelete(pendingDelete.id);
+                setPendingDelete(null);
+            }}
+        />
 
         {showStillDeciding && (
             <StillDecidingPanel

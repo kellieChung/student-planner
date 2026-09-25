@@ -3,8 +3,6 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getConstellation, isComplete, isUnlocked, starPrice } from "@/lib/constellations";
 
-const MAX_EARN_PER_TASK = 200;
-
 class ChartError extends Error {
     constructor(message: string, readonly status: number) {
         super(message);
@@ -53,7 +51,7 @@ export async function GET() {
             charted,
         });
     } catch (error) {
-        console.error("❌ Failed to load star chart:", error);
+        console.error("Failed to load star chart:", error);
         return NextResponse.json({ success: false, error: "Something went wrong." }, { status: 500 });
     }
 }
@@ -72,31 +70,6 @@ export async function POST(request: Request) {
             body = await request.json();
         } catch {
             return NextResponse.json({ success: false, error: "Invalid JSON body." }, { status: 400 });
-        }
-
-        if (body.action === "earn") {
-            const amount = typeof body.amount === "number" && Number.isFinite(body.amount) ? Math.round(body.amount) : NaN;
-
-            if (!(amount >= 0 && amount <= MAX_EARN_PER_TASK)) {
-                return NextResponse.json(
-                    { success: false, error: `'amount' must be a number between 0 and ${MAX_EARN_PER_TASK}.` },
-                    { status: 400 }
-                );
-            }
-
-            // Increment server-side (never "set to the client's total") so a
-            // stale client copy can't undo a purchase made in another view.
-            const chart = await prisma.starChart.upsert({
-                where: { userId: user.id },
-                create: { userId: user.id, starlight: amount, lifetimeStarlight: amount },
-                update: { starlight: { increment: amount }, lifetimeStarlight: { increment: amount } },
-            });
-
-            return NextResponse.json({
-                success: true,
-                starlight: chart.starlight,
-                lifetimeStarlight: chart.lifetimeStarlight,
-            });
         }
 
         if (body.action === "chart") {
@@ -182,7 +155,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, error: "You've already charted this star." }, { status: 409 });
         }
 
-        console.error("❌ Failed to update star chart:", error);
+        console.error("Failed to update star chart:", error);
         return NextResponse.json({ success: false, error: "Something went wrong." }, { status: 500 });
     }
 }
@@ -221,7 +194,7 @@ export async function PATCH(request: Request) {
 
         return NextResponse.json({ success: true, onboardedAt: chart.onboardedAt?.toISOString() ?? null });
     } catch (error) {
-        console.error("❌ Failed to save onboarding:", error);
+        console.error("Failed to save onboarding:", error);
         return NextResponse.json({ success: false, error: "Something went wrong." }, { status: 500 });
     }
 }

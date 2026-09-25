@@ -2,11 +2,13 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { ChartedStarRef } from "@/lib/constellations";
-import { chartStar, earnStarlight, type ChartStarResult, type StarChartState } from "@/lib/starChart";
+import { chartStar, getStarChart, type ChartStarResult, type StarChartState } from "@/lib/starChart";
 
 type StarChartContextValue = {
     state: StarChartState;
-    earn: (amount: number) => Promise<void>;
+    // Applies the balance the server returned from an XP award
+    // (POST /api/gamification) — Starlight is only ever earned there.
+    applyBalance: (balance: { starlight: number; lifetimeStarlight: number }) => void;
     chart: (constellationId: string, starIndex: number) => Promise<ChartStarResult>;
     markOnboarded: (onboardedAt: string | null) => void;
 };
@@ -18,7 +20,7 @@ const EMPTY_STATE: StarChartState = { starlight: 0, lifetimeStarlight: 0, onboar
 // they're siblings under LaptopFrame, so a context keeps one balance.
 const StarChartContext = createContext<StarChartContextValue>({
     state: EMPTY_STATE,
-    earn: async () => {},
+    applyBalance: () => {},
     chart: async () => ({ ok: false, error: "The star chart isn't available here." }),
     markOnboarded: () => {},
 });
@@ -37,20 +39,8 @@ export function StarChartProvider({ initialState, children }: Props) {
 
     // Balances always come back from the server's increment/decrement, so the
     // client never computes (and can never clobber) the authoritative total.
-    const earn = useCallback(async (amount: number) => {
-        if (amount <= 0) return;
-
-        setState((current) => ({
-            ...current,
-            starlight: current.starlight + amount,
-            lifetimeStarlight: current.lifetimeStarlight + amount,
-        }));
-
-        const saved = await earnStarlight(amount);
-
-        if (saved) {
-            setState((current) => ({ ...current, starlight: saved.starlight, lifetimeStarlight: saved.lifetimeStarlight }));
-        }
+    const applyBalance = useCallback((balance: { starlight: number; lifetimeStarlight: number }) => {
+        setState((current) => ({ ...current, starlight: balance.starlight, lifetimeStarlight: balance.lifetimeStarlight }));
     }, []);
 
     const chart = useCallback(async (constellationId: string, starIndex: number) => {
@@ -64,6 +54,14 @@ export function StarChartProvider({ initialState, children }: Props) {
                 lifetimeStarlight: result.lifetimeStarlight,
                 charted,
             }));
+        } else {
+            // A 409 (already charted, or not enough Starlight because another
+            // tab spent it) means this view is stale — resync it.
+            const fresh = await getStarChart();
+
+            if (fresh) {
+                setState((current) => ({ ...fresh, onboardedAt: current.onboardedAt }));
+            }
         }
 
         return result;
@@ -73,7 +71,7 @@ export function StarChartProvider({ initialState, children }: Props) {
         setState((current) => ({ ...current, onboardedAt }));
     }, []);
 
-    const value = useMemo(() => ({ state, earn, chart, markOnboarded }), [state, earn, chart, markOnboarded]);
+    const value = useMemo(() => ({ state, applyBalance, chart, markOnboarded }), [state, applyBalance, chart, markOnboarded]);
 
     return <StarChartContext.Provider value={value}>{children}</StarChartContext.Provider>;
 }

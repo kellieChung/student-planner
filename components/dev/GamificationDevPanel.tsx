@@ -151,7 +151,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
             getTownState(),
         ]);
 
-        setGamification(nextGamification);
+        if (nextGamification) setGamification(nextGamification);
         setTownState(nextTownState);
     };
 
