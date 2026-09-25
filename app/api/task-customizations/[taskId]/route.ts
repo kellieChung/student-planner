@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { isDateKey } from "@/lib/utils";
 
 type Params = {
     params: Promise<{
@@ -8,7 +9,7 @@ type Params = {
     }>;
 };
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_NOTES_LENGTH = 10_000;
 const LABEL_TYPES = new Set(["HW", "R", "EXAM", "TODO"]);
 
 export async function PATCH(request: Request, { params }: Params) {
@@ -76,7 +77,7 @@ export async function PATCH(request: Request, { params }: Params) {
             deleted?: unknown;
         } | null ?? {};
 
-        if (startAt !== null && (typeof startAt !== "string" || !DATE_ONLY.test(startAt))) {
+        if (startAt !== null && !isDateKey(startAt)) {
             return NextResponse.json(
                 { success: false, error: "'startAt' must be null or a 'YYYY-MM-DD' string." },
                 { status: 400 }
@@ -145,15 +146,23 @@ export async function PATCH(request: Request, { params }: Params) {
             );
         }
 
-        const completedAtDate = completedAt === null
-            ? null
-            : typeof completedAt === "string" && !Number.isNaN(new Date(completedAt).getTime())
-                ? new Date(completedAt)
-                : undefined;
+        // A calendar day, stored at UTC midnight like startAt so it reads
+        // back as the same "YYYY-MM-DD". A full timestamp (only ever sent by
+        // the legacy localStorage migration) keeps just its date part.
+        const completedAtKey = typeof completedAt === "string" ? completedAt.slice(0, 10) : null;
 
-        if (completedAtDate === undefined) {
+        if (completedAt !== null && !isDateKey(completedAtKey)) {
             return NextResponse.json(
-                { success: false, error: "'completedAt' must be null or a valid ISO datetime string." },
+                { success: false, error: "'completedAt' must be null or a 'YYYY-MM-DD' date." },
+                { status: 400 }
+            );
+        }
+
+        const completedAtDate = completedAtKey ? new Date(`${completedAtKey}T00:00:00.000Z`) : null;
+
+        if (typeof notes === "string" && notes.length > MAX_NOTES_LENGTH) {
+            return NextResponse.json(
+                { success: false, error: `'notes' must be at most ${MAX_NOTES_LENGTH} characters.` },
                 { status: 400 }
             );
         }
