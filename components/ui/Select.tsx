@@ -29,7 +29,9 @@ export default function Select({ value, onChange, options, ariaLabel, id, placeh
 
     return (
         <RadixSelect.Root
-            value={hasSelection ? toRadix(value) : undefined}
+            // Radix's own "" means "nothing selected, show the placeholder" and
+            // keeps the select controlled (undefined would flip it).
+            value={hasSelection ? toRadix(value) : ""}
             onValueChange={(next) => onChange(fromRadix(next))}
             disabled={disabled}
         >

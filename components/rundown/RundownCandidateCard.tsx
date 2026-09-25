@@ -1,7 +1,7 @@
 "use client";
 
 import Tooltip from "@/components/ui/Tooltip";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
 import { Course } from "@/types/course";
 import { stripHtmlForDisplay } from "@/lib/htmlText";
@@ -55,6 +55,8 @@ export default function RundownCandidateCard({
     const [isEditingDue, setIsEditingDue] = useState(false);
     const [expanded, setExpanded] = useState(false);
     const [showFullAnnouncement, setShowFullAnnouncement] = useState(false);
+    // Several cards can be in edit mode at once; ids must be unique.
+    const fieldId = useId();
     const [name, setName] = useState(task.name);
     const [course, setCourse] = useState(task.course);
     const [typeOverride, setTypeOverride] = useState(task.typeOverride ?? "");
@@ -188,13 +190,13 @@ export default function RundownCandidateCard({
                     <div className="mt-3 grid gap-3 sm:grid-cols-[2fr_1.5fr_1fr]">
                         <div>
                             <label
-                                htmlFor="ai-task-name"
+                                htmlFor={`${fieldId}-name`}
                                 className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]"
                             >
                                 Name
                             </label>
                             <input
-                                id="ai-task-name"
+                                id={`${fieldId}-name`}
                                 type="text"
                                 value={name}
                                 onChange={(event) => setName(event.target.value)}
@@ -216,13 +218,13 @@ export default function RundownCandidateCard({
 
                         <div>
                             <label
-                                htmlFor="ai-task-type"
+                                htmlFor={`${fieldId}-type`}
                                 className="mb-1 block text-[11px] font-bold uppercase tracking-widest text-[var(--muted)]"
                             >
                                 Type
                             </label>
                             <Select
-                                id="ai-task-type"
+                                id={`${fieldId}-type`}
                                 value={typeOverride}
                                 onChange={(next) => setTypeOverride(next as LabelType | "")}
                                 options={[

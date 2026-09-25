@@ -3,6 +3,7 @@
 import { ProposedTask } from "@/types/proposedTask";
 import { Course } from "@/types/course";
 import RundownCandidateCard from "@/components/rundown/RundownCandidateCard";
+import useEscapeToClose from "@/components/ui/useEscapeToClose";
 
 // AutoTaskCreation.md's "still deciding" list — where a Maybe'd candidate
 // parks. Deliberately blocking modal chrome (EditTaskModal.tsx's
@@ -28,9 +29,11 @@ export default function StillDecidingPanel({
     onNo,
     onClose,
 }: StillDecidingPanelProps) {
+    useEscapeToClose(true, onClose);
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
-            <div className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl text-white">
+            <div role="dialog" aria-modal="true" aria-label="Still deciding" className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl text-white">
                 <div className="mb-4 flex items-start justify-between">
                     <div>
                         <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
@@ -44,6 +47,7 @@ export default function StillDecidingPanel({
                     <button
                         type="button"
                         onClick={onClose}
+                        aria-label="Close"
                         className="text-slate-400 hover:text-white text-lg px-2"
                     >
                         ✕

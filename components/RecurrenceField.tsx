@@ -33,6 +33,7 @@ type RecurrenceFieldProps = {
 };
 
 const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default function RecurrenceField({ value, onChange, anchorDue }: RecurrenceFieldProps) {
     const toggle = () => {
@@ -69,6 +70,8 @@ export default function RecurrenceField({ value, onChange, anchorDue }: Recurren
                     type="button"
                     onClick={toggle}
                     disabled={!anchorDue}
+                    aria-label="Repeat"
+                    aria-pressed={value.enabled}
                     className={`rounded-lg px-3 py-1 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${value.enabled ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-200"}`}
                 >
                     {value.enabled ? "On" : "Off"}
@@ -110,6 +113,8 @@ export default function RecurrenceField({ value, onChange, anchorDue }: Recurren
                                     key={day}
                                     type="button"
                                     onClick={() => toggleWeekday(day)}
+                                    aria-label={WEEKDAY_NAMES[day]}
+                                    aria-pressed={value.weekdays.includes(day)}
                                     className={`h-7 w-7 rounded-full text-xs font-semibold transition-colors ${value.weekdays.includes(day) ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-200"}`}
                                 >
                                     {label}

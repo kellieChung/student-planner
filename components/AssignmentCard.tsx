@@ -5,6 +5,7 @@ import {parseLocalDate, formatEstimatedMinutes} from "@/lib/utils";
 import {TaskStatus} from "@/lib/taskStatus";
 import {courseColorDefault, readableTextColor} from "@/lib/courseColor";
 import TaskStatusToggle from "./TaskStatusToggle";
+import { TimerIcon } from "@/components/brand/Icons";
 
 type AssignmentCardProps = {
     id: string;
@@ -215,9 +216,9 @@ export default function AssignmentCard({
                                 e.stopPropagation();
                                 onDismissAiTag(id);
                             }}
-                            className="text-xs px-1.5 py-0.5 rounded text-indigo-300 opacity-80 hover:opacity-100" aria-label="AI-detected — click to dismiss this tag"
+                            className="rounded border border-indigo-400/50 px-1 py-px text-[9px] font-bold leading-none text-indigo-300 opacity-80 hover:opacity-100" aria-label="AI-detected — click to dismiss this tag"
                         >
-                            🤖
+                            AI
                         </button>
                     </Tooltip>
                 )}
@@ -229,9 +230,9 @@ export default function AssignmentCard({
                                 e.stopPropagation();
                                 onFocus(id);
                             }}
-                            className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${isFocused ? "text-indigo-300 opacity-100" : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-300"}`} aria-label={isFocused ? "Stop focusing on this task" : "Focus on this task on the Watch"}
+                            className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${isFocused ? "text-indigo-300 opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-indigo-300"}`} aria-label={isFocused ? "Stop focusing on this task" : "Focus on this task on the Watch"}
                         >
-                            🎯
+                            <TimerIcon size={12} />
                         </button>
                     </Tooltip>
                 )}
@@ -243,7 +244,7 @@ export default function AssignmentCard({
                                 e.stopPropagation();
                                 onDelete(id);
                             }}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded" aria-label="Delete Task"
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-slate-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded" aria-label="Delete Task"
                         >
                             ✕
                         </button>

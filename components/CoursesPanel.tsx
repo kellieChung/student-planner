@@ -255,7 +255,7 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                     onChange={(e) => setNewCourseName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && addCourse()}
                     placeholder="e.g. Personal"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:border-indigo-500"
                 />
                 <button
                     type="button"
@@ -298,7 +298,7 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                         value={renameValue}
                                         onChange={(e) => setRenameValue(e.target.value)}
                                         onKeyDown={(e) => e.key === "Enter" && saveRename(course)}
-                                        className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                        className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-sm text-white focus:border-indigo-500"
                                     />
                                     <button
                                         type="button"
@@ -364,7 +364,7 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                                 value={abbrValue}
                                                 onChange={(e) => setAbbrValue(e.target.value)}
                                                 onKeyDown={(e) => e.key === "Enter" && saveAbbr(course)}
-                                                className="w-14 rounded border border-slate-600 bg-slate-900 px-1 py-0.5 text-xs uppercase text-white focus:outline-none focus:border-indigo-500"
+                                                className="w-14 rounded border border-slate-600 bg-slate-900 px-1 py-0.5 text-xs uppercase text-white focus:border-indigo-500"
                                             />
                                             <button
                                                 type="button"

@@ -14,7 +14,7 @@ type Props = {
 const INITIAL_STATE: AccountFormState = { error: null, success: null };
 
 const INPUT_CLASS =
-    "mt-1 w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)] focus:outline-none";
+    "mt-1 w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)]";
 
 const BUTTON_CLASS =
     "rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60";
