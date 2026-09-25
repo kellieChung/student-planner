@@ -195,6 +195,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // keeps the local value for these instead of reverting to the server's
     // pre-write copy.
     const pendingCustomizationWritesRef = useRef<Map<string, number>>(new Map());
+    // Custom tasks whose create POST hasn't finished; the estimator skips
+    // them (the server only estimates tasks it already has).
+    const pendingCreateIdsRef = useRef<Set<string>>(new Set());
     const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
     const [isRecurringPanelOpen, setIsRecurringPanelOpen] = useState(false);
     const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
@@ -1312,7 +1315,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         // (already-computed) values arrive a moment later.
         if (!taskPlanningLoaded) return;
 
-        const tasksNeedingEstimates = selectTasksNeedingEstimates(tasks, taskPlanning);
+        const tasksNeedingEstimates = selectTasksNeedingEstimates(
+            tasks.filter((task) => !pendingCreateIdsRef.current.has(task.id)),
+            taskPlanning
+        );
 
         if (tasksNeedingEstimates.length === 0) {
             // An earlier run may have been aborted by this re-run.
@@ -1340,6 +1346,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 const data = await response.json() as {
                     estimates: Array<Omit<TaskPlanningEstimate, "signature"> & { id: string }>;
                 };
+
+                // Nothing new: leave state alone so this effect doesn't re-run
+                // and re-request the same tasks in a loop.
+                if (data.estimates.length === 0) return;
 
                 setTaskPlanning((current) => {
                     const next = { ...current };
@@ -1398,6 +1408,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // Adds a custom task optimistically and saves it; on failure the task is
     // removed again and the user is told. Resolves to whether it saved.
     const createCustomTask = async (newTask: Assignment): Promise<boolean> => {
+        pendingCreateIdsRef.current.add(newTask.id);
         setTasks((current) => current.some((task) => task.id === newTask.id) ? current : [...current, newTask]);
 
         try {
@@ -1409,9 +1420,13 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
             if (!response.ok) throw new Error(`Saving the task returned ${response.status}`);
 
+            pendingCreateIdsRef.current.delete(newTask.id);
+            // New array identity re-runs the estimator for the now-saved task.
+            setTasks((current) => [...current]);
             return true;
         } catch (error) {
             console.error("Could not save custom task", error);
+            pendingCreateIdsRef.current.delete(newTask.id);
             setTasks((current) => current.filter((task) => task.id !== newTask.id));
             setPlannerError(`Couldn't add "${newTask.name}". Check your connection and try again.`);
             return false;

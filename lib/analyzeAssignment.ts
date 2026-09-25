@@ -119,11 +119,15 @@ export function classifyAssignmentType(text: {
 // Deterministic keyword-based fallback used whenever the Ollama call fails
 // or returns something malformed — see CLAUDE.md's "must degrade
 // gracefully" convention for lib/analyzeAssignment.ts and lib/xp.ts.
-function fallbackAssignmentAnalysis(
+// Callers compare against this to avoid persisting a fallback as if it were
+// a real estimate (it would then never be retried).
+export const FALLBACK_ANALYSIS_REASON = "This estimate was generated using a fallback because AI analysis was unavailable.";
+
+export function fallbackAssignmentAnalysis(
     assignment: AssignmentInput
 ): AssignmentAnalysis {
     const assignmentType = classifyAssignmentType(assignment);
-    const reason = "This estimate was generated using a fallback because AI analysis was unavailable.";
+    const reason = FALLBACK_ANALYSIS_REASON;
 
     if (assignmentType === "exam" || assignmentType === "test" || assignmentType === "project" || assignmentType === "presentation") {
         return { importance: 8, difficulty: 8, consequence: 7, assignmentType, reason };
@@ -185,7 +189,7 @@ export async function analyzeAssignments(
             ? await analyzeAssignmentsWithAnthropic(assignments)
             : await analyzeAssignmentsWithOllama(assignments);
     } catch (error) {
-        console.error("❌ Assignment analysis failed; using fallback:", error);
+        console.error("Assignment analysis failed; using fallback:", error);
         return assignments.map(fallbackAssignmentAnalysis);
     }
 }

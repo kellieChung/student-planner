@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { analyzeAssignments, estimateMinutesByType, normalizeAssignmentType } from "@/lib/analyzeAssignment";
+import { analyzeAssignments, estimateMinutesByType, fallbackAssignmentAnalysis, FALLBACK_ANALYSIS_REASON, normalizeAssignmentType } from "@/lib/analyzeAssignment";
 import { calculatePriority } from "@/lib/prioritization";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getTaskSignature } from "@/lib/taskPlanning";
@@ -34,23 +34,31 @@ async function getAuthenticatedUser() {
 }
 
 export async function GET() {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
+        if (!user) {
+            return NextResponse.json(
+                { success: false, error: "You must be logged in." },
+                { status: 401 }
+            );
+        }
+
+        const estimates = await prisma.taskPlanningEstimate.findMany({
+            where: { userId: user.id },
+        });
+
+        return NextResponse.json({
+            success: true,
+            estimates: estimates.map(toEstimateResponse),
+        });
+    } catch (error) {
+        console.error("Failed to load task estimates:", error);
         return NextResponse.json(
-            { success: false, error: "You must be logged in." },
-            { status: 401 }
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
         );
     }
-
-    const estimates = await prisma.taskPlanningEstimate.findMany({
-        where: { userId: user.id },
-    });
-
-    return NextResponse.json({
-        success: true,
-        estimates: estimates.map(toEstimateResponse),
-    });
 }
 
 function normalizeAnalysis(analysis: {
@@ -143,33 +151,60 @@ function toEstimateResponse(estimate: {
     };
 }
 
+// Paid-call bounds. The planner asks for at most 60 tasks at a time
+// (lib/taskPlanning.ts) and reuses stored estimates, so a real user stays
+// far below the daily cap; it only stops a runaway client or script.
+const MAX_TEXT_LENGTH = 200;
+const DAILY_ANALYSIS_LIMIT = 200;
+
+function toEstimate(task: PlanningTask, normalized: ReturnType<typeof normalizeAnalysis>) {
+    const estimatedMinutes = estimateMinutesByType(normalized.assignmentType);
+
+    const priority = calculatePriority({
+        name: task.name,
+        due: task.due ?? null,
+        importance: normalized.importance,
+        difficulty: normalized.difficulty,
+        consequence: normalized.consequence,
+        estimatedMinutes,
+    });
+
+    return {
+        id: task.id,
+        signature: getTaskSignature(task),
+        estimatedMinutes,
+        importance: normalized.importance,
+        difficulty: normalized.difficulty,
+        consequence: normalized.consequence,
+        assignmentType: normalized.assignmentType,
+        reason: normalized.reason,
+        priorityScore: priority.score,
+        urgencyScore: priority.urgencyScore,
+        frogScore: priority.frogScore,
+        priorityReason: priority.reason,
+    };
+}
+
 export async function POST(request: Request) {
-    const user = await getAuthenticatedUser();
-
-    if (!user) {
-        return NextResponse.json(
-            { success: false, error: "You must be logged in." },
-            { status: 401 }
-        );
-    }
-
-    let tasks: PlanningTask[];
-
     try {
-        const body =
-            await request.json() as {
-                tasks?: unknown;
-            };
+        const user = await getAuthenticatedUser();
 
-        tasks =
-            Array.isArray(body.tasks)
+        if (!user) {
+            return NextResponse.json(
+                { success: false, error: "You must be logged in." },
+                { status: 401 }
+            );
+        }
+
+        let tasks: PlanningTask[];
+
+        try {
+            const body = await request.json() as { tasks?: unknown };
+
+            tasks = Array.isArray(body.tasks)
                 ? body.tasks
-                    // Defensive upper bound on request size, not the real
-                    // policy — the client already scopes/caps which tasks
-                    // it sends (lib/taskPlanning.ts's
-                    // selectTasksNeedingEstimates, capped at 60). This just
-                    // needs to stay above that cap so a legitimate request
-                    // never gets silently truncated back down.
+                    // Defensive upper bound on request size; the client caps
+                    // at 60 (selectTasksNeedingEstimates).
                     .slice(0, 75)
                     .filter(
                         (task): task is PlanningTask =>
@@ -178,129 +213,115 @@ export async function POST(request: Request) {
                             typeof (task as PlanningTask).id === "string" &&
                             typeof (task as PlanningTask).name === "string"
                     )
+                    .map((task) => ({
+                        id: task.id,
+                        name: task.name.slice(0, MAX_TEXT_LENGTH),
+                        course: typeof task.course === "string" ? task.course.slice(0, MAX_TEXT_LENGTH) : "",
+                    }))
                 : [];
-    } catch {
-        return NextResponse.json(
-            { success: false, error: "Invalid task data" },
-            { status: 400 }
-        );
-    }
-
-    if (tasks.length === 0) {
-        return NextResponse.json({
-            success: true,
-            estimates: [],
-        });
-    }
-
-    // Spend guard: this is a paid call now, so an estimate already stored
-    // for the task's current signature is returned as-is instead of being
-    // re-analyzed — a client bug or several open tabs re-requesting the
-    // same tasks can't re-bill them.
-    const storedEstimates = await prisma.taskPlanningEstimate.findMany({
-        where: { userId: user.id, taskId: { in: tasks.map((task) => task.id) } },
-    });
-
-    const storedByTaskId = new Map(storedEstimates.map((estimate) => [estimate.taskId, estimate]));
-
-    const reusedEstimates = tasks
-        .map((task) => storedByTaskId.get(task.id))
-        .filter(
-            (estimate, i): estimate is NonNullable<typeof estimate> =>
-                estimate !== undefined && estimate.signature === getTaskSignature(tasks[i])
-        )
-        .map(toEstimateResponse);
-
-    const reusedIds = new Set(reusedEstimates.map((estimate) => estimate.id));
-
-    tasks = tasks.filter((task) => !reusedIds.has(task.id));
-
-    const batches = chunk(
-        tasks,
-        isAnthropicEnabled() ? ANTHROPIC_ANALYSIS_BATCH_SIZE : OLLAMA_ANALYSIS_BATCH_SIZE
-    );
-
-    const estimatesByBatch = await mapWithConcurrency(
-        batches,
-        OLLAMA_CONCURRENCY,
-        async (batch) => {
-            // analyzeAssignments never throws — it degrades to its own
-            // deterministic fallback internally on any Ollama failure.
-            const analyses = await analyzeAssignments(
-                batch.map((task) => ({
-                    name: task.name,
-                    course: task.course,
-                    description: task.description,
-                    due: task.due,
-                    pointsPossible: task.pointsPossible,
-                }))
+        } catch {
+            return NextResponse.json(
+                { success: false, error: "Invalid task data" },
+                { status: 400 }
             );
+        }
 
-            return batch.map((task, i) => {
-                const normalized =
-                    normalizeAnalysis(analyses[i]);
+        // Only the user's own tasks are analyzed (made-up ids would be free
+        // paid calls).
+        const requestedIds = tasks.map((task) => task.id);
+        const [ownedAssignments, ownedCustomTasks] = await Promise.all([
+            prisma.assignment.findMany({ where: { userId: user.id, id: { in: requestedIds } }, select: { id: true } }),
+            prisma.customTask.findMany({ where: { userId: user.id, id: { in: requestedIds } }, select: { id: true } }),
+        ]);
+        const ownedIds = new Set([...ownedAssignments, ...ownedCustomTasks].map((task) => task.id));
 
-                const estimatedMinutes =
-                    estimateMinutesByType(normalized.assignmentType);
+        tasks = tasks.filter((task) => ownedIds.has(task.id));
 
-                const priority =
-                    calculatePriority({
-                        name: task.name,
-                        due: task.due ?? null,
-                        importance: normalized.importance,
-                        difficulty: normalized.difficulty,
-                        consequence: normalized.consequence,
-                        estimatedMinutes,
-                    });
-
-                return {
-                    id: task.id,
-
-                    signature: getTaskSignature(task),
-
-                    estimatedMinutes,
-
-                    importance:
-                        normalized.importance,
-
-                    difficulty:
-                        normalized.difficulty,
-
-                    consequence:
-                        normalized.consequence,
-
-                    assignmentType:
-                        normalized.assignmentType,
-
-                    reason:
-                        normalized.reason,
-
-                    priorityScore:
-                        priority.score,
-
-                    urgencyScore:
-                        priority.urgencyScore,
-
-                    frogScore:
-                        priority.frogScore,
-
-                    priorityReason:
-                        priority.reason,
-                };
+        if (tasks.length === 0) {
+            return NextResponse.json({
+                success: true,
+                estimates: [],
             });
         }
-    );
 
-    const estimates = estimatesByBatch.flat();
+        // Spend guard: an estimate already stored for the task's current
+        // signature is returned as-is instead of being re-analyzed.
+        const storedEstimates = await prisma.taskPlanningEstimate.findMany({
+            where: { userId: user.id, taskId: { in: tasks.map((task) => task.id) } },
+        });
 
-    // Compute-and-persist in one route — the client no longer needs a
-    // separate round trip to save what it just received.
-    await mapWithConcurrency(estimates, 10, (estimate) => upsertEstimate(user.id, estimate));
+        const storedByTaskId = new Map(storedEstimates.map((estimate) => [estimate.taskId, estimate]));
 
-    return NextResponse.json({
-        success: true,
-        estimates: [...reusedEstimates, ...estimates],
-    });
+        const reusedEstimates = tasks
+            .map((task) => storedByTaskId.get(task.id))
+            .filter(
+                (estimate, i): estimate is NonNullable<typeof estimate> =>
+                    estimate !== undefined && estimate.signature === getTaskSignature(tasks[i])
+            )
+            .map(toEstimateResponse);
+
+        const reusedIds = new Set(reusedEstimates.map((estimate) => estimate.id));
+
+        tasks = tasks.filter((task) => !reusedIds.has(task.id));
+
+        const analyzedToday = await prisma.taskPlanningEstimate.count({
+            where: { userId: user.id, updatedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+        });
+        const remaining = Math.max(0, DAILY_ANALYSIS_LIMIT - analyzedToday);
+        const tasksForModel = tasks.slice(0, remaining);
+
+        // Over the daily cap: deterministic estimates for this response only
+        // (not stored, so they're analyzed properly another day).
+        const overflowEstimates = tasks
+            .slice(remaining)
+            .map((task) => toEstimate(task, normalizeAnalysis(fallbackAssignmentAnalysis(task))));
+
+        const batches = chunk(
+            tasksForModel,
+            isAnthropicEnabled() ? ANTHROPIC_ANALYSIS_BATCH_SIZE : OLLAMA_ANALYSIS_BATCH_SIZE
+        );
+
+        const estimatesByBatch = await mapWithConcurrency(
+            batches,
+            OLLAMA_CONCURRENCY,
+            async (batch) => {
+                // analyzeAssignments never throws — it degrades to its own
+                // deterministic fallback internally on any failure.
+                const analyses = await analyzeAssignments(
+                    batch.map((task) => ({
+                        name: task.name,
+                        course: task.course,
+                        description: task.description,
+                        due: task.due,
+                        pointsPossible: task.pointsPossible,
+                    }))
+                );
+
+                return batch.map((task, i) => toEstimate(task, normalizeAnalysis(analyses[i])));
+            }
+        );
+
+        const estimates = estimatesByBatch.flat();
+
+        // A fallback isn't stored: stored estimates are reused forever, so a
+        // brief AI outage would otherwise freeze those tasks on fallback scores.
+        await mapWithConcurrency(
+            estimates.filter((estimate) => estimate.reason !== FALLBACK_ANALYSIS_REASON),
+            10,
+            (estimate) => upsertEstimate(user.id, estimate)
+        );
+
+        return NextResponse.json({
+            success: true,
+            estimates: [...reusedEstimates, ...estimates, ...overflowEstimates],
+        });
+    } catch (error) {
+        console.error("Failed to estimate tasks:", error);
+        return NextResponse.json(
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
+        );
+    }
 }
 
 type StoredEstimate = {
@@ -365,40 +386,48 @@ function isValidStoredEstimate(value: unknown): value is StoredEstimate {
 // so a browser with a large existing cache of estimates doesn't trigger a
 // bulk Ollama recompute burst just to move them server-side.
 export async function PUT(request: Request) {
-    const user = await getAuthenticatedUser();
-
-    if (!user) {
-        return NextResponse.json(
-            { success: false, error: "You must be logged in." },
-            { status: 401 }
-        );
-    }
-
-    let body: unknown;
     try {
-        body = await request.json();
-    } catch {
+        const user = await getAuthenticatedUser();
+
+        if (!user) {
+            return NextResponse.json(
+                { success: false, error: "You must be logged in." },
+                { status: 401 }
+            );
+        }
+
+        let body: unknown;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { success: false, error: "Invalid JSON body." },
+                { status: 400 }
+            );
+        }
+
+        const rawEstimates = (body as { estimates?: unknown } | null)?.estimates;
+
+        if (!Array.isArray(rawEstimates)) {
+            return NextResponse.json(
+                { success: false, error: "'estimates' must be an array." },
+                { status: 400 }
+            );
+        }
+
+        // Degrade per-entry rather than all-or-nothing: a malformed/stale
+        // entry (e.g. from an older, incompatible localStorage cache shape)
+        // shouldn't block every other valid entry in the same batch.
+        const validEstimates = rawEstimates.filter(isValidStoredEstimate).slice(0, 1000);
+
+        await mapWithConcurrency(validEstimates, 10, (estimate) => upsertEstimate(user.id, estimate));
+
+        return NextResponse.json({ success: true, storedCount: validEstimates.length });
+    } catch (error) {
+        console.error("Failed to store task estimates:", error);
         return NextResponse.json(
-            { success: false, error: "Invalid JSON body." },
-            { status: 400 }
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
         );
     }
-
-    const rawEstimates = (body as { estimates?: unknown } | null)?.estimates;
-
-    if (!Array.isArray(rawEstimates)) {
-        return NextResponse.json(
-            { success: false, error: "'estimates' must be an array." },
-            { status: 400 }
-        );
-    }
-
-    // Degrade per-entry rather than all-or-nothing: a malformed/stale
-    // entry (e.g. from an older, incompatible localStorage cache shape)
-    // shouldn't block every other valid entry in the same batch.
-    const validEstimates = rawEstimates.filter(isValidStoredEstimate).slice(0, 1000);
-
-    await mapWithConcurrency(validEstimates, 10, (estimate) => upsertEstimate(user.id, estimate));
-
-    return NextResponse.json({ success: true, storedCount: validEstimates.length });
 }
