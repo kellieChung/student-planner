@@ -3,6 +3,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import Reveal from "@/components/landing/Reveal";
 import StarField from "@/components/brand/StarField";
+import DemoPlanner from "@/components/landing/DemoPlanner";
+import { DEMO_TASKS } from "@/components/landing/demoTasks";
+import HeroConstellation from "@/components/landing/HeroConstellation";
+import ScrollHero from "@/components/landing/ScrollHero";
 import StarMap from "@/components/landing/StarMap";
 
 const SIGN_UP_HREF = "/login?mode=signup";
@@ -41,32 +45,51 @@ const ALSO_INSIDE = [
 export default function LandingPage() {
     return (
         <div className="landing">
-            <header className="relative overflow-hidden bg-[var(--ls-navy)]">
-                <StarField count={90} seed={2026} />
+            <ScrollHero>
+                <div className="ls-hero-layer ls-hero-far">
+                    <StarField count={140} seed={11} />
+                </div>
+                <div className="ls-hero-layer ls-hero-mid">
+                    <StarField count={90} seed={2026} />
+                </div>
+                <div className="ls-hero-fg">
+                    <HeroConstellation />
+                </div>
 
-                <nav className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-5 sm:px-8">
+                <nav className="absolute inset-x-0 top-0 z-20 mx-auto flex max-w-6xl items-center justify-between px-4 py-5 sm:px-8">
                     <Wordmark />
-                    <Link href={LOG_IN_HREF} className="ls-link-quiet text-sm font-semibold">
-                        Log in
-                    </Link>
+                    <div className="flex items-center gap-4 sm:gap-6">
+                        <Link href={LOG_IN_HREF} className="ls-link-quiet text-sm font-semibold">
+                            Log in
+                        </Link>
+                        <Link href={SIGN_UP_HREF} className="ls-button-gold ls-button-sm">
+                            Get started
+                        </Link>
+                    </div>
                 </nav>
 
-                <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-16 text-center sm:px-8 sm:pb-32 sm:pt-24">
-                    <Reveal>
+                <div className="ls-hero-intro px-4 pb-8 text-center sm:pb-10">
+                    <p className="ls-serif text-lg text-[var(--ls-ivory)] sm:text-xl">
+                        Lodestar is a student planner for Canvas.
+                    </p>
+                    <p className="ls-eyebrow mt-4 text-[var(--ls-muted)]">Scroll to light the sky</p>
+                    <svg viewBox="0 0 16 16" aria-hidden="true" className="ls-twinkle mx-auto mt-2 h-4 w-4" style={{ animationDuration: "3s" }}>
+                        <path d="M3 6l5 5 5-5" fill="none" stroke="var(--ls-gold)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </div>
+
+                <div className="ls-hero-final px-4 pb-10 text-center sm:px-8 sm:pb-[8svh]">
+                    <div className="mx-auto max-w-3xl">
                         <h1 className="ls-serif text-4xl leading-[1.1] text-[var(--ls-ivory)] sm:text-6xl">
                             Every finished task
                             <br />
                             is a <em className="text-[var(--ls-gold)]">new star.</em>
                         </h1>
-                    </Reveal>
-                    <Reveal delay={120}>
-                        <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-[var(--ls-muted)] sm:text-lg">
+                        <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-[var(--ls-muted)] sm:mt-6 sm:text-lg">
                             The student planner that turns your workload into a night sky, and catches the assignments
                             hidden in Canvas announcements before they catch you.
                         </p>
-                    </Reveal>
-                    <Reveal delay={240}>
-                        <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+                        <div className="mt-7 flex flex-col items-center justify-center gap-4 sm:mt-10 sm:flex-row">
                             <Link href={SIGN_UP_HREF} className="ls-button-gold w-full sm:w-auto">
                                 Get started
                             </Link>
@@ -74,11 +97,29 @@ export default function LandingPage() {
                                 I already have an account
                             </Link>
                         </div>
-                    </Reveal>
+                    </div>
                 </div>
-            </header>
+            </ScrollHero>
 
             <main>
+                <section className="bg-[var(--ls-night)] text-[var(--ls-ivory)]">
+                    <div className="mx-auto max-w-6xl px-4 py-20 sm:px-8 sm:py-28">
+                        <Reveal className="mx-auto max-w-2xl text-center">
+                            <p className="ls-eyebrow text-[var(--ls-gold)]">Try it</p>
+                            <h2 className="ls-serif mt-3 text-3xl leading-tight sm:text-5xl">
+                                Finish a task. Watch what happens.
+                            </h2>
+                            <p className="mt-5 text-base leading-relaxed text-[var(--ls-muted)]">
+                                This is a small piece of the real planner. Check off a few tasks and see how your effort
+                                turns into Starlight and a constellation.
+                            </p>
+                        </Reveal>
+                        <Reveal className="mt-12" delay={120}>
+                            <DemoPlanner tasks={DEMO_TASKS} />
+                        </Reveal>
+                    </div>
+                </section>
+
                 <section className="bg-[var(--ls-cream)] text-[var(--ls-ink)]">
                     <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-8 sm:py-28 lg:grid-cols-[1fr_1.1fr] lg:items-center">
                         <Reveal>

@@ -65,6 +65,8 @@ Carries over directly from the favicon/icon work already done:
 ## Motion & interaction notes
 - A few real, functioning stars already twinkling in the hero background — subtle, slow, not distracting
 - Smooth scroll-reveal for each section as the visitor scrolls (fade/slight rise-in), not an aggressive parallax effect
+- **Hero (2026-09-24):** a tall pinned hero (native scroll + `position: sticky`, never scroll-jacking) where the Big Dipper's stars light one by one and its line draws itself, finishing exactly as the headline and CTA settle in (then a short hold). Parallax is limited to a few vh of drift between a dim far starfield, a mid starfield, and the constellation. No-JS and reduced-motion visitors get the finished sky and headline immediately. See `components/landing/ScrollHero.tsx` and `heroTimeline.ts`.
+- **Demo (2026-09-24):** a "Try it" section right after the hero: five real-format task cards; finishing one earns Starlight and charts a star in Cassiopeia.
 - The "how it works" step visuals can animate into place as they enter the viewport
 - Keep all motion subtle and calm — matches the brand's actual emotional register. Nothing bouncy, nothing cartoonish, nothing that feels like a generic "modern startup" scroll-jacking effect
 

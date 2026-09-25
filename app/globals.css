@@ -607,6 +607,123 @@ html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
   }
 }
 
+/* ── Scroll-linked hero ──
+   components/landing/ScrollHero.tsx writes --p (0–1 through the hero); every
+   star, line, headline and parallax offset below is derived from it. Without
+   JS or with reduced motion --p is pinned at 1 and the stage is a plain
+   one-screen hero showing the finished sky. */
+.landing .ls-hero {
+  --p: 1;
+  --f: clamp(0, (var(--p) - var(--final-start)) / (var(--final-end) - var(--final-start)), 1);
+  height: 100svh;
+}
+
+.landing .ls-hero-stage {
+  position: relative;
+  height: 100svh;
+  overflow: hidden;
+}
+
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  .landing .ls-hero {
+    --p: 0;
+    height: calc(100svh * var(--hero-screens));
+  }
+
+  .landing .ls-hero-stage {
+    position: sticky;
+    top: 0;
+  }
+
+  .landing .ls-hero:not([data-settled]) .ls-hero-final {
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing .ls-hero {
+    --p: 1 !important;
+  }
+}
+
+.landing .ls-hero-layer {
+  position: absolute;
+  inset: -12vh 0;
+  will-change: transform;
+}
+
+.landing .ls-hero-far {
+  opacity: 0.4;
+  transform: translate3d(0, calc(var(--p) * -4vh), 0);
+}
+
+.landing .ls-hero-mid {
+  transform: translate3d(0, calc(var(--p) * -10vh), 0);
+}
+
+.landing .ls-hero-fg {
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  will-change: transform;
+  transform: translate3d(0, calc(-50% + var(--p) * -22vh), 0) scale(calc(1 - 0.12 * var(--f)));
+  opacity: calc(1 - 0.45 * var(--f));
+}
+
+/* Default butt caps on purpose: a round cap would leave a dot at the end of a
+   fully hidden dash. */
+.landing .ls-hero-edge {
+  stroke: var(--ls-gold);
+  stroke-width: 0.4;
+  opacity: 0.8;
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: calc(var(--len) * (1 - clamp(0, (var(--p) - var(--s)) / var(--seg), 1)));
+}
+
+.landing .ls-hero-figure .ls-map-unlit {
+  stroke-width: 0.35;
+}
+
+.landing .ls-hero-lit {
+  --lit: clamp(0, (var(--p) - var(--s)) / var(--ramp), 1);
+  opacity: var(--lit);
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(calc(0.5 + 0.5 * var(--lit)));
+}
+
+.landing .ls-hero-intro {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: calc(1 - clamp(0, var(--p) / var(--intro-end), 1));
+}
+
+.landing .ls-hero-final {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 2;
+  opacity: var(--f);
+  transform: translate3d(0, calc((1 - var(--f)) * 28px), 0);
+}
+
+.landing .ls-hero-final:focus-within {
+  opacity: 1;
+  transform: none;
+}
+
+:is(.landing, .sky) .ls-button-gold.ls-button-sm {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.875rem;
+}
+
 /* ── Star Chart moments ── */
 @keyframes ls-ignite {
   0% { transform: scale(0.2); opacity: 0; }
