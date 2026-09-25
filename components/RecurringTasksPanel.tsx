@@ -4,10 +4,12 @@ import React, {useEffect, useState} from "react";
 import {RecurringTask} from "@/types/recurringTask";
 import {Course} from "@/types/course";
 import {describeRecurrenceRule} from "@/lib/recurrence";
+import {getTodayString} from "@/lib/utils";
 import RecurrenceField, {RecurrenceFieldValue} from "./RecurrenceField";
 import CourseSelect from "./CourseSelect";
 import DueTimeField from "./DueTimeField";
 import Spinner from "./Spinner";
+import useEscapeToClose from "@/components/ui/useEscapeToClose";
 
 type RecurringTasksPanelProps = {
     isOpen: boolean;
@@ -40,6 +42,8 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
     const [editCourse, setEditCourse] = useState("");
     const [editDueTime, setEditDueTime] = useState("");
     const [editRecurrence, setEditRecurrence] = useState<RecurrenceFieldValue | null>(null);
+
+    useEscapeToClose(isOpen, onClose);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -84,7 +88,7 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
         setBusyId(task.id);
 
         try {
-            const response = await fetch(`/api/recurring-tasks/${task.id}`, {method: "DELETE"});
+            const response = await fetch(`/api/recurring-tasks/${task.id}?today=${getTodayString()}`, {method: "DELETE"});
             if (!response.ok) throw new Error("Failed to delete recurring task.");
 
             setTasks((current) => current.filter((t) => t.id !== task.id));
@@ -123,16 +127,20 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
                     interval: editRecurrence.interval,
                     weekdays: editRecurrence.weekdays,
                     endDate: editRecurrence.endDate || null,
+                    today: getTodayString(),
                 }),
             });
-            if (!response.ok) throw new Error("Failed to update recurring task.");
+            if (!response.ok) {
+                const data = await response.json().catch(() => null) as {error?: string} | null;
+                throw new Error(data?.error ?? "Failed to update recurring task.");
+            }
 
             const {recurringTask} = await response.json() as {recurringTask: RecurringTask};
             setTasks((current) => current.map((t) => (t.id === task.id ? recurringTask : t)));
             setEditingId(null);
             onSeriesChanged();
-        } catch {
-            setError("Couldn't update that recurring task. Try again.");
+        } catch (error) {
+            setError(error instanceof Error && error.message !== "Failed to update recurring task." ? error.message : "Couldn't update that recurring task. Try again.");
         } finally {
             setBusyId(null);
         }
@@ -140,10 +148,10 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm p-4">
-            <div className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-white max-h-[85vh] overflow-y-auto">
+            <div role="dialog" aria-modal="true" aria-label="Recurring tasks" className="theme-surface planner-shell bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl text-white max-h-[85vh] overflow-y-auto">
                 <div className="flex justify-between items-start mb-4">
                     <h2 className="text-lg font-bold text-slate-100">Recurring Tasks</h2>
-                    <button type="button" onClick={onClose} className="text-slate-400 hover:text-white text-lg px-2">
+                    <button type="button" onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white text-lg px-2">
                         ✕
                     </button>
                 </div>
@@ -172,7 +180,7 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                                        className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-sm text-white focus:border-indigo-500"
                                     />
                                     <CourseSelect
                                         courses={courses}

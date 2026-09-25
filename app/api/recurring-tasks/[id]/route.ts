@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { expandOccurrences, RECURRENCE_FREQUENCIES, RecurrenceFrequency, shiftDateKey } from "@/lib/recurrence";
-import { getTodayString } from "@/lib/utils";
+import { isDateKey, resolveClientToday } from "@/lib/utils";
 
 type Params = {
     params: Promise<{
@@ -10,7 +10,6 @@ type Params = {
     }>;
 };
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY = /^\d{2}:\d{2}$/;
 const LABEL_TYPES = new Set(["HW", "R", "EXAM", "TODO"]);
 
@@ -152,6 +151,7 @@ export async function PATCH(request: Request, { params }: Params) {
             endDate,
             dueTime,
             active,
+            today: clientToday,
         } = body as {
             deleteFrom?: unknown;
             applyFromDate?: unknown;
@@ -166,13 +166,14 @@ export async function PATCH(request: Request, { params }: Params) {
             endDate?: unknown;
             dueTime?: unknown;
             active?: unknown;
+            today?: unknown;
         } | null ?? {};
 
         // Mode 1: "delete this and following" — shrink the rule and
         // tombstone every occurrence from that date forward. Reuses the
         // rule-shrink mechanism rather than a separate delete endpoint.
         if (deleteFrom !== undefined) {
-            if (typeof deleteFrom !== "string" || !DATE_ONLY.test(deleteFrom)) {
+            if (!isDateKey(deleteFrom)) {
                 return NextResponse.json(
                     { success: false, error: "'deleteFrom' must be a 'YYYY-MM-DD' string." },
                     { status: 400 }
@@ -193,7 +194,7 @@ export async function PATCH(request: Request, { params }: Params) {
         // mutable display fields (name/course/typeOverride/dueTime), never
         // the rule shape itself.
         if (applyFromDate !== undefined) {
-            if (typeof applyFromDate !== "string" || !DATE_ONLY.test(applyFromDate)) {
+            if (!isDateKey(applyFromDate)) {
                 return NextResponse.json(
                     { success: false, error: "'applyFromDate' must be a 'YYYY-MM-DD' string." },
                     { status: 400 }
@@ -414,7 +415,7 @@ export async function PATCH(request: Request, { params }: Params) {
         }
 
         if (startDate !== undefined) {
-            if (typeof startDate !== "string" || !DATE_ONLY.test(startDate)) {
+            if (!isDateKey(startDate)) {
                 return NextResponse.json(
                     { success: false, error: "'startDate' must be a 'YYYY-MM-DD' string." },
                     { status: 400 }
@@ -424,7 +425,7 @@ export async function PATCH(request: Request, { params }: Params) {
         }
 
         if (endDate !== undefined) {
-            if (endDate !== null && (typeof endDate !== "string" || !DATE_ONLY.test(endDate))) {
+            if (endDate !== null && !isDateKey(endDate)) {
                 return NextResponse.json(
                     { success: false, error: "'endDate' must be null or a 'YYYY-MM-DD' string." },
                     { status: 400 }
@@ -453,6 +454,16 @@ export async function PATCH(request: Request, { params }: Params) {
             data.active = active;
         }
 
+        const nextStart = (data.startDate as string | undefined) ?? existing.startDate;
+        const nextEnd = data.endDate !== undefined ? (data.endDate as string | null) : existing.endDate;
+
+        if (nextEnd && nextEnd < nextStart) {
+            return NextResponse.json(
+                { success: false, error: "The end date can't be before the start date." },
+                { status: 400 }
+            );
+        }
+
         const updated = Object.keys(data).length > 0
             ? await prisma.recurringTask.update({ where: { id }, data })
             : existing;
@@ -466,7 +477,7 @@ export async function PATCH(request: Request, { params }: Params) {
         );
 
         if (ruleChanged) {
-            const today = getTodayString();
+            const today = resolveClientToday(clientToday);
             const horizonEnd = shiftDateKey(today, 365);
             const validDates = new Set(
                 expandOccurrences(
@@ -512,7 +523,7 @@ export async function PATCH(request: Request, { params }: Params) {
 
         return NextResponse.json({ success: true, recurringTask: serializeRecurringTask(updated) });
     } catch (error) {
-        console.error("❌ Failed to update recurring task:", error);
+        console.error("Failed to update recurring task:", error);
         return NextResponse.json(
             { success: false, error: "Something went wrong." },
             { status: 500 }
@@ -520,7 +531,7 @@ export async function PATCH(request: Request, { params }: Params) {
     }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
+export async function DELETE(request: Request, { params }: Params) {
     try {
         const session = await auth();
 
@@ -557,13 +568,15 @@ export async function DELETE(_request: Request, { params }: Params) {
         // customization should survive). Past/completed occurrences are
         // left alone and simply become standalone tasks once the series
         // row below is deleted (recurrenceId: onDelete SetNull).
-        await tombstoneFutureOccurrences(user.id, id, getTodayString(), { includeOverridden: true });
+        const today = resolveClientToday(new URL(request.url).searchParams.get("today"));
+
+        await tombstoneFutureOccurrences(user.id, id, today, { includeOverridden: true });
 
         await prisma.recurringTask.delete({ where: { id } });
 
         return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("❌ Failed to delete recurring task:", error);
+        console.error("Failed to delete recurring task:", error);
         return NextResponse.json(
             { success: false, error: "Something went wrong." },
             { status: 500 }

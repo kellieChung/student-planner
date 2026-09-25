@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { expandOccurrences, RecurrenceFrequency } from "@/lib/recurrence";
+import { expandOccurrences, RecurrenceFrequency, shiftDateKey } from "@/lib/recurrence";
+import { getTodayString, isDateKey } from "@/lib/utils";
 
 type Params = {
     params: Promise<{
@@ -9,7 +10,10 @@ type Params = {
     }>;
 };
 
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+// The client asks for an 8-week window (at most ~57 daily occurrences); these
+// bounds only stop a hand-made request from creating thousands of rows.
+const MAX_OCCURRENCES_PER_REQUEST = 120;
+const MAX_DAYS_AHEAD = 400;
 
 // The client-driven occurrence materializer. dueAt/dueFraction for each
 // requested date are computed client-side (lib/utils.ts's resolveDueTime,
@@ -65,12 +69,19 @@ export async function POST(request: Request, { params }: Params) {
 
         const { occurrences } = body as { occurrences?: unknown } | null ?? {};
 
-        if (!Array.isArray(occurrences)) {
+        if (!Array.isArray(occurrences) || occurrences.length > MAX_OCCURRENCES_PER_REQUEST) {
             return NextResponse.json(
-                { success: false, error: "'occurrences' must be an array." },
+                { success: false, error: `'occurrences' must be an array of at most ${MAX_OCCURRENCES_PER_REQUEST} entries.` },
                 { status: 400 }
             );
         }
+
+        // A paused series materializes nothing.
+        if (!recurringTask.active) {
+            return NextResponse.json({ success: true, customTasks: [] });
+        }
+
+        const latestAllowed = shiftDateKey(getTodayString(), MAX_DAYS_AHEAD);
 
         type RequestedOccurrence = { due: string; dueAt: string | null; dueFraction: number | null };
         const requested: RequestedOccurrence[] = [];
@@ -82,7 +93,7 @@ export async function POST(request: Request, { params }: Params) {
                 dueFraction?: unknown;
             } | null ?? {};
 
-            if (typeof due !== "string" || !DATE_ONLY.test(due)) {
+            if (!isDateKey(due)) {
                 return NextResponse.json(
                     { success: false, error: "Each occurrence's 'due' must be a 'YYYY-MM-DD' string." },
                     { status: 400 }
@@ -102,6 +113,8 @@ export async function POST(request: Request, { params }: Params) {
                     { status: 400 }
                 );
             }
+
+            if (due > latestAllowed) continue;
 
             requested.push({ due, dueAt: dueAt as string | null, dueFraction: dueFraction as number | null });
         }
@@ -131,20 +144,27 @@ export async function POST(request: Request, { params }: Params) {
             )
         );
 
-        const toCreate = requested.filter((occurrence) => validDates.has(occurrence.due));
+        const validRequested = requested.filter((occurrence) => validDates.has(occurrence.due));
 
-        if (toCreate.length === 0) {
+        if (validRequested.length === 0) {
             return NextResponse.json({ success: true, customTasks: [] });
         }
 
-        const dueDates = toCreate.map((occurrence) => occurrence.due);
+        const dueDates = validRequested.map((occurrence) => occurrence.due);
 
+        // Existing rows are matched by series + due date, not only by the
+        // deterministic id: a task converted into a series keeps its own id
+        // and is already the first occurrence, so creating
+        // custom-r<id>-<startDate> as well would duplicate it.
         const existingBefore = await prisma.customTask.findMany({
             where: { recurrenceId: recurringTask.id, due: { in: dueDates } },
             select: { due: true },
         });
         const existingDueSet = new Set(existingBefore.map((task) => task.due));
+        const toCreate = validRequested.filter((occurrence) => !existingDueSet.has(occurrence.due));
 
+        // skipDuplicates still covers an occurrence whose own due date was
+        // edited (its id exists under the original date).
         await prisma.customTask.createMany({
             data: toCreate.map((occurrence) => ({
                 id: `custom-r${recurringTask.id}-${occurrence.due}`,
@@ -202,7 +222,7 @@ export async function POST(request: Request, { params }: Params) {
             })),
         });
     } catch (error) {
-        console.error("❌ Failed to materialize recurring task occurrences:", error);
+        console.error("Failed to materialize recurring task occurrences:", error);
         return NextResponse.json(
             { success: false, error: "Something went wrong." },
             { status: 500 }
