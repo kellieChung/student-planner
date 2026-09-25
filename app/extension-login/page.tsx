@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
+import { prisma } from "@/lib/prisma";
 import CredentialsForm from "@/components/auth/CredentialsForm";
 import LegalLinks from "@/components/auth/LegalLinks";
 
@@ -13,10 +14,11 @@ export default async function ExtensionLoginPage({
     const { state } = await searchParams;
     const redirectTo = `/extension-callback?state=${encodeURIComponent(state ?? "")}`;
 
-    // Already signed in: go straight to the Connect confirmation.
+    // Already signed in (and the account still exists — a JWT can outlive a
+    // deleted user): go straight to the Connect confirmation.
     const session = await auth();
 
-    if (session?.user?.email) {
+    if (session?.user?.email && (await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true } }))) {
         redirect(redirectTo);
     }
 

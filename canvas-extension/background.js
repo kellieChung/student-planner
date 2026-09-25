@@ -143,10 +143,16 @@ function pickAnnouncement(announcement) {
 
 // Shared by SYNC_CANVAS and RESTORE_COURSE — both need the identical
 // assignments/discussions/announcements fetch for one course.
+function dayKeyFromNow(days) {
+    const date = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    return date.toISOString().slice(0, 10);
+}
+
 async function fetchCourseData(canvasOrigin, course) {
-    const announcementStart = new Date(
-        Date.now() - ANNOUNCEMENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
-    ).toISOString();
+    // Canvas defaults end_date to start_date + 28 days, so both are explicit:
+    // from the lookback start through tomorrow (covers any timezone).
+    const announcementStart = dayKeyFromNow(-ANNOUNCEMENT_LOOKBACK_DAYS);
+    const announcementEnd = dayKeyFromNow(1);
 
     const assignments = await getCanvasData(
         `${canvasOrigin}/api/v1/courses/${course.id}/assignments?per_page=100`
@@ -157,7 +163,7 @@ async function fetchCourseData(canvasOrigin, course) {
     );
 
     const announcements = await getCanvasData(
-        `${canvasOrigin}/api/v1/announcements?context_codes[]=course_${course.id}&active_only=true&start_date=${encodeURIComponent(announcementStart)}&per_page=100`
+        `${canvasOrigin}/api/v1/announcements?context_codes[]=course_${course.id}&active_only=true&start_date=${announcementStart}&end_date=${announcementEnd}&per_page=100`
     );
 
     return {
