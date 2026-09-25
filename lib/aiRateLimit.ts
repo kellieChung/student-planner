@@ -92,49 +92,74 @@ type ConsumeOptions = {
     data?: Prisma.InputJsonObject;
 };
 
+// A resume (after a pause or a dropped connection) is free, but only this
+// many times per run — each one can re-bill announcements whose text changed.
+const MAX_RESUMES_PER_RUN = 3;
+
 // Spends one check for a real (non-dry-run) run: the weekly allowance
 // first, a bonus credit only once that is used up. Logs the
 // `detection_pass_triggered` event itself, so the charge and the record of
-// it can't disagree. Resuming a paused run (same runId, within
-// RESUME_WINDOW_MS) is free and logs nothing — it continues work the
-// original charge already paid for.
+// it can't disagree. Resuming a charged run (same runId, within
+// RESUME_WINDOW_MS, up to MAX_RESUMES_PER_RUN times) is free.
+//
+// Serialized per user with a transaction-scoped advisory lock: without it,
+// several simultaneous requests all read the same "remaining" and all run.
 export async function consumeDetectionCheck(
     userId: string,
     options: ConsumeOptions = {}
 ): Promise<{ allowed: boolean; charge: DetectionCheckCharge | null; quota: DetectionQuota }> {
-    if (options.resumeRunId) {
-        const original = await prisma.aiTaskEvent.findFirst({
-            where: {
-                userId,
-                type: "detection_pass_triggered",
-                createdAt: { gte: new Date(Date.now() - RESUME_WINDOW_MS) },
-                data: { path: ["runId"], equals: options.resumeRunId },
+    return prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`detection:${userId}`}::text))`;
+
+        if (options.resumeRunId) {
+            const since = new Date(Date.now() - RESUME_WINDOW_MS);
+            const [original, resumes] = await Promise.all([
+                prisma.aiTaskEvent.findFirst({
+                    where: {
+                        userId,
+                        type: "detection_pass_triggered",
+                        createdAt: { gte: since },
+                        data: { path: ["runId"], equals: options.resumeRunId },
+                    },
+                    select: { id: true },
+                }),
+                prisma.aiTaskEvent.count({
+                    where: {
+                        userId,
+                        type: "detection_pass_resumed",
+                        createdAt: { gte: since },
+                        data: { path: ["runId"], equals: options.resumeRunId },
+                    },
+                }),
+            ]);
+
+            if (original && resumes < MAX_RESUMES_PER_RUN) {
+                await logAiTaskEvent(userId, "detection_pass_resumed", {
+                    data: { runId: options.resumeRunId },
+                });
+
+                return { allowed: true, charge: "resume" as const, quota: await getDetectionQuota(userId) };
+            }
+        }
+
+        const before = await getDetectionQuota(userId);
+
+        if (before.remaining <= 0) {
+            return { allowed: false, charge: null, quota: before };
+        }
+
+        const charge: DetectionCheckCharge = before.weeklyRemaining > 0 ? "weekly" : "credit";
+
+        await logAiTaskEvent(userId, "detection_pass_triggered", {
+            data: {
+                ...options.data,
+                runId: options.runId ?? options.resumeRunId ?? null,
+                ...(charge === "credit" ? { paidWithCredit: true } : {}),
             },
-            select: { id: true },
         });
 
-        if (original) {
-            return { allowed: true, charge: "resume", quota: await getDetectionQuota(userId) };
-        }
-    }
-
-    const before = await getDetectionQuota(userId);
-
-    if (before.remaining <= 0) {
-        return { allowed: false, charge: null, quota: before };
-    }
-
-    const charge: DetectionCheckCharge = before.weeklyRemaining > 0 ? "weekly" : "credit";
-
-    await logAiTaskEvent(userId, "detection_pass_triggered", {
-        data: {
-            ...options.data,
-            runId: options.runId ?? options.resumeRunId ?? null,
-            ...(charge === "credit" ? { paidWithCredit: true } : {}),
-        },
-    });
-
-    return { allowed: true, charge, quota: await getDetectionQuota(userId) };
+        return { allowed: true, charge, quota: await getDetectionQuota(userId) };
+    }, { timeout: 15_000 });
 }
 
 export async function grantDetectionCredits(

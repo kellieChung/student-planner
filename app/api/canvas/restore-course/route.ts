@@ -11,8 +11,6 @@ import {
 // anything else — unlike /api/canvas/sync, this never prunes, so it's safe
 // to call for a single course a user wants back after deleting it (see
 // components/CoursesPanel.tsx's delete confirmation copy).
-export const maxDuration = 60;
-
 export async function POST(request: Request) {
     try {
         const userId = await getCanvasSyncUserId(request);

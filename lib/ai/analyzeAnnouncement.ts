@@ -26,6 +26,11 @@ const OLLAMA_TIMEOUT_MS = 35_000;
 // actually stuck, just slow.
 const ANTHROPIC_TIMEOUT_MS = 45_000;
 
+// Wall-clock budget for one extraction pass including the bisection retries
+// below, so a string of failures can't run past the serverless time limit.
+const ANTHROPIC_EXTRACTION_BUDGET_MS = 90_000;
+const MIN_USEFUL_CALL_MS = 5_000;
+
 const PREDICT_TOKENS_PER_ANNOUNCEMENT = 250;
 const PREDICT_TOKENS_BASE = 100;
 
@@ -469,7 +474,8 @@ const EXTRACT_TOOL: Anthropic.Tool = {
 };
 
 async function callAnthropicForBatch(
-    announcements: Announcement[]
+    announcements: Announcement[],
+    timeoutMs: number
 ): Promise<unknown[]> {
     // RULES is already sent once via the `system` field below — pasting it
     // again here would double the fixed per-call token cost for no benefit.
@@ -493,7 +499,7 @@ Call the ${EXTRACT_TOOL_NAME} tool exactly once with one entry per announcement 
                 tool_choice: { type: "tool", name: EXTRACT_TOOL_NAME },
                 messages: [{ role: "user", content: prompt }],
             },
-            { timeout: ANTHROPIC_TIMEOUT_MS }
+            { timeout: timeoutMs }
         );
     } catch (error) {
         throw describeAnthropicError("announcement extraction", error);
@@ -518,15 +524,23 @@ Call the ${EXTRACT_TOOL_NAME} tool exactly once with one entry per announcement 
 // batch. Bottoms out at a single announcement, which degrades to "no
 // extractable tasks" on failure rather than throwing.
 async function analyzeAnnouncementsWithAnthropic(
-    announcements: Announcement[]
+    announcements: Announcement[],
+    deadline: number = Date.now() + ANTHROPIC_EXTRACTION_BUDGET_MS
 ): Promise<AnnouncementAnalysisResult[]> {
+    const remaining = deadline - Date.now();
+
+    if (remaining < MIN_USEFUL_CALL_MS) {
+        console.error(`Announcement extraction ran out of time; ${announcements.length} announcement(s) left unanalyzed.`);
+        return announcements.map(() => ({ tasks: [], ok: false }));
+    }
+
     try {
-        const rawEntries = await callAnthropicForBatch(announcements);
+        const rawEntries = await callAnthropicForBatch(announcements, Math.min(ANTHROPIC_TIMEOUT_MS, remaining));
         return toProposedTasksForAnnouncements(announcements, rawEntries);
     } catch (error) {
         if (announcements.length === 1) {
             console.error(
-                `❌ Anthropic call failed for announcement "${announcements[0].title}"; treating it as having no extractable tasks.`,
+                `Anthropic call failed for announcement "${announcements[0].title}"; treating it as having no extractable tasks.`,
                 error
             );
 
@@ -536,15 +550,15 @@ async function analyzeAnnouncementsWithAnthropic(
         const mid = Math.ceil(announcements.length / 2);
 
         console.error(
-            `❌ Anthropic batch call failed for ${announcements.length} announcements; retrying as two batches of ${mid} and ${
+            `Anthropic batch call failed for ${announcements.length} announcements; retrying as two batches of ${mid} and ${
                 announcements.length - mid
             }.`,
             error
         );
 
         const [firstHalf, secondHalf] = await Promise.all([
-            analyzeAnnouncementsWithAnthropic(announcements.slice(0, mid)),
-            analyzeAnnouncementsWithAnthropic(announcements.slice(mid)),
+            analyzeAnnouncementsWithAnthropic(announcements.slice(0, mid), deadline),
+            analyzeAnnouncementsWithAnthropic(announcements.slice(mid), deadline),
         ]);
 
         return [...firstHalf, ...secondHalf];

@@ -17,7 +17,9 @@ export function isAnthropicEnabled(): boolean {
 
 export function getAnthropicClient(): Anthropic {
     if (!anthropicClient) {
-        anthropicClient = new Anthropic();
+        // The SDK's default of 2 retries can triple a stuck call's wall time;
+        // every caller already has its own timeout and fallback.
+        anthropicClient = new Anthropic({ maxRetries: 1 });
     }
 
     return anthropicClient;
@@ -32,7 +34,7 @@ export function logAnthropicUsage(label: string, response: Anthropic.Message): v
         (outputTokens / 1_000_000) * ANTHROPIC_OUTPUT_COST_PER_MTOK;
 
     console.log(
-        `💰 Anthropic ${label}: ${inputTokens} in / ${outputTokens} out (~$${cost.toFixed(4)})`
+        `Anthropic ${label}: ${inputTokens} in / ${outputTokens} out (~$${cost.toFixed(4)})`
     );
 }
 

@@ -7,8 +7,6 @@ import {
     RawCourseSyncPayload,
 } from "@/lib/canvasIngest";
 
-export const maxDuration = 60;
-
 export async function POST(request: Request) {
     try {
         const userId = await getCanvasSyncUserId(request);

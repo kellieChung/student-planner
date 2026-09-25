@@ -10,6 +10,12 @@ import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString } from "@/lib/utils";
 import { useMascot } from "@/components/world/LaptopFrame";
 
+// Pause is only checked between extraction batches, and a check is capped at
+// MAX_ANNOUNCEMENTS_PER_CHECK, which equals Haiku's batch size — so a running
+// check is always a single batch and Pause could never take effect. Hidden
+// until pausing works mid-batch; the server side is left in place.
+const PAUSE_AVAILABLE = false;
+
 // Ports the manual "Check for new announcements" trigger from the retired
 // components/AIReviewPanel.tsx: the range-preset picker, custom dates, dry-
 // run preview, and the NDJSON-streaming call to
@@ -191,7 +197,7 @@ export default function DetectionTriggerControls({
                 }
             }
         } catch (error) {
-            console.error("❌ Failed to preview announcement count:", error);
+            console.error("Failed to preview announcement count:", error);
         } finally {
             if (seq === previewSeq.current) {
                 setPreviewLoading(false);
@@ -402,7 +408,7 @@ export default function DetectionTriggerControls({
                     } else if (frame.type === "done") {
                         receivedDone = true;
                     } else if (frame.type === "error") {
-                        console.error("❌ Announcement analysis stream error:", frame.message);
+                        console.error("Announcement analysis stream error:", frame.message);
                     }
                 }
 
@@ -418,7 +424,7 @@ export default function DetectionTriggerControls({
             }
         } catch (error) {
             if (!controller.signal.aborted) {
-                console.error("❌ Failed to analyze announcements:", error);
+                console.error("Failed to analyze announcements:", error);
                 setStreamIncomplete(true);
             }
         } finally {
@@ -437,13 +443,15 @@ export default function DetectionTriggerControls({
         setPausing(true);
 
         try {
-            await fetch("/api/ai/analyze-announcements/pause", {
+            const response = await fetch("/api/ai/analyze-announcements/pause", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ runId: runIdRef.current }),
             });
+
+            if (!response.ok) throw new Error(`Pause returned ${response.status}`);
         } catch (error) {
-            console.error("❌ Failed to pause announcement analysis:", error);
+            console.error("Failed to pause announcement analysis:", error);
             setPausing(false);
         }
     }
@@ -612,16 +620,16 @@ export default function DetectionTriggerControls({
                             {outOfChecks
                                 ? "Out of checks"
                                 : rangeIsInvalid
-                                ? "🤖 Check for new announcements"
+                                ? "Check for new announcements"
                                 : selectionTouched && selectedCount === 0
                                 ? "Select at least one announcement"
                                 : previewCount === null
-                                ? "🤖 Check for new announcements"
+                                ? "Check for new announcements"
                                 : selectionTouched
-                                ? `🤖 Check ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
+                                ? `Check ${selectedCount} announcement${selectedCount === 1 ? "" : "s"}`
                                 : previewCount > MAX_ANNOUNCEMENTS_PER_CHECK
-                                ? `🤖 Check the newest ${MAX_ANNOUNCEMENTS_PER_CHECK} of ${previewCount} new announcements`
-                                : `🤖 Check ${previewCount} new announcement${previewCount === 1 ? "" : "s"}`}
+                                ? `Check the newest ${MAX_ANNOUNCEMENTS_PER_CHECK} of ${previewCount} new announcements`
+                                : `Check ${previewCount} new announcement${previewCount === 1 ? "" : "s"}`}
                         </button>
                     )}
 
@@ -633,7 +641,6 @@ export default function DetectionTriggerControls({
                                 nothingNew ? "" : "mt-2"
                             }`}
                         >
-                            🔄{" "}
                             {inRangeCount > MAX_ANNOUNCEMENTS_PER_CHECK
                                 ? `Re-check the newest ${MAX_ANNOUNCEMENTS_PER_CHECK} of ${inRangeCount} in this range`
                                 : `Re-check all ${inRangeCount} in this range`}
@@ -642,7 +649,7 @@ export default function DetectionTriggerControls({
 
                     {(!nothingNew || showRegenerate) && !outOfChecks && (
                         <p className="mt-2 text-xs text-[var(--muted)]">
-                            Each check uses 1 of your checks. You can pause it and resume for free.
+                            Each check uses 1 of your checks.
                         </p>
                     )}
                 </div>
@@ -655,18 +662,20 @@ export default function DetectionTriggerControls({
                     <div className="flex items-center justify-between gap-3">
                         <p className="flex items-center gap-2 font-semibold">
                             <Spinner className="h-4 w-4" />
-                            {pausing ? "Pausing" : "🤖 Checking announcements"}
+                            {pausing ? "Pausing" : "Checking announcements"}
                             {progress ? `... ${progress.completed} of ${progress.total}` : "..."}
                         </p>
 
-                        <button
-                            type="button"
-                            onClick={() => void pauseRun()}
-                            disabled={pausing || !progress}
-                            className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            ⏸ Pause
-                        </button>
+                        {PAUSE_AVAILABLE && (
+                            <button
+                                type="button"
+                                onClick={() => void pauseRun()}
+                                disabled={pausing || !progress}
+                                className="shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                Pause
+                            </button>
+                        )}
                     </div>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
@@ -693,7 +702,7 @@ export default function DetectionTriggerControls({
                     <QuotaBanner quota={quota} />
 
                     <p className="font-semibold">
-                        ⏸ Paused
+                        Paused
                         {progress ? ` — ${progress.completed} of ${progress.total} checked` : ""}
                     </p>
 
@@ -710,7 +719,7 @@ export default function DetectionTriggerControls({
                             onClick={() => void runDetectionPass("resume")}
                             className="rounded-xl bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]"
                         >
-                            ▶ Resume
+                            Resume
                         </button>
 
                         <button
@@ -727,7 +736,7 @@ export default function DetectionTriggerControls({
             {started && !loading && streamIncomplete && (
                 <div className="theme-surface mt-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="font-semibold text-[var(--status-overdue-text)]">
-                        ⚠️ Check stopped early
+                        Check stopped early
                     </p>
 
                     <p className="mt-1 text-sm text-[var(--muted)]">
@@ -739,7 +748,7 @@ export default function DetectionTriggerControls({
                         onClick={() => void runDetectionPass("resume")}
                         className="mt-3 rounded-xl bg-[var(--accent)] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--accent-hover)]"
                     >
-                        ▶ Resume
+                        Resume
                     </button>
                 </div>
             )}
@@ -748,8 +757,8 @@ export default function DetectionTriggerControls({
                 <div className="theme-surface mt-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-6">
                     <p className="text-xl font-bold">
                         {newCandidateCount > 0
-                            ? `🎉 Found ${newCandidateCount} new suggestion${newCandidateCount === 1 ? "" : "s"}`
-                            : "🎉 You're all caught up!"}
+                            ? `Found ${newCandidateCount} new suggestion${newCandidateCount === 1 ? "" : "s"}`
+                            : "You're all caught up!"}
                     </p>
 
                     <p className="mt-2 text-sm text-[var(--muted)]">
