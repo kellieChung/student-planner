@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { analyzeAssignments, estimateMinutesByType, normalizeAssignmentType } from "@/lib/analyzeAssignment";
@@ -23,9 +24,13 @@ async function getAuthenticatedUser() {
         return null;
     }
 
-    return prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
         where: { email: session.user.email },
     });
+
+    // Assignment text is sent to Anthropic; that's disclosed in the terms, so
+    // a user who hasn't accepted the current version is treated as signed out.
+    return user && hasAcceptedCurrentTerms(user) ? user : null;
 }
 
 export async function GET() {

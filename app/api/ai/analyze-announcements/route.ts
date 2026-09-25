@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { analyzeAnnouncements, getAnnouncementBatchSize } from "@/lib/ai/analyzeAnnouncement";
@@ -244,6 +245,15 @@ export async function POST(
                     error: "User not found.",
                 },
                 { status: 404 }
+            );
+        }
+
+        // Announcement text is sent to Anthropic, so only after the user has
+        // agreed to the current terms (which disclose that).
+        if (!hasAcceptedCurrentTerms(user)) {
+            return NextResponse.json(
+                { success: false, error: "Please accept the updated terms first." },
+                { status: 403 }
             );
         }
 
