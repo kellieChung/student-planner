@@ -1,4 +1,4 @@
-import { classifyAssignmentType } from "@/lib/analyzeAssignment";
+import { classifyAssignmentType } from "@/lib/assignmentType";
 import { parseLocalDate } from "@/lib/utils";
 
 // The only type values a card label can ever show. TODO is reserved for

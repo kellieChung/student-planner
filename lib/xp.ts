@@ -1,4 +1,4 @@
-import { classifyAssignmentType, estimateMinutesByType } from "@/lib/analyzeAssignment";
+import { classifyAssignmentType, estimateMinutesByType } from "@/lib/assignmentType";
 import { daysBetween, isDateKey, parseLocalDate } from "@/lib/utils";
 
 // Purely time-based (no model call): a task without a planning estimate gets
