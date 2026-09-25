@@ -64,10 +64,31 @@ const OLLAMA_CONCURRENCY = 2;
  * by the server's local offset, silently mis-including/excluding
  * announcements right at the edge of the range.
  */
+const MAX_WINDOW_DAYS = 400;
+
 function resolveAnnouncementWindow(
     from: string | null,
-    to: string | null
+    to: string | null,
+    instants: { start: string; end: string } | null
 ): { windowStart: Date; windowEnd: Date; isDefaultRange: boolean } {
+    // Preferred: the browser sends the window as instants built from the
+    // user's own local midnights. Everything below uses the server's clock
+    // and timezone (UTC on Vercel), which is hours off for US users.
+    if (instants) {
+        const windowStart = new Date(instants.start);
+        const windowEnd = new Date(instants.end);
+        const span = windowEnd.getTime() - windowStart.getTime();
+
+        if (
+            !Number.isNaN(windowStart.getTime()) &&
+            !Number.isNaN(windowEnd.getTime()) &&
+            span >= 0 &&
+            span <= MAX_WINDOW_DAYS * 24 * 60 * 60 * 1000
+        ) {
+            return { windowStart, windowEnd, isDefaultRange: !(from && to) };
+        }
+    }
+
     if (from && to) {
         const windowStart = parseLocalDate(from);
         windowStart.setHours(0, 0, 0, 0);
@@ -275,6 +296,10 @@ export async function POST(
         let dryRun = false;
         let rangeFrom: string | null = null;
         let rangeTo: string | null = null;
+        let rangeInstants: { start: string; end: string } | null = null;
+        // The browser's Date#getTimezoneOffset(), so due dates shown to the
+        // duplicate checker are the user's calendar days, not UTC ones.
+        let tzOffsetMinutes = 0;
         let regenerate = false;
         let runId: string | null = null;
         let resumeRunId: string | null = null;
@@ -320,6 +345,21 @@ export async function POST(
             ) {
                 rangeFrom = body.from;
                 rangeTo = body.to;
+            }
+
+            if (
+                typeof body?.tzOffset === "number" &&
+                Number.isFinite(body.tzOffset) &&
+                Math.abs(body.tzOffset) <= 14 * 60
+            ) {
+                tzOffsetMinutes = body.tzOffset;
+            }
+
+            if (
+                typeof body?.windowStart === "string" &&
+                typeof body?.windowEnd === "string"
+            ) {
+                rangeInstants = { start: body.windowStart, end: body.windowEnd };
             }
         } catch {
             // No body = automatic mode, default range.
@@ -446,7 +486,7 @@ export async function POST(
             // caller-supplied from/to range (see step 3) overrides it.
             // ----------------------------------------------
 
-            resolvedWindow = resolveAnnouncementWindow(rangeFrom, rangeTo);
+            resolvedWindow = resolveAnnouncementWindow(rangeFrom, rangeTo, rangeInstants);
 
             announcements =
                 allAnnouncements.filter(
@@ -707,10 +747,9 @@ export async function POST(
                     id: assignment.id,
                     name: assignment.name,
                     description: assignment.description,
-                    dueDate:
-                        assignment.dueAt
-                            ?.toISOString()
-                            .slice(0, 10) ?? null,
+                    dueDate: assignment.dueAt
+                        ? new Date(assignment.dueAt.getTime() - tzOffsetMinutes * 60_000).toISOString().slice(0, 10)
+                        : null,
                 }));
         }
 

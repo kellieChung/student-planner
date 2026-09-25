@@ -7,7 +7,7 @@ import Checkbox from "@/components/ui/Checkbox";
 import { DetectionQuota } from "@/types/aiQuota";
 import { MAX_ANNOUNCEMENTS_PER_CHECK } from "@/lib/analysisLimits";
 import Spinner from "@/components/Spinner";
-import { getStartOfWeek, getTodayString } from "@/lib/utils";
+import { getStartOfWeek, getTodayString, parseLocalDate } from "@/lib/utils";
 import { useMascot } from "@/components/world/LaptopFrame";
 
 // Pause is only checked between extraction batches, and a check is capped at
@@ -84,6 +84,30 @@ function formatLocalDate(date: Date): string {
 // deliberately sends no from/to at all so the server stays the single
 // source of truth for the default range.
 const WEEKLY_POST_BUFFER_DAYS = 4;
+
+// The window as instants from the user's own local midnights, so the server
+// (UTC on Vercel) never has to guess the user's calendar day. A null range is
+// "this week" plus the early buffer, matching the server's default.
+function rangeWindow(range: { from: string; to: string } | null): { windowStart: string; windowEnd: string } {
+    let start: Date;
+    let end: Date;
+
+    if (range) {
+        start = parseLocalDate(range.from);
+        end = parseLocalDate(range.to);
+    } else {
+        const weekStart = getStartOfWeek();
+        start = new Date(weekStart);
+        start.setDate(start.getDate() - WEEKLY_POST_BUFFER_DAYS);
+        end = new Date(weekStart);
+        end.setDate(end.getDate() + 6);
+    }
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    return { windowStart: start.toISOString(), windowEnd: end.toISOString() };
+}
 
 function resolvePresetRange(
     preset: RangePreset
@@ -170,7 +194,7 @@ export default function DetectionTriggerControls({
             const response = await fetch("/api/ai/analyze-announcements", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ dryRun: true, ...(range ?? {}) }),
+                body: JSON.stringify({ dryRun: true, ...(range ?? {}), ...rangeWindow(range) }),
             });
 
             const data = await response.json();
@@ -281,10 +305,11 @@ export default function DetectionTriggerControls({
                               .filter((a) => !deselectedIds.has(a.id))
                               .map((a) => a.id),
                       }
-                    : range ?? {};
+                    : { ...(range ?? {}), ...rangeWindow(range) };
 
             body = {
                 ...scope,
+                tzOffset: new Date().getTimezoneOffset(),
                 runId: runIdRef.current,
                 ...(mode === "regenerate" ? { regenerate: true } : {}),
             };
