@@ -1,40 +1,68 @@
-/* Mirrors the main app's theme variables (app/globals.css) so the
-   extension popup reads as the same product. popup.js sets
-   documentElement's data-theme to whatever theme.js (a content script)
-   last observed on the planner web app itself — see theme-sync.js —
-   falling back to the OS color-scheme preference if the web app has never
-   been opened. Dark ("Enchanted Forest") is the default; [data-theme="light"]
-   applies "Cozy Tavern". */
+/* Mirrors the app's Night / Day palettes (app/globals.css) so the popup reads
+   as the same product. popup.js sets documentElement's data-theme from the
+   theme the web app last used (see theme-sync.js); Night is the default. */
+@font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url("fonts/manrope-latin.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Spectral";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("fonts/spectral-500-latin.woff2") format("woff2");
+}
+
+@font-face {
+    font-family: "Spectral";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("fonts/spectral-600-latin.woff2") format("woff2");
+}
+
 :root {
-    --app-background: #0a1410;
-    --panel: #142820;
-    --panel-raised: #1c3528;
-    --border: #3d6b52;
-    --foreground: #ecfdf5;
-    --muted: #86b09a;
-    --heading: #a7f3d0;
-    --accent: #34d399;
-    --accent-hover: #6ee7b7;
-    --status-overdue-text: #fecaca;
-    --status-overdue-bg: rgb(127 29 29 / 0.55);
-    --status-done-text: #86efac;
-    --status-done-bg: rgb(20 83 45 / 0.45);
+    --app-background: #161b33;
+    --panel: #1c2240;
+    --panel-raised: #232a4d;
+    --border: #3a4470;
+    --field-border: #7d86ab;
+    --foreground: #eef0f8;
+    --muted: #b8bdd6;
+    --heading: #f7f3ec;
+    --accent: #e9c46a;
+    --accent-hover: #f1d68e;
+    --accent-soft: rgb(233 196 106 / 0.14);
+    --accent-contrast: #161b33;
+    --ok-text: #a7f3d0;
+    --ok-bg: rgb(22 78 64 / 0.5);
+    --error-text: #fecaca;
+    --error-bg: rgb(127 29 29 / 0.5);
+    --star-dim: #b8bdd6;
 }
 
 :root[data-theme="light"] {
-    --app-background: #fff7ed;
-    --panel: #fffbeb;
-    --panel-raised: #fef3c7;
-    --border: #fdba74;
-    --foreground: #431407;
-    --muted: #9a3412;
-    --heading: #c2410c;
-    --accent: #ea580c;
-    --accent-hover: #c2410c;
-    --status-overdue-text: #991b1b;
-    --status-overdue-bg: rgb(254 202 202 / 0.85);
-    --status-done-text: #166534;
-    --status-done-bg: rgb(187 247 208 / 0.7);
+    --app-background: #f7f3ec;
+    --panel: #fffdf8;
+    --panel-raised: #f6f0e4;
+    --border: #d9cdb4;
+    --field-border: #857d66;
+    --foreground: #1b2140;
+    --muted: #4a5070;
+    --heading: #1b2140;
+    --accent: #8a6418;
+    --accent-hover: #6f4f10;
+    --accent-soft: rgb(183 137 42 / 0.14);
+    --accent-contrast: #fffdf8;
+    --ok-text: #166534;
+    --ok-bg: rgb(187 247 208 / 0.7);
+    --error-text: #991b1b;
+    --error-bg: rgb(254 202 202 / 0.85);
+    --star-dim: #4a5070;
 }
 
 * {
@@ -44,164 +72,489 @@
 body {
     width: 340px;
     margin: 0;
-    padding: 16px;
     background-color: var(--app-background);
     color: var(--foreground);
-    font-family: -apple-system, "Segoe UI", system-ui, Arial, sans-serif;
+    font-family: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
     font-size: 13px;
+    line-height: 1.4;
+}
+
+main {
+    padding: 4px 16px 14px;
+}
+
+section {
+    margin-top: 14px;
+}
+
+.icon {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* ── Masthead: brand, faint static sky, setup constellation ── */
+.masthead {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 72px;
+    padding: 0 16px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--border);
+    background: radial-gradient(ellipse 120% 100% at 50% -20%, var(--accent-soft), transparent 70%);
+}
+
+.masthead-sky {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    fill: var(--star-dim);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.brand {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-mark {
+    display: block;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
 }
 
 h1 {
-    margin: 0 0 12px;
-    font-size: 16px;
-    font-weight: 700;
+    margin: 0;
+    font-family: "Spectral", Georgia, serif;
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1;
     color: var(--heading);
 }
 
-p {
-    margin: 0 0 10px;
+.progress-sky {
+    position: relative;
+    width: 84px;
+    height: 32px;
+    overflow: visible;
+}
+
+.sky-line {
+    stroke: var(--star-dim);
+    stroke-width: 0.8;
+    stroke-dasharray: 2 3;
+    opacity: 0.45;
+    transition: stroke 300ms ease, opacity 300ms ease;
+}
+
+.sky-line.is-lit {
+    stroke: var(--accent);
+    stroke-dasharray: none;
+    opacity: 0.9;
+}
+
+.sky-star {
+    fill: none;
+    stroke: var(--star-dim);
+    stroke-width: 1;
+    opacity: 0.7;
+    transition: fill 300ms ease, stroke 300ms ease;
+}
+
+.sky-star.is-lit {
+    fill: var(--accent);
+    stroke: var(--accent);
+    opacity: 1;
+    filter: drop-shadow(0 0 3px var(--accent));
+}
+
+/* ── Sections ── */
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px;
+    font-family: "Spectral", Georgia, serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--heading);
+}
+
+.section-title .icon {
+    width: 10px;
+    height: 10px;
+    color: var(--accent);
+    fill: currentColor;
+    stroke: none;
+}
+
+.hint {
+    margin: 6px 0 10px;
+    font-size: 12px;
     color: var(--muted);
-    line-height: 1.4;
 }
 
 label {
     display: block;
     margin-bottom: 4px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     color: var(--muted);
 }
 
-input[type="text"] {
-    display: block;
-    width: 100%;
-    margin-bottom: 10px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background-color: var(--panel);
-    color: var(--foreground);
-    font-size: 13px;
+/* ── Status chips: small, flat pills. Deliberately nothing like a button:
+   no border, no hover, default cursor, and they're never focusable. ── */
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
-input[type="text"]:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-}
-
-select {
-    display: block;
-    width: 100%;
-    margin-bottom: 10px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid var(--border);
-    background-color: var(--panel);
-    color: var(--foreground);
-    font-size: 13px;
-}
-
-select:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-}
-
-hr {
-    border: none;
-    border-top: 1px solid var(--border);
-    margin: 14px 0;
-}
-
-button {
-    display: block;
-    width: 100%;
-    margin-bottom: 10px;
-    padding: 9px 12px;
-    border: none;
-    border-radius: 8px;
-    background-color: var(--accent);
-    color: #fff;
-    font-size: 13px;
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 3px 9px 3px 7px;
+    border-radius: 999px;
+    background-color: var(--panel-raised);
+    color: var(--muted);
+    font-size: 11px;
     font-weight: 600;
-    cursor: pointer;
-    transition: background-color 150ms ease, opacity 150ms ease;
+    line-height: 1.3;
+    cursor: default;
+    user-select: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-button:hover:not(:disabled) {
+.chip .icon {
+    width: 11px;
+    height: 11px;
+}
+
+.chip-ok,
+.chip-success {
+    background-color: var(--ok-bg);
+    color: var(--ok-text);
+}
+
+.chips + .btn,
+#syncChip {
+    margin-top: 10px;
+}
+
+#syncChip {
+    display: flex;
+    width: fit-content;
+}
+
+/* ── Buttons ── */
+.btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+}
+
+.btn[hidden],
+[hidden] {
+    display: none !important;
+}
+
+.btn-primary {
+    background-color: var(--accent);
+    color: var(--accent-contrast);
+}
+
+.btn-primary:hover:not(:disabled) {
     background-color: var(--accent-hover);
 }
 
-button:disabled {
+.btn-secondary {
+    background-color: transparent;
+    border-color: var(--field-border);
+    color: var(--foreground);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+    background-color: var(--accent-soft);
+}
+
+.btn-quiet {
+    background-color: transparent;
+    color: var(--muted);
+}
+
+.btn-quiet:hover:not(:disabled) {
+    color: var(--foreground);
+    background-color: var(--panel-raised);
+}
+
+.btn-small {
+    width: auto;
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12px;
+}
+
+.btn:disabled {
     cursor: not-allowed;
     opacity: 0.55;
 }
 
-button#syncButton {
-    background-color: var(--panel-raised);
-    color: var(--foreground);
-    border: 1px solid var(--border);
+.link-button {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
 }
 
-button#syncButton:hover:not(:disabled) {
-    border-color: var(--accent);
+:is(button, input, select, summary):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
-#status {
+/* ── Canvas connect ── */
+.detected {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
     padding: 8px 10px;
     border-radius: 8px;
-    background-color: var(--panel);
-    border: 1px solid var(--border);
+    background-color: var(--accent-soft);
+}
+
+.detected-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.detected-label {
+    font-size: 11px;
     color: var(--muted);
-    font-size: 12px;
-    word-break: break-word;
 }
 
-#status.status-success {
-    background-color: var(--status-done-bg);
-    border-color: var(--status-done-text);
-    color: var(--status-done-text);
+.detected-host {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-#status.status-error {
-    background-color: var(--status-overdue-bg);
-    border-color: var(--status-overdue-text);
-    color: var(--status-overdue-text);
+.host-field {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--field-border);
+    border-radius: 8px;
+    background-color: var(--panel);
 }
 
-#syncProgress {
-    margin-top: 8px;
+.host-field:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
-#syncProgressBar {
-    height: 8px;
+.host-field input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 4px 8px 10px;
+    border: none;
+    background: transparent;
+    color: var(--foreground);
+    font: inherit;
+    text-align: right;
+}
+
+.host-field input:focus-visible {
+    outline: none;
+}
+
+.host-field input::placeholder {
+    color: var(--muted);
+    opacity: 0.8;
+}
+
+.host-suffix {
+    display: flex;
+    align-items: center;
+    padding-right: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.school-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 10px;
+}
+
+.school-host {
+    overflow: hidden;
+    color: var(--foreground);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Sync progress: a gold line with a star riding its head ── */
+.progress-track {
+    position: relative;
+    height: 6px;
+    margin-top: 4px;
     border-radius: 999px;
     background-color: var(--panel-raised);
-    border: 1px solid var(--border);
-    overflow: hidden;
 }
 
-#syncProgressFill {
+.progress-fill {
     height: 100%;
-    width: 0%;
+    width: 0;
+    border-radius: 999px;
     background-color: var(--accent);
     transition: width 200ms ease;
 }
 
-#syncProgressText {
-    margin: 6px 0 0;
+.progress-head {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--accent);
+    fill: currentColor;
+    transform: translate(-50%, -50%);
+    filter: drop-shadow(0 0 3px var(--accent));
+    transition: left 200ms ease;
+}
+
+.progress-text {
+    margin: 10px 0 6px;
     font-size: 12px;
     color: var(--muted);
+    overflow-wrap: anywhere;
 }
 
-button#cancelSyncButton {
-    margin-top: 8px;
-    background-color: transparent;
-    color: var(--status-overdue-text);
-    border: 1px solid var(--status-overdue-text);
+/* ── Message ── */
+.message {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 14px 0 0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background-color: var(--panel);
+    color: var(--muted);
+    font-size: 12px;
+    overflow-wrap: anywhere;
 }
 
-button#cancelSyncButton:hover:not(:disabled) {
-    background-color: var(--status-overdue-bg);
+.message .icon {
+    margin-top: 2px;
+}
+
+.message-success {
+    background-color: var(--ok-bg);
+    color: var(--ok-text);
+}
+
+.message-error {
+    background-color: var(--error-bg);
+    color: var(--error-text);
+}
+
+/* ── Troubleshooting ── */
+.troubleshooting {
+    margin-top: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+
+.troubleshooting summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 0;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    list-style: none;
+}
+
+.troubleshooting summary::-webkit-details-marker {
+    display: none;
+}
+
+.troubleshooting summary:hover {
+    color: var(--foreground);
+}
+
+.troubleshooting[open] .chevron {
+    transform: rotate(180deg);
+}
+
+.troubleshooting-body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding-top: 6px;
+}
+
+.troubleshooting-body .hint {
+    margin: 0;
+}
+
+.troubleshooting-body label {
+    margin: 0;
+}
+
+select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--field-border);
+    border-radius: 8px;
+    background-color: var(--panel);
+    color: var(--foreground);
+    font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+    }
 }

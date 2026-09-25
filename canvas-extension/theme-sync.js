@@ -10,14 +10,14 @@ function currentPlannerTheme() {
 function syncPlannerTheme() {
     const theme = currentPlannerTheme();
 
-    console.log("🎨 theme-sync.js: observed planner theme:", theme);
+    console.log("theme-sync.js: observed planner theme:", theme);
 
     chrome.storage.local.set({
         plannerTheme: theme,
     });
 }
 
-console.log("🎨 theme-sync.js: content script injected on", window.location.href);
+console.log("theme-sync.js: content script injected on", window.location.href);
 
 syncPlannerTheme();
 

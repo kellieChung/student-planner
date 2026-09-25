@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Lodestar</title>
@@ -7,73 +7,119 @@
 </head>
 
 <body>
-    <h1>🎓 Lodestar</h1>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+        <defs>
+            <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5 10 17.5 19 7" /></symbol>
+            <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8.5" /><path d="M4 4v4.5h4.5" /><path d="M4 13a8 8 0 0 0 14.5 4.5L20 15.5" /><path d="M20 20v-4.5h-4.5" /></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+            <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19H3Z" /><path d="M12 10v4.5M12 17v.01" /></symbol>
+            <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></symbol>
+            <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" /></symbol>
+            <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5 13.9 10.1 20.5 12 13.9 13.9 12 20.5 10.1 13.9 3.5 12 10.1 10.1Z" fill="currentColor" stroke="none" /></symbol>
+        </defs>
+    </svg>
 
-    <label for="appUrl">App URL</label>
+    <header class="masthead">
+        <svg class="masthead-sky" viewBox="0 0 340 72" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <circle cx="22" cy="14" r="0.9" /><circle cx="61" cy="52" r="0.7" /><circle cx="98" cy="20" r="1.1" />
+            <circle cx="133" cy="60" r="0.7" /><circle cx="171" cy="11" r="0.8" /><circle cx="204" cy="46" r="0.7" />
+            <circle cx="243" cy="17" r="1.2" /><circle cx="286" cy="58" r="0.8" /><circle cx="318" cy="24" r="1" />
+            <circle cx="12" cy="62" r="0.7" /><circle cx="300" cy="8" r="0.7" /><circle cx="152" cy="36" r="0.6" />
+        </svg>
 
-    <input
-        id="appUrl"
-        type="text"
-        placeholder="https://student-planner-beta.vercel.app"
-    />
-
-    <button id="saveAppUrlButton">
-        Save App URL
-    </button>
-
-    <p id="appUrlStatus" aria-live="polite"></p>
-
-    <hr />
-
-    <button id="loginButton">
-        Sign in with Google
-    </button>
-
-    <p>Connect your Canvas account.</p>
-
-    <label for="canvasUrl">Canvas URL</label>
-
-    <input
-        id="canvasUrl"
-        type="text"
-        placeholder="https://school.instructure.com"
-    />
-
-    <button id="connectButton">
-        Connect Canvas
-    </button>
-
-    <p id="status" aria-live="polite">Loading...</p>
-
-    <button id="syncButton">
-        🔄 Sync Canvas
-    </button>
-
-    <div id="syncProgress" hidden>
-        <div id="syncProgressBar">
-            <div id="syncProgressFill"></div>
+        <div class="brand">
+            <img class="brand-mark" src="icons/icon-48.png" width="28" height="28" alt="" />
+            <h1>Lodestar</h1>
         </div>
-        <p id="syncProgressText"></p>
-    </div>
 
-    <button id="cancelSyncButton" hidden>
-        ✖ Cancel Sync
-    </button>
+        <svg id="progressSky" class="progress-sky" viewBox="0 0 84 32" role="img" aria-label="Setup progress: 0 of 3 steps done">
+            <line id="skyLine1" class="sky-line" x1="10" y1="22" x2="42" y2="9" />
+            <line id="skyLine2" class="sky-line" x1="42" y1="9" x2="74" y2="20" />
+            <circle id="skyStar1" class="sky-star" cx="10" cy="22" r="3.2" />
+            <circle id="skyStar2" class="sky-star" cx="42" cy="9" r="3.6" />
+            <circle id="skyStar3" class="sky-star" cx="74" cy="20" r="3.2" />
+        </svg>
+    </header>
 
-    <hr />
+    <main>
+        <section aria-labelledby="connectionTitle">
+            <h2 id="connectionTitle" class="section-title"><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>Connection</h2>
 
-    <p>Deleted a course by mistake? Pull it back in from Canvas.</p>
+            <div class="chips">
+                <span id="authChip" class="chip" role="status"></span>
+                <span id="canvasChip" class="chip" role="status"></span>
+            </div>
 
-    <button id="loadCoursesButton">
-        📚 Find Canvas Courses
-    </button>
+            <button id="loginButton" class="btn btn-primary" type="button" hidden>Sign in with Google</button>
+        </section>
 
-    <select id="restoreCourseSelect" hidden></select>
+        <section aria-labelledby="canvasTitle">
+            <h2 id="canvasTitle" class="section-title"><svg class="icon" aria-hidden="true"><use href="#i-star" /></svg>Canvas</h2>
 
-    <button id="restoreCourseButton" hidden>
-        ➕ Restore Course
-    </button>
+            <div id="connectPanel" hidden>
+                <div id="detectedRow" class="detected" hidden>
+                    <div class="detected-text">
+                        <span class="detected-label">Canvas found in an open tab</span>
+                        <span id="detectedHost" class="detected-host"></span>
+                    </div>
+                    <button id="useDetectedButton" class="btn btn-primary btn-small" type="button">Use this</button>
+                </div>
 
+                <label id="canvasHostLabel" for="canvasHost">Your school's Canvas address</label>
+                <div class="host-field">
+                    <input id="canvasHost" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="myschool" aria-describedby="canvasHostHint" />
+                    <span class="host-suffix" aria-hidden="true">.instructure.com</span>
+                </div>
+                <p id="canvasHostHint" class="hint">If your school uses its own address, paste the full one instead.</p>
+
+                <button id="connectButton" class="btn btn-secondary" type="button">Connect Canvas</button>
+            </div>
+
+            <div id="syncPanel" hidden>
+                <p class="school-row">
+                    <span id="canvasHostName" class="school-host"></span>
+                    <button id="changeCanvasButton" class="link-button" type="button">Change</button>
+                </p>
+
+                <button id="syncButton" class="btn btn-primary" type="button">
+                    <svg class="icon" aria-hidden="true"><use href="#i-refresh" /></svg>Sync Canvas
+                </button>
+
+                <div id="syncProgress" hidden>
+                    <div id="syncProgressBar" class="progress-track" role="progressbar" aria-label="Canvas sync progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div id="syncProgressFill" class="progress-fill"></div>
+                        <svg id="syncProgressStar" class="progress-head" aria-hidden="true"><use href="#i-star" /></svg>
+                    </div>
+                    <p id="syncProgressText" class="progress-text"></p>
+                    <button id="cancelSyncButton" class="btn btn-quiet btn-small" type="button">
+                        <svg class="icon" aria-hidden="true"><use href="#i-x" /></svg>Cancel sync
+                    </button>
+                </div>
+
+                <span id="syncChip" class="chip chip-success" role="status" hidden></span>
+            </div>
+        </section>
+
+        <p id="message" class="message" role="status" aria-live="polite" hidden></p>
+
+        <details id="troubleshooting" class="troubleshooting">
+            <summary>
+                <span>Troubleshooting</span>
+                <svg class="icon chevron" aria-hidden="true"><use href="#i-chevron" /></svg>
+            </summary>
+
+            <div class="troubleshooting-body">
+                <p class="hint">Deleted a course by mistake? Pull it back in from Canvas.</p>
+
+                <button id="loadCoursesButton" class="btn btn-secondary btn-small" type="button">Find my Canvas courses</button>
+
+                <label id="restoreCourseLabel" for="restoreCourseSelect" hidden>Course to restore</label>
+                <select id="restoreCourseSelect" hidden></select>
+
+                <button id="restoreCourseButton" class="btn btn-primary btn-small" type="button" hidden>Restore course</button>
+            </div>
+        </details>
+    </main>
 
     <script src="popup.js"></script>
 </body>

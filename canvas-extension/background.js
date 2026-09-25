@@ -1,17 +1,15 @@
-console.log("🚀 Student Planner background service worker loaded!");
+console.log("Student Planner background service worker loaded!");
 
-// The Student Planner backend this extension talks to. Configurable (popup's
-// "App URL" field, chrome.storage.local key "appOrigin") rather than a
-// second hardcoded literal, since local dev (npm run dev, localhost:3000)
-// and the deployed Vercel app are both real targets a solo developer needs
-// to switch between, and the production URL itself may change. Falls back
-// to the deployed app so a fresh install works without any setup.
-const DEFAULT_APP_ORIGIN = "https://student-planner-beta.vercel.app";
+// The backend origin comes from config.js (the only place it's set — no
+// user-facing setting). Any "appOrigin" an earlier build saved from the old
+// popup field is dropped so a stale localhost value can't silently redirect a
+// real user's sign-in and sync.
+importScripts("config.js");
+
+chrome.storage.local.remove("appOrigin");
 
 async function getAppOrigin() {
-    const { appOrigin } = await chrome.storage.local.get("appOrigin");
-
-    return appOrigin || DEFAULT_APP_ORIGIN;
+    return APP_ORIGIN;
 }
 
 // Checked between courses in SYNC_CANVAS's loop, set by the CANCEL_SYNC
@@ -98,7 +96,7 @@ async function getPlannerTabTheme() {
     });
 
     if (tabs.length === 0) {
-        console.log("🎨 No open Student Planner tab found.");
+        console.log("No open Student Planner tab found.");
         return null;
     }
 
@@ -110,7 +108,7 @@ async function getPlannerTabTheme() {
                 : "dark",
     });
 
-    console.log("🎨 Read live planner theme from open tab:", result);
+    console.log("Read live planner theme from open tab:", result);
 
     return result ?? null;
 }
@@ -135,20 +133,20 @@ async function fetchCourseData(canvasOrigin, course) {
 }
 
 async function clearExtensionAuth() {
-    console.log("🔓 Clearing stale extension authentication...");
+    console.log("Clearing stale extension authentication...");
 
     await chrome.storage.local.remove([
         "extensionToken",
         "extensionAuthState",
     ]);
 
-    console.log("✅ Extension authentication cleared.");
+    console.log("Extension authentication cleared.");
 }
 
-console.log("🎓 Background service worker loaded!");
+console.log("Background service worker loaded!");
 
 async function startExtensionAuth() {
-    console.log("🔐 Starting extension authentication...");
+    console.log("Starting extension authentication...");
 
     try {
         const appOrigin = await getAppOrigin();
@@ -160,7 +158,7 @@ async function startExtensionAuth() {
         const data = await response.json();
 
         console.log(
-            "🔐 Auth start response:",
+            "Auth start response:",
             data
         );
 
@@ -174,7 +172,7 @@ async function startExtensionAuth() {
         const state = data.state;
 
         console.log(
-            "🔐 Got auth state:",
+            "Got auth state:",
             state
         );
 
@@ -188,7 +186,7 @@ async function startExtensionAuth() {
         });
 
         console.log(
-            "🔐 Login page opened!"
+            "Login page opened!"
         );
 
         const authenticated = await watchAuthState(state);
@@ -201,7 +199,7 @@ async function startExtensionAuth() {
 
     } catch (error) {
         console.error(
-            "❌ Extension auth failed:",
+            "Extension auth failed:",
             error
         );
     }
@@ -209,7 +207,7 @@ async function startExtensionAuth() {
 
 async function watchAuthState(state) {
     console.log(
-        "🔐 Watching auth state:",
+        "Watching auth state:",
         state
     );
 
@@ -234,7 +232,7 @@ async function watchAuthState(state) {
             const data = await response.json();
 
             console.log(
-                "🔐 Auth check:",
+                "Auth check:",
                 data
             );
 
@@ -245,7 +243,7 @@ async function watchAuthState(state) {
                 });
 
                 console.log(
-                    "🎉 Extension successfully authenticated!"
+                    "Extension successfully authenticated!"
                 );
 
                 return true;
@@ -253,7 +251,7 @@ async function watchAuthState(state) {
 
         } catch (error) {
             console.error(
-                "❌ Auth check failed:",
+                "Auth check failed:",
                 error
             );
         }
@@ -264,7 +262,7 @@ async function watchAuthState(state) {
     }
 
     console.log(
-        "❌ Extension authentication timed out."
+        "Extension authentication timed out."
     );
 
     return false;
@@ -276,7 +274,7 @@ async function signInWithGoogle() {
         chrome.identity.getRedirectURL();
 
     console.log(
-        "🔐 Extension redirect URI:",
+        "Extension redirect URI:",
         redirectUri
     );
 
@@ -298,7 +296,7 @@ async function signInWithGoogle() {
         });
 
     console.log(
-        "🔐 Google authentication complete!"
+        "Google authentication complete!"
     );
 
     const url =
@@ -335,7 +333,7 @@ chrome.runtime.onMessage.addListener(
                 })
                 .catch((error) => {
                     console.error(
-                        "❌ Could not read planner theme:",
+                        "Could not read planner theme:",
                         error
                     );
 
@@ -383,7 +381,7 @@ chrome.runtime.onMessage.addListener(
                 .catch((error) => {
 
                     console.error(
-                        "❌ Google sign-in failed:",
+                        "Google sign-in failed:",
                         error
                     );
 
@@ -532,7 +530,7 @@ chrome.runtime.onMessage.addListener(
                         message.canvasOrigin;
 
                     console.log(
-                        "🔄 Starting Canvas sync..."
+                        "Starting Canvas sync..."
                     );
 
                     // Fetched up front (not just before the final POST, as
@@ -560,7 +558,7 @@ chrome.runtime.onMessage.addListener(
                         );
 
                     console.log(
-                        `📚 Found ${courses.length} courses`
+                        `Found ${courses.length} courses`
                     );
 
                     // Skip fetching (and syncing) a course the user already
@@ -584,7 +582,7 @@ chrome.runtime.onMessage.addListener(
                             }
                         ).catch((error) => {
                             console.warn(
-                                "⚠️ Excluded-courses lookup failed — syncing everything.",
+                                "Excluded-courses lookup failed — syncing everything.",
                                 error
                             );
 
@@ -610,7 +608,7 @@ chrome.runtime.onMessage.addListener(
                         }
                     } else if (excludedResponse) {
                         console.warn(
-                            `⚠️ Excluded-courses lookup returned ${excludedResponse.status} — syncing everything.`
+                            `Excluded-courses lookup returned ${excludedResponse.status} — syncing everything.`
                         );
                     }
 
@@ -621,13 +619,13 @@ chrome.runtime.onMessage.addListener(
 
                     if (coursesToSync.length < courses.length) {
                         console.log(
-                            `⏭️ Skipping ${courses.length - coursesToSync.length} deleted course(s)`
+                            `⏭Skipping ${courses.length - coursesToSync.length} deleted course(s)`
                         );
                     }
 
                     if (coursesToSync.length === 0) {
                         console.log(
-                            "✅ Nothing to sync — every course is excluded."
+                            "Nothing to sync — every course is excluded."
                         );
 
                         await setSyncProgress({
@@ -673,7 +671,7 @@ chrome.runtime.onMessage.addListener(
                         }
 
                         console.log(
-                            `🔍 Syncing: ${course.name}`
+                            `Syncing: ${course.name}`
                         );
 
                         courseData.push(
@@ -700,7 +698,7 @@ chrome.runtime.onMessage.addListener(
                     if (wasCancelled) {
 
                         console.log(
-                            "🛑 Canvas sync cancelled by user."
+                            "Canvas sync cancelled by user."
                         );
 
                         await setSyncProgress({
@@ -733,7 +731,7 @@ chrome.runtime.onMessage.addListener(
                     }
 
                     console.log(
-                        "🎉 Canvas sync complete!"
+                        "Canvas sync complete!"
                     );
 
                     console.log(
@@ -741,7 +739,7 @@ chrome.runtime.onMessage.addListener(
                     );
 
                     console.log(
-                        "🚀 Sending Canvas data to Student Planner..."
+                        "Sending Canvas data to Student Planner..."
                     );
 
                     // authResult/appOrigin were already fetched at the top
@@ -749,12 +747,12 @@ chrome.runtime.onMessage.addListener(
                     // excluded-courses lookup) — reused here, not re-fetched.
 
                     console.log(
-                        "📤 Sending canvasOrigin:",
+                        "Sending canvasOrigin:",
                         canvasOrigin
                     );
 
                     console.log(
-                        "📤 Sending course count:",
+                        "Sending course count:",
                         courseData.length
                     );
 
@@ -794,7 +792,7 @@ chrome.runtime.onMessage.addListener(
 
                         throw new Error(
                             errorData?.error ||
-                            `Student Planner returned ${backendResponse.status}`
+                            `Lodestar returned ${backendResponse.status}`
                         );
                     }
 
@@ -802,7 +800,7 @@ chrome.runtime.onMessage.addListener(
                         await backendResponse.json();
 
                     console.log(
-                        "✅ Student Planner received Canvas data!"
+                        "Student Planner received Canvas data!"
                     );
 
                     console.log(
@@ -832,7 +830,7 @@ chrome.runtime.onMessage.addListener(
                 } catch (error) {
 
                     console.error(
-                        "❌ Canvas sync failed:",
+                        "Canvas sync failed:",
                         error
                     );
 
@@ -923,7 +921,7 @@ chrome.runtime.onMessage.addListener(
                     }
 
                     console.log(
-                        `🔁 Restoring course: ${course.name}`
+                        `Restoring course: ${course.name}`
                     );
 
                     const restoredCourse =
@@ -966,12 +964,12 @@ chrome.runtime.onMessage.addListener(
 
                         throw new Error(
                             errorData?.error ||
-                            `Student Planner returned ${backendResponse.status}`
+                            `Lodestar returned ${backendResponse.status}`
                         );
                     }
 
                     console.log(
-                        `✅ Restored course: ${course.name}`
+                        `Restored course: ${course.name}`
                     );
 
                     sendResponse({
@@ -982,7 +980,7 @@ chrome.runtime.onMessage.addListener(
                 } catch (error) {
 
                     console.error(
-                        "❌ Course restore failed:",
+                        "Course restore failed:",
                         error
                     );
 
