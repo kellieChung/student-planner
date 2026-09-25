@@ -781,65 +781,67 @@ export async function POST(
                 }
 
                 if (action === "auto-insert") {
-                    await prisma.announcementSuggestionReview.upsert({
-                        where: {
-                            userId_sourceAnnouncementId_suggestionKey: {
-                                userId,
-                                sourceAnnouncementId,
-                                suggestionKey: task.suggestionKey,
-                            },
-                        },
-                        create: {
-                            userId,
-                            sourceAnnouncementId,
-                            suggestionKey: task.suggestionKey,
-                            status: "accepted",
-                            resolvedAt: new Date(),
-                            taskSnapshot: task,
-                        },
-                        update: {
-                            status: "accepted",
-                            resolvedAt: new Date(),
-                            taskSnapshot: task,
-                        },
-                    });
-
-                    // Same "custom-ai-<timestamp>-<suffix>" id convention
-                    // as a manual Yes on the Rundown screen (see
-                    // components/WeeklyPlannerView.tsx's handleAIPlannerTask/
-                    // handleRundownYes), so every existing
-                    // id.startsWith("custom-") call site treats an
-                    // auto-inserted task identically to a manually-accepted
-                    // one.
+                    // Same "custom-ai-<timestamp>-<suffix>" id convention as
+                    // a manual Yes on the Rundown (WeeklyPlannerView's
+                    // handleRundownYes), so every id.startsWith("custom-")
+                    // call site treats it identically.
                     const customTaskId = `custom-ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-                    await prisma.customTask.create({
-                        data: {
-                            id: customTaskId,
-                            name: task.name,
-                            course: task.course,
-                            due: task.due,
-                            sourceAnnouncementId,
-                            userId,
-                        },
-                    });
-
-                    if (task.typeOverride) {
-                        await prisma.taskCustomization.upsert({
+                    // One transaction: marking the review "accepted" without
+                    // the task existing would lose the task for good (an
+                    // accepted candidate never resurfaces).
+                    await prisma.$transaction([
+                        prisma.announcementSuggestionReview.upsert({
                             where: {
-                                userId_taskId: {
+                                userId_sourceAnnouncementId_suggestionKey: {
                                     userId,
-                                    taskId: customTaskId,
+                                    sourceAnnouncementId,
+                                    suggestionKey: task.suggestionKey,
                                 },
                             },
                             create: {
                                 userId,
-                                taskId: customTaskId,
-                                typeOverride: task.typeOverride,
+                                sourceAnnouncementId,
+                                suggestionKey: task.suggestionKey,
+                                status: "accepted",
+                                resolvedAt: new Date(),
+                                taskSnapshot: task,
                             },
-                            update: { typeOverride: task.typeOverride },
-                        });
-                    }
+                            update: {
+                                status: "accepted",
+                                resolvedAt: new Date(),
+                                taskSnapshot: task,
+                            },
+                        }),
+                        prisma.customTask.create({
+                            data: {
+                                id: customTaskId,
+                                name: task.name,
+                                course: task.course,
+                                due: task.due,
+                                sourceAnnouncementId,
+                                userId,
+                            },
+                        }),
+                        ...(task.typeOverride
+                            ? [
+                                prisma.taskCustomization.upsert({
+                                    where: {
+                                        userId_taskId: {
+                                            userId,
+                                            taskId: customTaskId,
+                                        },
+                                    },
+                                    create: {
+                                        userId,
+                                        taskId: customTaskId,
+                                        typeOverride: task.typeOverride,
+                                    },
+                                    update: { typeOverride: task.typeOverride },
+                                }),
+                            ]
+                            : []),
+                    ]);
 
                     try {
                         await logAiTaskEvent(userId, "candidate_decided", {
