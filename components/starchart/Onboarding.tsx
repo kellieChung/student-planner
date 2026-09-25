@@ -6,6 +6,7 @@ import ConstellationFigure from "@/components/starchart/ConstellationFigure";
 import TourSpotlight, { type TourStep } from "@/components/starchart/TourSpotlight";
 import { useLodestarFrame } from "@/components/world/LaptopFrame";
 import { CompassIcon, StarIcon } from "@/components/brand/Icons";
+import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 
 type Props = {
     onFinish: () => void;
@@ -45,6 +46,14 @@ export default function Onboarding({ onFinish }: Props) {
                     </p>
                 ),
                 illustration: <CompassIcon size={64} className="text-[var(--ls-gold)]" />,
+            },
+            {
+                id: "extension",
+                before: onLog,
+                eyebrow: "Connecting Canvas",
+                title: "Lodestar needs its Chrome extension.",
+                body: <ExtensionExplainer />,
+                illustration: <ExtensionIllustration />,
             },
             {
                 id: "ships-log",
@@ -185,6 +194,71 @@ export default function Onboarding({ onFinish }: Props) {
     }, [getView, openShipsLog, openStarChart]);
 
     return <TourSpotlight steps={steps} finishLabel="Start charting" onFinish={() => onFinish()} />;
+}
+
+const INSTALL_STEPS = [
+    <>
+        Unzip the extension files you were sent, if they came zipped.
+    </>,
+    <>
+        In Chrome, open <code className="rounded bg-[var(--ls-navy-raised)] px-1 py-0.5 text-xs text-[var(--ls-ivory)]">chrome://extensions</code>{" "}
+        (paste it into the address bar) and turn on <strong>Developer mode</strong>, top right.
+    </>,
+    <>
+        Click <strong>Load unpacked</strong> and choose the extension folder.
+    </>,
+];
+
+function ExtensionExplainer() {
+    return (
+        <div className="space-y-3">
+            <p>
+                Canvas doesn&apos;t let students give apps access to their own data, so a small{" "}
+                <strong>Lodestar Canvas</strong> extension for Chrome does the bridging. While you&apos;re signed in to
+                Canvas, it reads your courses, assignments, discussions, and announcements and sends them here. Nothing
+                syncs until you press <strong>Sync Canvas</strong> in it, and without it your log stays empty.
+            </p>
+
+            {EXTENSION_STORE_URL ? (
+                <a
+                    href={EXTENSION_STORE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ls-button-gold ls-button-sm"
+                >
+                    Get the extension
+                </a>
+            ) : (
+                <div>
+                    <p className="text-xs font-semibold text-[var(--ls-ivory)]">Installing it (alpha)</p>
+                    <ol className="mt-1 list-decimal space-y-1 pl-5 text-xs">
+                        {INSTALL_STEPS.map((instruction, index) => (
+                            <li key={index}>{instruction}</li>
+                        ))}
+                    </ol>
+                </div>
+            )}
+
+            <p className="text-xs">
+                Then pin it from Chrome&apos;s puzzle-piece menu, open it, sign in with Google, connect your Canvas, and
+                press <strong>Sync Canvas</strong>. Already set up? Just keep going.
+            </p>
+        </div>
+    );
+}
+
+function ExtensionIllustration() {
+    return (
+        <div aria-hidden="true" className="flex items-center gap-2 text-xs font-semibold">
+            <span className="rounded-md bg-[var(--ls-navy-raised)] px-2.5 py-1.5 text-[var(--ls-ivory)]">Canvas</span>
+            <span className="h-px w-6 bg-[var(--ls-gold)]/60" />
+            <span className="flex items-center gap-1 rounded-full border border-[var(--ls-gold)]/60 px-2.5 py-1.5 text-[var(--ls-gold)]">
+                <StarIcon size={11} /> Extension
+            </span>
+            <span className="h-px w-6 bg-[var(--ls-gold)]/60" />
+            <span className="rounded-md bg-[var(--ls-navy-raised)] px-2.5 py-1.5 text-[var(--ls-ivory)]">Lodestar</span>
+        </div>
+    );
 }
 
 type DecodedLabel = { course: string; type: string; day: string; name: string };

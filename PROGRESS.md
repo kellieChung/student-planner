@@ -6,6 +6,51 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Onboarding explains the extension (2026-09-24)**
+- New tour step `extension` (right after the welcome card, centred, no
+  `data-tour` anchor) says why the Chrome extension is needed and how to
+  install it. `EXTENSION_STORE_URL` in `lib/extensionInstall.ts` is `null` for
+  the alpha, so the step shows load-unpacked instructions (unzip, open
+  `chrome://extensions`, Developer mode, Load unpacked). **When the extension
+  is published, set that constant to the Web Store URL** and the step shows a
+  "Get the extension" button instead. Previewed on a throwaway page (deleted);
+  not seen inside the real signed-in tour or via `/dev/onboarding`.
+
+**Extension popup redesign (2026-09-24)**
+- **The backend URL is `APP_ORIGIN` in `canvas-extension/config.js`, and
+  nothing in the UI exposes it.** `background.js` loads it with
+  `importScripts("config.js")`, ignores any stored `appOrigin`, and removes that
+  key on startup (an old localhost value must not silently redirect a real
+  user). **Local dev = edit `config.js` to `http://localhost:3000`, reload the
+  extension, and change it back before committing.** (No build step exists, so
+  a build-time env var wasn't an option; a hidden debug override was declined.)
+- Popup is re-themed to Night/Day (tokens copied from `app/globals.css`), with
+  Manrope/Spectral bundled in `canvas-extension/fonts/` (SIL OFL; latin subset
+  only) rather than fetched per popup open. Theme mirroring from the web app is
+  unchanged. All emoji removed from UI and console logs; icons are an inline SVG
+  `<symbol>` sprite in `popup.html`.
+- `popup.js` renders everything from one `state` object via `render()`. While a
+  sync runs the Sync button is replaced by progress + Cancel (Cancel is never
+  shown otherwise). Status chips (`.chip`) are deliberately flat, non-focusable
+  pills; buttons are `.btn`. Rare recovery (restore a deleted course) lives in a
+  closed Troubleshooting `<details>`. Header constellation lights one star per
+  step: signed in, Canvas connected, synced.
+- **Canvas URL:** auto-detected from open tabs (hostname heuristic, then a
+  yes/no `IS_CANVAS_PAGE` reply from `content.js` checking Canvas DOM markers),
+  else a `[name].instructure.com` field that also accepts a full pasted host.
+  Connecting still verifies `/api/v1/users/self`. No searchable school list (no
+  official list exists; user chose this). No new permissions.
+- Verified only via a mock-`chrome` harness (screenshots of the real popup at
+  340px: signed out, detected, connected, running, synced, error, Day,
+  Troubleshooting open; height 337-431px, no scroll). **Not verified in real
+  Chrome:** Google sign-in, tab detection and the `ic-app` DOM marker against a
+  real Canvas page (incl. a custom-domain school), a real sync + cancel,
+  restore course, reaching the app via `config.js`.
+- The popup header and the toolbar/manifest icons use the real (temporary)
+  brand mark: `canvas-extension/icons/icon-{16,32,48,128}.png`, resized from
+  `public/brand/lodestar-mark-temp.png`. **Regenerate them when the final logo
+  replaces the temp one** (added to the temp-logo TODO).
+
 **Login screen polish (2026-09-24)**
 - Sign in / Create account is a segmented control (equal weight, soft gold tint
   + gold underline when active); solid gold is reserved for the Google and
@@ -736,10 +781,9 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   live, but not for env var changes. **Production and local dev currently
   share the same Postgres database** — no environment split, so local
   testing touches the exact rows the deployed app reads/writes. The
-  extension's backend target is a configurable "App URL" popup setting
-  (`chrome.storage.local`, key `appOrigin`, defaults to the deployed URL)
-  rather than a hardcoded `localhost:3000`, so local dev and production
-  both stay usable without code edits.
+  extension's backend target is `APP_ORIGIN` in
+  `canvas-extension/config.js` (see the popup redesign entry above) — it is no
+  longer a popup setting.
 
 **Gamification / World layer** (`gamificationSystem.md`)
 - OS loads by default, not World — per `projectReview.md`'s warning
@@ -927,8 +971,8 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   with mock anchors: glide, above/below placement, centred fallback, 390px
   bottom sheet, arrow keys/Esc.
 - **Temporary logo** — replace `public/brand/lodestar-logo-temp.png`,
-  `public/brand/lodestar-mark-temp.png`, `app/icon.png`, `app/apple-icon.png`
-  with the final Lodestar artwork (crop tight to the mark).
+  `public/brand/lodestar-mark-temp.png`, `app/icon.png`, `app/apple-icon.png`,
+  and the `canvas-extension/icons/` PNGs with the final Lodestar artwork (crop tight to the mark).
 - Star Chart (2026-09-24) not verified logged-in: earn on completion
   (balance persists after reload), chart a star, insufficient-Starlight
   error, completion moment (lines draw in), locked tile threshold,
