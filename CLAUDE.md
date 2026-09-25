@@ -90,7 +90,7 @@ the final artwork. Logged-out visitors to `/` see the marketing page in
   Typical flow: `npx prisma migrate dev` then `npx prisma generate`.
 - **Deployment: Vercel**, connected to the `kellieChung/student-planner`
   GitHub repo, auto-deploying on push to `main`. Production URL as of
-  2026-09-21: `https://student-planner-beta.vercel.app/` (may change —
+  2026-09-24: `https://lodestarplanner.vercel.app/` (may change —
   check Vercel's dashboard if this looks stale). Uses the existing
   `build` script as-is; no separate Vercel config. **A `git push` is
   required to get any code change live** — env vars are the exception:
