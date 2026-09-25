@@ -1,5 +1,6 @@
 "use client";
 
+import Checkbox from "@/components/ui/Checkbox";
 import { useState } from "react";
 
 type ResetResult = {
@@ -59,11 +60,7 @@ export default function DevAnalyzerTools() {
             </p>
 
             <label className="mt-4 flex items-center gap-2 text-sm">
-                <input
-                    type="checkbox"
-                    checked={clearWeeklyUsage}
-                    onChange={(e) => setClearWeeklyUsage(e.target.checked)}
-                />
+                <Checkbox checked={clearWeeklyUsage} onChange={setClearWeeklyUsage} />
                 Also clear this week&apos;s used checks (credits are kept)
             </label>
 

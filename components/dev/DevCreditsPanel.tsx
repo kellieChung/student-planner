@@ -1,5 +1,6 @@
 "use client";
 
+import NumberField from "@/components/ui/NumberField";
 import { useEffect, useState } from "react";
 import { DetectionQuota } from "@/types/aiQuota";
 
@@ -132,18 +133,17 @@ export default function DevCreditsPanel({ currentEmail }: Props) {
 
                                         <td className="py-3">
                                             <div className="flex items-center gap-2">
-                                                <input
-                                                    type="number"
+                                                <NumberField
+                                                    ariaLabel={`Credits to grant ${account.email ?? "this account"}`}
                                                     min={1}
                                                     max={1000}
-                                                    value={raw}
-                                                    onChange={(e) =>
+                                                    value={Number(raw) || 1}
+                                                    onChange={(amount) =>
                                                         setAmounts((current) => ({
                                                             ...current,
-                                                            [account.id]: e.target.value,
+                                                            [account.id]: String(amount),
                                                         }))
                                                     }
-                                                    className="w-20 rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                                                 />
 
                                                 <button

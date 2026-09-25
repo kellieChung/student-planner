@@ -4,6 +4,7 @@ import React, {useEffect, useState} from "react";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import StartDateField from "./StartDateField";
+import DatePicker from "./DatePicker";
 import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import RecurrenceField, {DEFAULT_RECURRENCE_VALUE, RecurrenceFieldValue} from "./RecurrenceField";
@@ -116,11 +117,11 @@ return (
                     Due Date
                 </label>
 
-                <input
-                    type = "date"
-                    value = {due}
-                    onChange = {(e) => setDue(e.target.value)}
-                    className = "w-full rounded bg-slate-800 px-3 py-2"
+                <DatePicker
+                    value={due}
+                    onChange={setDue}
+                    ariaLabel="Due date"
+                    className="w-full rounded bg-slate-800 px-3 py-2"
                 />
             </div>
 

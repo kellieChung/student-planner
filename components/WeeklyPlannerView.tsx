@@ -1,5 +1,6 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import React, {useEffect, useMemo, useRef, useState} from "react";
 import {useRouter} from "next/navigation";
 import {CARD_HEIGHT_PX, calculateGridSpan, endOfDayInstant, formatTimeInputValue, getStartOfWeek, getTodayString, hasCustomStartDatePassed, packColumnOffsets, parseLocalDate, resolveDueTime} from "@/lib/utils";
@@ -2135,15 +2136,16 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             <div key={idx} className = "flex flex-col items-center gap-1">
                                 <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">{day.name}</span>
                                 <span className = "text-base font-semibold text-slate-200 mt-1">{day.dateNumber}</span>
-                                <button
-                                    type="button"
-                                    onClick={() => openAddTaskForDate(day.dateKey)}
-                                    className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 text-xs leading-none text-slate-400 transition-colors hover:border-indigo-500 hover:bg-indigo-600/20 hover:text-white"
-                                    aria-label={`Add task due ${day.dateKey}`}
-                                    title="Add task due this day"
-                                >
-                                    +
-                                </button>
+                                <Tooltip label="Add task due this day">
+                                    <button
+                                        type="button"
+                                        onClick={() => openAddTaskForDate(day.dateKey)}
+                                        className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 text-xs leading-none text-slate-400 transition-colors hover:border-indigo-500 hover:bg-indigo-600/20 hover:text-white"
+                                        aria-label={`Add task due ${day.dateKey}`}
+                                    >
+                                        +
+                                    </button>
+                                </Tooltip>
                             </div>
                         ))}
                     </div>
@@ -2222,15 +2224,16 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                 <div key={dateKey} className={`group relative min-h-28 rounded-lg border p-1.5 ${isCurrentMonth ? "border-slate-800 bg-slate-900/50" : "border-slate-900 bg-slate-950/40 text-slate-600"}`}>
                                     <div className="mb-1 flex items-center justify-between">
                                         <div className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${isToday ? "bg-indigo-600 text-white" : ""}`}>{date.getDate()}</div>
-                                        <button
-                                            type="button"
-                                            onClick={() => openAddTaskForDate(dateKey)}
-                                            className="rounded px-1 text-xs leading-none text-slate-400 opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"
-                                            aria-label={`Add task due ${dateKey}`}
-                                            title="Add task due this day"
-                                        >
-                                            +
-                                        </button>
+                                        <Tooltip label="Add task due this day">
+                                            <button
+                                                type="button"
+                                                onClick={() => openAddTaskForDate(dateKey)}
+                                                className="rounded px-1 text-xs leading-none text-slate-400 opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"
+                                                aria-label={`Add task due ${dateKey}`}
+                                            >
+                                                +
+                                            </button>
+                                        </Tooltip>
                                     </div>
                                     <div className="space-y-1">
                                         {dayTasks.slice(0, 3).map((task) => {

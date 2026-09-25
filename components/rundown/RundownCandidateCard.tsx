@@ -1,5 +1,6 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
 import { Course } from "@/types/course";
@@ -17,6 +18,8 @@ import {
 import { resolveDueTextToDate } from "@/lib/dueText";
 import { classifyLabelType, LabelType } from "@/lib/taskLabel";
 import CourseSelect from "@/components/CourseSelect";
+import DatePicker from "@/components/DatePicker";
+import Select from "@/components/ui/Select";
 
 // The everyday review card for the Rundown's "AI found these" / Still-
 // Deciding lists. Collapsed by default to what a quick yes/no needs (name,
@@ -162,17 +165,18 @@ export default function RundownCandidateCard({
                     <div className="flex min-w-0 items-start gap-2">
                         <h2 className="text-lg font-bold leading-snug tracking-tight">{name}</h2>
 
-                        <button
-                            type="button"
-                            onClick={() => setIsEditing((editing) => !editing)}
-                            aria-label={isEditing ? "Done editing" : "Edit task"}
-                            title={isEditing ? "Done editing" : "Edit task"}
-                            className={`mt-0.5 shrink-0 rounded-md p-1 transition hover:text-[var(--accent)] ${
-                                isEditing ? "text-[var(--accent)]" : "text-[var(--muted)]"
-                            }`}
-                        >
-                            {isEditing ? <CheckIcon size={15} /> : <PencilIcon size={15} />}
-                        </button>
+                        <Tooltip label={isEditing ? "Done editing" : "Edit task"}>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditing((editing) => !editing)}
+                                aria-label={isEditing ? "Done editing" : "Edit task"}
+                                className={`mt-0.5 shrink-0 rounded-md p-1 transition hover:text-[var(--accent)] ${
+                                    isEditing ? "text-[var(--accent)]" : "text-[var(--muted)]"
+                                }`}
+                            >
+                                {isEditing ? <CheckIcon size={15} /> : <PencilIcon size={15} />}
+                            </button>
+                        </Tooltip>
                     </div>
 
                     <span className="mt-0.5 shrink-0 rounded-full border border-[var(--border)] px-2.5 py-0.5 text-[11px] font-semibold capitalize text-[var(--muted)]">
@@ -217,20 +221,19 @@ export default function RundownCandidateCard({
                             >
                                 Type
                             </label>
-                            <select
+                            <Select
                                 id="ai-task-type"
                                 value={typeOverride}
-                                onChange={(event) =>
-                                    setTypeOverride(event.target.value as LabelType | "")
-                                }
-                                className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-current/20"
-                            >
-                                <option value="">Auto ({autoTypeCode})</option>
-                                <option value="HW">HW</option>
-                                <option value="R">R (Reading)</option>
-                                <option value="EXAM">EXAM</option>
-                                <option value="TODO">TODO</option>
-                            </select>
+                                onChange={(next) => setTypeOverride(next as LabelType | "")}
+                                options={[
+                                    { value: "", label: `Auto (${autoTypeCode})` },
+                                    { value: "HW", label: "HW" },
+                                    { value: "R", label: "R (Reading)" },
+                                    { value: "EXAM", label: "EXAM" },
+                                    { value: "TODO", label: "TODO" },
+                                ]}
+                                className="w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm transition focus:border-[var(--accent)]"
+                            />
                         </div>
                     </div>
                 )}
@@ -245,29 +248,24 @@ export default function RundownCandidateCard({
                     <span aria-hidden="true">·</span>
 
                     {isEditingDue ? (
-                        <input
-                            type="date"
-                            autoFocus
+                        <DatePicker
+                            defaultOpen
                             value={dueDate}
-                            onChange={(event) => setDueDate(event.target.value)}
-                            onBlur={() => setIsEditingDue(false)}
-                            onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === "Escape") {
-                                    setIsEditingDue(false);
-                                }
-                            }}
-                            aria-label="Due date"
-                            className="rounded-md border border-[var(--border)] bg-transparent px-2 py-0.5 text-sm text-[var(--foreground)] outline-none focus:border-[var(--accent)]"
+                            onChange={setDueDate}
+                            onClose={() => setIsEditingDue(false)}
+                            ariaLabel="Due date"
+                            className="rounded-md border border-[var(--border)] bg-transparent px-2 py-0.5 text-sm text-[var(--foreground)] focus:border-[var(--accent)]"
                         />
                     ) : (
-                        <button
-                            type="button"
-                            onClick={() => setIsEditingDue(true)}
-                            title={task.dueText ? `AI detected: ${task.dueText}` : "Set a due date"}
-                            className="rounded-md font-semibold text-[var(--foreground)] underline decoration-dotted decoration-[var(--muted)] underline-offset-4 transition hover:text-[var(--accent)]"
-                        >
-                            {dueLabel ?? "No due date · Add"}
-                        </button>
+                        <Tooltip label={task.dueText ? `AI detected: ${task.dueText}` : "Set a due date"}>
+                            <button
+                                type="button"
+                                onClick={() => setIsEditingDue(true)}
+                                className="rounded-md font-semibold text-[var(--foreground)] underline decoration-dotted decoration-[var(--muted)] underline-offset-4 transition hover:text-[var(--accent)]"
+                            >
+                                {dueLabel ?? "No due date · Add"}
+                            </button>
+                        </Tooltip>
                     )}
                 </div>
 

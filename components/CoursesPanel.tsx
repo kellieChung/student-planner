@@ -1,10 +1,13 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import React, {useEffect, useState} from "react";
 import {Course} from "@/types/course";
 import {courseAbbreviationDefault} from "@/lib/taskLabel";
 import {courseColorDefault} from "@/lib/courseColor";
 import Spinner from "@/components/Spinner";
+import Checkbox from "@/components/ui/Checkbox";
+import ColorField from "@/components/ui/ColorField";
 
 type CoursesPanelProps = {
     onChanged: () => void;
@@ -316,11 +319,11 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                 </div>
                             ) : (
                                 <label className="flex flex-1 items-center gap-2 text-sm">
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={!course.hidden}
                                         disabled={busyCourseId === course.id}
                                         onChange={() => toggleHidden(course)}
+                                        ariaLabel={`Show ${course.name} in the planner`}
                                     />
                                     <span className={course.hidden ? "text-slate-500 line-through" : ""}>
                                         {course.name}
@@ -330,18 +333,19 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                             custom
                                         </span>
                                     )}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            startRename(course);
-                                        }}
-                                        className="text-slate-500 hover:text-slate-300"
-                                        aria-label={`Rename ${course.name}`}
-                                        title="Rename"
-                                    >
-                                        ✎
-                                    </button>
+                                    <Tooltip label="Rename">
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                startRename(course);
+                                            }}
+                                            className="text-slate-500 hover:text-slate-300"
+                                            aria-label={`Rename ${course.name}`}
+                                        >
+                                            ✎
+                                        </button>
+                                    </Tooltip>
 
                                     {editingAbbrId === course.id ? (
                                         <div
@@ -380,39 +384,34 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                             </button>
                                         </div>
                                     ) : (
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                startEditAbbr(course);
-                                            }}
-                                            className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${course.abbreviation ? "border-indigo-700 text-indigo-300" : "border-slate-600 text-slate-500"}`}
-                                            title="Edit the course code shown on planner cards"
-                                        >
-                                            {course.abbreviation ?? courseAbbreviationDefault(course.name)}
-                                        </button>
+                                        <Tooltip label="Edit the course code shown on planner cards">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    startEditAbbr(course);
+                                                }}
+                                                className={`shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${course.abbreviation ? "border-indigo-700 text-indigo-300" : "border-slate-600 text-slate-500"}`}
+                                            >
+                                                {course.abbreviation ?? courseAbbreviationDefault(course.name)}
+                                            </button>
+                                        </Tooltip>
                                     )}
 
                                     {editingColorId === course.id ? (
                                         <div
                                             className="flex shrink-0 items-center gap-1"
-                                            // stopPropagation (not preventDefault) here: this still
-                                            // keeps the click from reaching the row's <label> (whose
-                                            // associated control is the "hidden" checkbox above), but
-                                            // unlike preventDefault it doesn't cancel the color
-                                            // <input>'s own default action — opening the OS color
-                                            // picker IS that click's default action, so
-                                            // preventDefault silently blocked the picker from ever
-                                            // opening (colorValue could never change from its
-                                            // startEditColor default).
+                                            // Keeps a click here from reaching the row's <label>
+                                            // (whose control is the "hidden" checkbox above). Use
+                                            // stopPropagation, not preventDefault, so the colour
+                                            // popover's own clicks still work.
                                             onClick={(e) => e.stopPropagation()}
                                         >
-                                            <input
-                                                type="color"
-                                                autoFocus
+                                            <ColorField
+                                                defaultOpen
+                                                ariaLabel="Badge colour"
                                                 value={colorValue}
-                                                onChange={(e) => setColorValue(e.target.value)}
-                                                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-slate-600 bg-slate-900 p-0"
+                                                onChange={setColorValue}
                                             />
                                             <button
                                                 type="button"
@@ -424,15 +423,16 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                                 {busyCourseId === course.id ? "Saving..." : "Save"}
                                             </button>
                                             {course.color && (
-                                                <button
-                                                    type="button"
-                                                    disabled={busyCourseId === course.id}
-                                                    onClick={() => saveColor(course, null)}
-                                                    className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px]"
-                                                    title="Reset to the auto-assigned color"
-                                                >
-                                                    Reset
-                                                </button>
+                                                <Tooltip label="Reset to the auto-assigned color">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busyCourseId === course.id}
+                                                        onClick={() => saveColor(course, null)}
+                                                        className="shrink-0 rounded bg-slate-700 px-1.5 py-0.5 text-[10px]"
+                                                    >
+                                                        Reset
+                                                    </button>
+                                                </Tooltip>
                                             )}
                                             <button
                                                 type="button"
@@ -443,17 +443,18 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                             </button>
                                         </div>
                                     ) : (
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                startEditColor(course);
-                                            }}
-                                            style={course.color ? { backgroundColor: course.color } : undefined}
-                                            className={`h-4 w-4 shrink-0 rounded-full border border-slate-500 ${course.color ? "" : courseColorDefault(course.name)}`}
-                                            aria-label={`Edit ${course.name}'s badge color`}
-                                            title="Edit the badge color shown on planner cards"
-                                        />
+                                        <Tooltip label="Edit the badge color shown on planner cards">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    startEditColor(course);
+                                                }}
+                                                style={course.color ? { backgroundColor: course.color } : undefined}
+                                                className={`h-4 w-4 shrink-0 rounded-full border border-slate-500 ${course.color ? "" : courseColorDefault(course.name)}`}
+                                                aria-label={`Edit ${course.name}'s badge color`}
+                                            />
+                                        </Tooltip>
                                     )}
                                 </label>
                             )}

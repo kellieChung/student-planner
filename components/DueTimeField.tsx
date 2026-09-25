@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import TimeField from "@/components/ui/TimeField";
 
 type DueTimeFieldProps = {
     // "" = end of day (auto), "HH:MM" = a specific due time.
@@ -34,11 +35,11 @@ export default function DueTimeField({ value, onChange }: DueTimeFieldProps) {
             </div>
 
             {mode === "custom" && (
-                <input
-                    type="time"
+                <TimeField
+                    ariaLabel="Due time"
                     value={value}
-                    onChange={(e) => onChange(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 color-scheme-dark"
+                    onChange={onChange}
+                    className="bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500"
                 />
             )}
         </div>

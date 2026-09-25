@@ -227,13 +227,18 @@ export function getStartOfWeek(date: Date = new Date()): Date {
     return start;
 }
 
-export function getTodayString(): string{
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
+// "YYYY-MM-DD" from a Date's *local* calendar day — the inverse of
+// parseLocalDate. Never use toISOString() for this: it reads the UTC day.
+export function toDateKey(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
 
-    return `${year}-${month}-${day}`
+    return `${year}-${month}-${day}`;
+}
+
+export function getTodayString(): string{
+    return toDateKey(new Date());
 }
 
 export function parseLocalDate(dateString: string): Date {

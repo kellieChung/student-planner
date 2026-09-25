@@ -1,8 +1,9 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import {parseLocalDate, formatEstimatedMinutes} from "@/lib/utils";
 import {TaskStatus} from "@/lib/taskStatus";
-import {courseColorDefault} from "@/lib/courseColor";
+import {courseColorDefault, readableTextColor} from "@/lib/courseColor";
 import TaskStatusToggle from "./TaskStatusToggle";
 
 type AssignmentCardProps = {
@@ -168,9 +169,11 @@ export default function AssignmentCard({
                 <TaskStatusToggle status={status} onChange={onSetStatus} size="sm" />
 
                 {completed ? (
-                    <h3 title={name} data-tour={tourAnchor ? "task-label" : undefined} className="min-w-0 truncate text-xs leading-none line-through">
-                        {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
-                    </h3>
+                    <Tooltip label={name}>
+                        <h3 data-tour={tourAnchor ? "task-label" : undefined} className="min-w-0 truncate text-xs leading-none line-through">
+                            {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
+                        </h3>
+                    </Tooltip>
                 ) : (
                     <div className="min-w-0">
 
@@ -178,19 +181,20 @@ export default function AssignmentCard({
                             of card width; max-w-full only lets it truncate on
                             cards too narrow to fit the label at all. */}
                         <span
-                            style={courseColor ? { backgroundColor: courseColor } : undefined}
+                            style={courseColor ? { backgroundColor: courseColor, color: readableTextColor(courseColor) } : undefined}
                             className={`inline-block max-w-full truncate align-bottom leading-none text-[10px] font-bold uppercase tracking-wider px-1.5 py-1 rounded border text-[#fff] ${courseColorClass}`}
                         >
                             {course}
                         </span>
 
-                        <h3
-                            title={name}
-                            data-tour={tourAnchor ? "task-label" : undefined}
-                            className="text-sm font-semibold leading-tight truncate"
-                        >
-                            {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
-                        </h3>
+                        <Tooltip label={name}>
+                            <h3
+                                data-tour={tourAnchor ? "task-label" : undefined}
+                                className="text-sm font-semibold leading-tight truncate"
+                            >
+                                {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
+                            </h3>
+                        </Tooltip>
 
                         {detailLine && (
                             <p className={`truncate text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-slate-400"}`}>
@@ -205,42 +209,45 @@ export default function AssignmentCard({
 
             <div className="absolute top-1 right-1 flex items-center gap-1">
                 {isAiDetected && !completed && onDismissAiTag && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDismissAiTag(id);
-                        }}
-                        className="text-xs px-1.5 py-0.5 rounded text-indigo-300 opacity-80 hover:opacity-100"
-                        title="AI-detected — click to dismiss this tag"
-                    >
-                        🤖
-                    </button>
+                    <Tooltip label="AI-detected — click to dismiss this tag">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDismissAiTag(id);
+                            }}
+                            className="text-xs px-1.5 py-0.5 rounded text-indigo-300 opacity-80 hover:opacity-100" aria-label="AI-detected — click to dismiss this tag"
+                        >
+                            🤖
+                        </button>
+                    </Tooltip>
                 )}
 
                 {onFocus && !completed && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onFocus(id);
-                        }}
-                        className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${isFocused ? "text-indigo-300 opacity-100" : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-300"}`}
-                        title={isFocused ? "Stop focusing on this task" : "Focus on this task on the Watch"}
-                    >
-                        🎯
-                    </button>
+                    <Tooltip label={isFocused ? "Stop focusing on this task" : "Focus on this task on the Watch"}>
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onFocus(id);
+                            }}
+                            className={`text-xs px-1.5 py-0.5 rounded transition-opacity ${isFocused ? "text-indigo-300 opacity-100" : "opacity-0 group-hover:opacity-100 text-slate-400 hover:text-indigo-300"}`} aria-label={isFocused ? "Stop focusing on this task" : "Focus on this task on the Watch"}
+                        >
+                            🎯
+                        </button>
+                    </Tooltip>
                 )}
 
                 {onDelete && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete(id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded"
-                        title="Delete Task"
-                    >
-                        ✕
-                    </button>
+                    <Tooltip label="Delete Task">
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDelete(id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-400 text-xs px-1.5 py-0.5 rounded" aria-label="Delete Task"
+                        >
+                            ✕
+                        </button>
+                    </Tooltip>
                 )}
             </div>
         </div>

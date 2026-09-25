@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ProposedTask } from "@/types/proposedTask";
+import DatePicker from "@/components/DatePicker";
+import Checkbox from "@/components/ui/Checkbox";
 import { DetectionQuota } from "@/types/aiQuota";
 import { MAX_ANNOUNCEMENTS_PER_CHECK } from "@/lib/analysisLimits";
 import Spinner from "@/components/Spinner";
@@ -514,20 +516,20 @@ export default function DetectionTriggerControls({
 
                     {preset === "custom" && (
                         <div className="mb-3 flex flex-wrap items-center gap-2">
-                            <input
-                                type="date"
+                            <DatePicker
                                 value={customFrom}
-                                onChange={(e) => setCustomFrom(e.target.value)}
-                                className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--accent)]"
+                                onChange={setCustomFrom}
+                                ariaLabel="From date"
+                                className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)]"
                             />
 
                             <span className="text-xs text-[var(--muted)]">to</span>
 
-                            <input
-                                type="date"
+                            <DatePicker
                                 value={customTo}
-                                onChange={(e) => setCustomTo(e.target.value)}
-                                className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--accent)]"
+                                onChange={setCustomTo}
+                                ariaLabel="To date"
+                                className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)]"
                             />
 
                             {rangeIsInvalid && (
@@ -551,8 +553,7 @@ export default function DetectionTriggerControls({
                                     key={announcement.id}
                                     className="flex cursor-pointer items-start gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--border)]/20"
                                 >
-                                    <input
-                                        type="checkbox"
+                                    <Checkbox
                                         checked={!deselectedIds.has(announcement.id)}
                                         disabled={
                                             deselectedIds.has(announcement.id) &&

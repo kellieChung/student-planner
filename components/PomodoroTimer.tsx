@@ -1,5 +1,6 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePomodoroRemote } from "@/components/os/PomodoroRemoteContext";
 
@@ -563,14 +564,15 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                                 {focusTask.priorityReason}
                             </p>
                         </div>
-                        <button
-                            type="button"
-                            onClick={onClearFocusTask}
-                            className="shrink-0 rounded px-1.5 py-0.5 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
-                            title="Stop focusing on this task"
-                        >
-                            ✕
-                        </button>
+                        <Tooltip label="Stop focusing on this task">
+                            <button
+                                type="button"
+                                onClick={onClearFocusTask}
+                                className="shrink-0 rounded px-1.5 py-0.5 text-xs text-[var(--muted)] hover:text-[var(--foreground)]" aria-label="Stop focusing on this task"
+                            >
+                                ✕
+                            </button>
+                        </Tooltip>
                     </div>
                 </div>
             ) : (
@@ -654,18 +656,19 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                     </div>
                 ) : (
                     <>
-                        <button
-                            type="button"
-                            onClick={startEditingTime}
-                            className="group"
-                            title="Click to change timer duration"
-                        >
-                            <div className="font-[family-name:var(--font-spectral)] text-4xl font-medium tabular-nums tracking-tight text-[var(--foreground)] transition group-hover:text-[var(--accent)]">
-                                {formatTime(
-                                    state.timeRemaining
-                                )}
-                            </div>
-                        </button>
+                        <Tooltip label="Click to change timer duration">
+                            <button
+                                type="button"
+                                onClick={startEditingTime}
+                                className="group"
+                            >
+                                <div className="font-[family-name:var(--font-spectral)] text-4xl font-medium tabular-nums tracking-tight text-[var(--foreground)] transition group-hover:text-[var(--accent)]">
+                                    {formatTime(
+                                        state.timeRemaining
+                                    )}
+                                </div>
+                            </button>
+                        </Tooltip>
 
                         <button
                             type="button"

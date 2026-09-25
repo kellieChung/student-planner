@@ -1,5 +1,7 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
+import Switch from "@/components/ui/Switch";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
@@ -186,10 +188,12 @@ export default function Taskbar({
                     </TrayPill>
                 )}
                 <TrayPill>
-                    <span className="flex items-center gap-1" title="Starlight to spend on the Star Chart">
-                        <StarIcon size={12} className="text-[var(--accent)]" />
-                        {starlight} Starlight
-                    </span>
+                    <Tooltip label="Starlight to spend on the Star Chart">
+                        <span className="flex items-center gap-1">
+                            <StarIcon size={12} className="text-[var(--accent)]" />
+                            {starlight} Starlight
+                        </span>
+                    </Tooltip>
                 </TrayPill>
                 </div>
                 <TrayPill>
@@ -242,11 +246,7 @@ export default function Taskbar({
                             </p>
                             <label className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
                                 <span>Auto-accept AI-detected tasks</span>
-                                <input
-                                    type="checkbox"
-                                    checked={autoAcceptAiTasks}
-                                    onChange={(event) => onSetAutoAcceptAiTasks(event.target.checked)}
-                                />
+                                <Switch checked={autoAcceptAiTasks} onChange={onSetAutoAcceptAiTasks} ariaLabel="Auto-accept AI-detected tasks" />
                             </label>
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
@@ -307,35 +307,36 @@ function TaskbarIconButton({
     const badgeLabel = badgeCount ? (running ? `${label} (running)` : `${label} (${badgeCount})`) : running ? `${label} (running)` : label;
 
     return (
-        <button
-            type="button"
-            onClick={onClick}
-            aria-label={badgeLabel}
-            title={badgeLabel}
-            data-tour={tourId}
-            className="relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
-            style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
-        >
-            <span aria-hidden="true">{icon}</span>
-            <span className="hidden md:inline">{label}</span>
-            {badgeCount ? (
-                <span
-                    className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-[var(--accent-contrast)]"
-                    style={{ background: "var(--accent)" }}
-                    aria-hidden="true"
-                >
-                    {badgeCount}
-                </span>
-            ) : (
-                running && (
+        <Tooltip label={badgeLabel}>
+            <button
+                type="button"
+                onClick={onClick}
+                aria-label={badgeLabel}
+                data-tour={tourId}
+                className="relative flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-transform hover:scale-105"
+                style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
+            >
+                <span aria-hidden="true">{icon}</span>
+                <span className="hidden md:inline">{label}</span>
+                {badgeCount ? (
                     <span
-                        className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full"
+                        className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-[var(--accent-contrast)]"
                         style={{ background: "var(--accent)" }}
                         aria-hidden="true"
-                    />
-                )
-            )}
-        </button>
+                    >
+                        {badgeCount}
+                    </span>
+                ) : (
+                    running && (
+                        <span
+                            className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full"
+                            style={{ background: "var(--accent)" }}
+                            aria-hidden="true"
+                        />
+                    )
+                )}
+            </button>
+        </Tooltip>
     );
 }
 

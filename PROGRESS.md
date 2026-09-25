@@ -6,6 +6,92 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Production moved to lodestarplanner.vercel.app (2026-09-24)**
+- The old `student-planner-beta.vercel.app` now returns `DEPLOYMENT_NOT_FOUND`.
+  Google sign-in broke with `redirect_uri_mismatch` because the new callback,
+  `https://lodestarplanner.vercel.app/api/auth/callback/google`, wasn't registered
+  on the Google OAuth client. **Fix is in Google Cloud Console (not code):** add
+  that URI under Authorized redirect URIs and `https://lodestarplanner.vercel.app`
+  under Authorized JavaScript origins (keep the localhost URI), and check Vercel
+  has no stale `AUTH_URL`/`NEXTAUTH_URL`. Not yet confirmed working.
+- Extension: `canvas-extension/config.js` `APP_ORIGIN` and the `theme-sync.js`
+  match in `manifest.json` now use the new domain. **The extension must be
+  reloaded and re-sent to alpha testers** — builds with the old URL can't reach
+  the app.
+
+**Typed time field + full-spectrum course colours (2026-09-24)**
+- `ui/TimeField` is now a text box plus AM/PM buttons instead of three
+  dropdowns. `lib/timeOfDay.ts` `parseTypedTime` reads `11:59pm`, `1159 p.m.`,
+  `9`, `930`, `21:30`, `12am` etc. (explicit am/pm wins; 13-23 and 0 are 24-hour;
+  otherwise the AM/PM buttons decide); 38 cases checked. Commits on Enter/blur,
+  invalid text is flagged and never sent up. Stored value is still `"HH:MM"`.
+- `ui/ColorField` quick picks are 7 hues (red, orange, yellow, green, blue,
+  purple, gray) x light/medium/deep. `lib/courseColor.ts` `readableTextColor`
+  picks navy or white text by WCAG contrast (all 21 swatches >= 4.5:1) and
+  `AssignmentCard`'s badge uses it, so pale colours keep readable text (this also
+  fixes any custom hex).
+
+**Shared UI kit replaces browser-default controls (2026-09-24)**
+- `components/ui/`: `Select`, `Checkbox`, `Switch`, `Slider`, `NumberField`,
+  `TimeField`, `ColorField`, `ConfirmDialog`, `Tooltip` (+ `DatePicker` above),
+  built on Radix (`react-select/checkbox/switch/slider/alert-dialog/tooltip`,
+  all newly added) and styled in `globals.css` (`.lodestar-*`, token-based so
+  Night/Day follow). Popups portal to `<body>` (outside `.theme-surface`) with
+  `z-[100]`; each control has a 2px `--accent` focus ring, so **don't add
+  `focus:outline-none` to their `className`** (which lands on the trigger).
+- Converted: every `<select>` (task type/status, course, recurrence frequency,
+  Rundown type, playlist target), due time (hour/minute/AM-PM selects; value
+  stays `"HH:MM"` via `lib/timeOfDay.ts`, all 1440 minutes round-trip verified),
+  numbers (interval, dev credits, fake-task count), checkboxes (course
+  visibility, Rundown rows, dev reset), the auto-accept toggle (now a Switch),
+  course colour (12 swatches + hex box; no full-spectrum picker), Music seek and
+  volume (Slider; `seek` now takes a number), `window.confirm` for deleting a
+  playlist (AlertDialog), ~20 native `title=` tooltips (now `<Tooltip>`; icon-only
+  buttons gained an `aria-label` so the name isn't lost), scrollbars
+  (`scrollbar-width: thin`), textarea resize grip hidden.
+- `Select` maps `""` <-> a sentinel because Radix forbids empty item values and
+  the app uses `""` for "Auto"/none.
+- **Deliberately not converted:** auth-form checkboxes (already custom-styled
+  native inputs submitting via `FormData`), the retired World preview controls in
+  `GamificationDevPanel`, `dev/MapEditor.tsx`, `world/BardPanel.tsx`, the
+  landing demo's `title=`, and component-prop `title`s (cards/windows).
+- Verified on throwaway pages (deleted): every control's click/keyboard
+  behaviour, popups escaping an `overflow: hidden` modal, focus return, dialog
+  focus/Escape/confirm, tooltip on focus, hex validation, and the real
+  DueTimeField/RecurrenceField/CourseSelect/StartDateField inside an
+  edit-modal-width grid. **Not verified in the signed-in app:** every real
+  form, Music playback with the new sliders/dialog, course colour save, the
+  Taskbar switch, dev pages, drag behaviour on tooltip-wrapped task cards, and
+  Day theme for the new popups (Day checked only for the date picker).
+
+**Branded date picker (2026-09-24)**
+- `components/DatePicker.tsx` replaces all 7 native `<input type="date">`
+  (AddTask/EditTask due, StartDateField, RecurrenceField end date, Rundown
+  candidate due edit, Rundown custom range from/to). Built on **react-day-picker
+  10** (calendar, keyboard nav, ARIA labels) + **@radix-ui/react-popover**
+  (portal, dismissal, focus return); both newly added dependencies. Restyled
+  with app tokens in `globals.css` (`.lodestar-day-picker`, so Night/Day follow
+  automatically), Spectral month title, gold selected day, explicit gold focus
+  rings (the library ships none).
+- **Dates stay `"YYYY-MM-DD"` strings and go through `parseLocalDate` /
+  `toDateKey`** (new in `lib/utils.ts`; `getTodayString` now calls it). Never
+  `new Date("YYYY-MM-DD")` or `toISOString()` for a calendar day. Round-trips
+  verified in LA, UTC, UTC+14 and UTC-11 incl. DST-change days. This also fixed
+  `StartDateField`'s UTC "today" (`toISOString().slice(0,10)`).
+- **Touch devices keep the native picker**: `(pointer: coarse)` via
+  `useSyncExternalStore` (not screen width, so a narrow desktop window still
+  gets the custom one). Reasoning: the OS wheel/sheet picker has big targets and
+  is what people expect on a phone. The Rundown inline due-edit closes on blur /
+  Enter / Escape on the native path and via Radix dismissal on desktop.
+- Call sites must not add `focus:outline-none` to the picker's `className`
+  (the trigger supplies its own focus ring).
+- Verified on a throwaway page (deleted): open/select/`min` disabling,
+  keyboard (arrows move, Enter selects, Escape closes + refocuses trigger),
+  dialog and day labels, focus ring, popover escapes an `overflow: hidden`
+  z-50 modal, Night + Day, simulated coarse pointer shows the native input.
+  **Not verified in the real signed-in app:** add/edit task, recurring end date,
+  Rundown due edit and custom range, real iOS/Android pickers, VoiceOver.
+
 **Onboarding explains the extension (2026-09-24)**
 - New tour step `extension` (right after the welcome card, centred, no
   `data-tour` anchor) says why the Chrome extension is needed and how to
@@ -773,7 +859,7 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   `clearExtensionAuth()` + throw, since the sync POST would fail
   regardless). Skips the final POST entirely if every course ends up
   excluded, rather than sending an empty payload.
-- **Deployment**: app is on Vercel (`https://student-planner-beta.vercel.app/`
+- **Deployment**: app is on Vercel (`https://lodestarplanner.vercel.app/`
   as of 2026-09-21, may change — check Vercel's dashboard), connected to
   `kellieChung/student-planner` on GitHub, auto-deploying on push to
   `main`. Env vars live in Vercel's dashboard, independent of the local,

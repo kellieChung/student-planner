@@ -1,6 +1,9 @@
 "use client";
 
 import React from "react";
+import DatePicker from "@/components/DatePicker";
+import NumberField from "@/components/ui/NumberField";
+import Select from "@/components/ui/Select";
 import { RecurrenceFrequency } from "@/types/recurringTask";
 
 export type RecurrenceFieldValue = {
@@ -80,22 +83,24 @@ export default function RecurrenceField({ value, onChange, anchorDue }: Recurren
                 <div className="space-y-3 bg-slate-800/60 rounded-xl p-3 mt-2">
                     <div className="flex items-center gap-2">
                         <span className="text-sm">Every</span>
-                        <input
-                            type="number"
+                        <NumberField
+                            ariaLabel="Repeat interval"
                             min={1}
                             value={value.interval}
-                            onChange={(e) => onChange({ ...value, interval: Math.max(1, Number(e.target.value) || 1) })}
-                            className="w-16 rounded bg-slate-800 px-2 py-1.5 text-sm"
+                            onChange={(interval) => onChange({ ...value, interval })}
+                            className="bg-slate-800"
                         />
-                        <select
+                        <Select
+                            ariaLabel="Repeat frequency"
                             value={value.frequency}
-                            onChange={(e) => onChange({ ...value, frequency: e.target.value as RecurrenceFrequency })}
-                            className="rounded bg-slate-800 px-2 py-1.5 text-sm"
-                        >
-                            <option value="daily">day(s)</option>
-                            <option value="weekly">week(s)</option>
-                            <option value="monthly">month(s)</option>
-                        </select>
+                            onChange={(frequency) => onChange({ ...value, frequency: frequency as RecurrenceFrequency })}
+                            options={[
+                                { value: "daily", label: "day(s)" },
+                                { value: "weekly", label: "week(s)" },
+                                { value: "monthly", label: "month(s)" },
+                            ]}
+                            className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm"
+                        />
                     </div>
 
                     {value.frequency === "weekly" && (
@@ -133,12 +138,12 @@ export default function RecurrenceField({ value, onChange, anchorDue }: Recurren
                         </div>
 
                         {value.endDate && (
-                            <input
-                                type="date"
+                            <DatePicker
                                 value={value.endDate}
                                 min={anchorDue}
-                                onChange={(e) => onChange({ ...value, endDate: e.target.value })}
-                                className="w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 color-scheme-dark"
+                                onChange={(endDate) => onChange({ ...value, endDate })}
+                                ariaLabel="Repeat until"
+                                className="w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 color-scheme-dark"
                             />
                         )}
                     </div>

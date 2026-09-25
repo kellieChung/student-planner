@@ -1,10 +1,13 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import React, {useState, useEffect} from "react";
 import {Assignment} from "@/types/assignment";
 import {Course} from "@/types/course";
 import {RecurringTask} from "@/types/recurringTask";
 import StartDateField from "./StartDateField";
+import DatePicker from "./DatePicker";
+import Select from "@/components/ui/Select";
 import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import RecurrenceField, {DEFAULT_RECURRENCE_VALUE, RecurrenceFieldValue} from "./RecurrenceField";
@@ -253,17 +256,19 @@ export default function EditTaskModal({
                     onCourseCreated={onCourseCreated}
                   />
                   <div>
-                    <select
+                    <Select
+                      ariaLabel="Task type"
                       value={typeOverride}
-                      onChange={(e) => setTypeOverride(e.target.value)}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                    >
-                      <option value="">Auto ({autoTypeCode})</option>
-                      <option value="HW">HW</option>
-                      <option value="R">R (Reading)</option>
-                      <option value="EXAM">EXAM</option>
-                      <option value="TODO">TODO</option>
-                    </select>
+                      onChange={setTypeOverride}
+                      options={[
+                        { value: "", label: `Auto (${autoTypeCode})` },
+                        { value: "HW", label: "HW" },
+                        { value: "R", label: "R (Reading)" },
+                        { value: "EXAM", label: "EXAM" },
+                        { value: "TODO", label: "TODO" },
+                      ]}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500"
+                    />
                   </div>
                 </div>
               ) : (
@@ -273,14 +278,15 @@ export default function EditTaskModal({
                   {effectiveTypeCode}
                 </p>
               )}
-              <button
-                type="button"
-                onClick={() => setEditingClassification((editing) => !editing)}
-                title={editingClassification ? "Done editing course/type" : "Change course or type"}
-                className="shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-              >
-                {editingClassification ? "Done" : "✎ Edit"}
-              </button>
+              <Tooltip label={editingClassification ? "Done editing course/type" : "Change course or type"}>
+                <button
+                  type="button"
+                  onClick={() => setEditingClassification((editing) => !editing)}
+                  className="shrink-0 rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"
+                >
+                  {editingClassification ? "Done" : "✎ Edit"}
+                </button>
+              </Tooltip>
             </div>
           </div>
 
@@ -289,11 +295,11 @@ export default function EditTaskModal({
               <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
                 Due Date
               </label>
-              <input
-                type="date"
+              <DatePicker
                 value={due}
-                onChange={(e) => setDue(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 color-scheme-dark"
+                onChange={setDue}
+                ariaLabel="Due date"
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 color-scheme-dark"
               />
             </div>
 
@@ -305,15 +311,17 @@ export default function EditTaskModal({
               <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
                 Status
               </label>
-              <select
+              <Select
+                ariaLabel="Status"
                 value={status}
-                onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-              >
-                <option value="not_started">Not Started</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Done</option>
-              </select>
+                onChange={(next) => setStatus(next as TaskStatus)}
+                options={[
+                  { value: "not_started", label: "Not Started" },
+                  { value: "in_progress", label: "In Progress" },
+                  { value: "completed", label: "Done" },
+                ]}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500"
+              />
             </div>
           </div>
 

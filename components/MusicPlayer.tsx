@@ -1,5 +1,6 @@
 "use client";
 
+import Tooltip from "@/components/ui/Tooltip";
 import {
     FormEvent,
     useEffect,
@@ -8,6 +9,9 @@ import {
     useState,
 } from "react";
 import Spinner from "@/components/Spinner";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import Select from "@/components/ui/Select";
+import Slider from "@/components/ui/Slider";
 import { useMusicRemote } from "@/components/os/MusicRemoteContext";
 
 type MusicTrack = {
@@ -329,6 +333,9 @@ export default function MusicPlayer() {
 
     const [youtubePlaylistUrl, setYoutubePlaylistUrl] =
         useState("");
+
+    const [playlistPendingDelete, setPlaylistPendingDelete] =
+        useState<string | null>(null);
 
     const [importTargetId, setImportTargetId] =
         useState<string | null>(null);
@@ -1299,15 +1306,6 @@ export default function MusicPlayer() {
     async function deletePlaylist(
         playlistId: string
     ) {
-        const confirmed =
-            window.confirm(
-                "Delete this playlist?"
-            );
-
-        if (!confirmed) {
-            return;
-        }
-
         try {
             setError("");
             setBusyItemId(playlistId);
@@ -1754,11 +1752,8 @@ export default function MusicPlayer() {
      * Seek.
      */
     function seek(
-        event: React.ChangeEvent<HTMLInputElement>
+        value: number
     ) {
-        const value =
-            Number(event.target.value);
-
         const player =
             playerRef.current;
 
@@ -1856,6 +1851,18 @@ export default function MusicPlayer() {
                 </div>
             )}
 
+            <ConfirmDialog
+                open={playlistPendingDelete !== null}
+                onOpenChange={(open) => {
+                    if (!open) setPlaylistPendingDelete(null);
+                }}
+                title="Delete this playlist?"
+                description="This can't be undone."
+                onConfirm={() => {
+                    if (playlistPendingDelete) deletePlaylist(playlistPendingDelete);
+                }}
+            />
+
             <div>
                 <h1 className="text-lg font-bold">
                     Comms
@@ -1946,17 +1953,14 @@ export default function MusicPlayer() {
                                         </div>
 
                                         <div className="mt-2">
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="100"
+                                            <Slider
+                                                ariaLabel="Seek"
                                                 value={
                                                     progress
                                                 }
                                                 onChange={
                                                     seek
                                                 }
-                                                className="w-full"
                                                 disabled={
                                                     !playerReady
                                                 }
@@ -1978,122 +1982,135 @@ export default function MusicPlayer() {
                                         </div>
 
                                         <div className="mt-3 flex items-center justify-center gap-2">
-                                            <button
-                                                type="button"
-                                                title={
+                                            <Tooltip label={
                                                     shuffle
                                                         ? "Shuffle on"
                                                         : "Shuffle off"
-                                                }
-                                                aria-pressed={
-                                                    shuffle
-                                                }
-                                                onClick={
-                                                    toggleShuffle
-                                                }
-                                                disabled={
-                                                    !selectedPlaylist ||
-                                                    selectedPlaylist
-                                                        .tracks
-                                                        .length <
-                                                        2
-                                                }
-                                                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
-                                                    shuffle
-                                                        ? "bg-[var(--accent-soft)] text-[var(--accent)]"
-                                                        : "text-[var(--muted)] hover:bg-[var(--panel-muted)]"
-                                                }`}
-                                            >
-                                                <ShuffleIcon />
-                                            </button>
+                                                }>
+                                                <button
+                                                    type="button" aria-label={
+                                                        shuffle
+                                                            ? "Shuffle on"
+                                                            : "Shuffle off"
+                                                    }
+                                                    aria-pressed={
+                                                        shuffle
+                                                    }
+                                                    onClick={
+                                                        toggleShuffle
+                                                    }
+                                                    disabled={
+                                                        !selectedPlaylist ||
+                                                        selectedPlaylist
+                                                            .tracks
+                                                            .length <
+                                                            2
+                                                    }
+                                                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-30 ${
+                                                        shuffle
+                                                            ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                                                            : "text-[var(--muted)] hover:bg-[var(--panel-muted)]"
+                                                    }`}
+                                                >
+                                                    <ShuffleIcon />
+                                                </button>
+                                            </Tooltip>
 
-                                            <button
-                                                type="button"
-                                                title="Previous"
-                                                onClick={
-                                                    playPrevious
-                                                }
-                                                disabled={
-                                                    !currentTrack ||
-                                                    (!shuffle &&
-                                                        loopMode !==
-                                                            "all" &&
-                                                        currentIndex ===
-                                                            0)
-                                                }
-                                                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--panel-muted)] text-[var(--foreground)] transition-colors hover:bg-[var(--border)] disabled:opacity-30"
-                                            >
-                                                <PreviousIcon />
-                                            </button>
+                                            <Tooltip label="Previous">
+                                                <button
+                                                    type="button" aria-label="Previous"
+                                                    onClick={
+                                                        playPrevious
+                                                    }
+                                                    disabled={
+                                                        !currentTrack ||
+                                                        (!shuffle &&
+                                                            loopMode !==
+                                                                "all" &&
+                                                            currentIndex ===
+                                                                0)
+                                                    }
+                                                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--panel-muted)] text-[var(--foreground)] transition-colors hover:bg-[var(--border)] disabled:opacity-30"
+                                                >
+                                                    <PreviousIcon />
+                                                </button>
+                                            </Tooltip>
 
-                                            <button
-                                                type="button"
-                                                title={
+                                            <Tooltip label={
                                                     isPlaying
                                                         ? "Pause"
                                                         : "Play"
-                                                }
-                                                onClick={
-                                                    togglePlay
-                                                }
-                                                disabled={
-                                                    !currentTrack ||
-                                                    !playerReady
-                                                }
-                                                className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-md transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
-                                            >
-                                                {isPlaying ? (
-                                                    <PauseIcon />
-                                                ) : (
-                                                    <PlayIcon />
-                                                )}
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                title="Next"
-                                                onClick={
-                                                    playNext
-                                                }
-                                                disabled={
-                                                    !currentTrack ||
-                                                    (!shuffle &&
-                                                        loopMode !==
-                                                            "all" &&
-                                                        currentIndex >=
-                                                            selectedPlaylist
-                                                                .tracks
-                                                                .length -
-                                                                1)
-                                                }
-                                                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--panel-muted)] text-[var(--foreground)] transition-colors hover:bg-[var(--border)] disabled:opacity-30"
-                                            >
-                                                <NextIcon />
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                title={`Repeat: ${loopMode}`}
-                                                aria-pressed={
-                                                    loopMode !==
-                                                    "off"
-                                                }
-                                                onClick={
-                                                    cycleLoopMode
-                                                }
-                                                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-                                                    loopMode !==
-                                                    "off"
-                                                        ? "bg-[var(--accent-soft)] text-[var(--accent)]"
-                                                        : "text-[var(--muted)] hover:bg-[var(--panel-muted)]"
-                                                }`}
-                                            >
-                                                <RepeatIcon
-                                                    mode={
-                                                        loopMode
+                                                }>
+                                                <button
+                                                    type="button" aria-label={
+                                                        isPlaying
+                                                            ? "Pause"
+                                                            : "Play"
                                                     }
-                                                />
-                                            </button>
+                                                    onClick={
+                                                        togglePlay
+                                                    }
+                                                    disabled={
+                                                        !currentTrack ||
+                                                        !playerReady
+                                                    }
+                                                    className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-md transition-transform hover:scale-105 disabled:opacity-40 disabled:hover:scale-100"
+                                                >
+                                                    {isPlaying ? (
+                                                        <PauseIcon />
+                                                    ) : (
+                                                        <PlayIcon />
+                                                    )}
+                                                </button>
+                                            </Tooltip>
+
+                                            <Tooltip label="Next">
+                                                <button
+                                                    type="button" aria-label="Next"
+                                                    onClick={
+                                                        playNext
+                                                    }
+                                                    disabled={
+                                                        !currentTrack ||
+                                                        (!shuffle &&
+                                                            loopMode !==
+                                                                "all" &&
+                                                            currentIndex >=
+                                                                selectedPlaylist
+                                                                    .tracks
+                                                                    .length -
+                                                                    1)
+                                                    }
+                                                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--panel-muted)] text-[var(--foreground)] transition-colors hover:bg-[var(--border)] disabled:opacity-30"
+                                                >
+                                                    <NextIcon />
+                                                </button>
+                                            </Tooltip>
+
+                                            <Tooltip label={`Repeat: ${loopMode}`}>
+                                                <button
+                                                    type="button" aria-label={`Repeat: ${loopMode}`}
+                                                    aria-pressed={
+                                                        loopMode !==
+                                                        "off"
+                                                    }
+                                                    onClick={
+                                                        cycleLoopMode
+                                                    }
+                                                    className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+                                                        loopMode !==
+                                                        "off"
+                                                            ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                                                            : "text-[var(--muted)] hover:bg-[var(--panel-muted)]"
+                                                    }`}
+                                                >
+                                                    <RepeatIcon
+                                                        mode={
+                                                            loopMode
+                                                        }
+                                                    />
+                                                </button>
+                                            </Tooltip>
                                         </div>
 
                                         <div className="mt-3 flex items-center gap-2">
@@ -2101,23 +2118,13 @@ export default function MusicPlayer() {
                                                 Volume
                                             </span>
 
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="100"
+                                            <Slider
+                                                ariaLabel="Volume"
                                                 value={
                                                     volume
                                                 }
-                                                onChange={(
-                                                    event
-                                                ) =>
-                                                    setVolume(
-                                                        Number(
-                                                            event
-                                                                .target
-                                                                .value
-                                                        )
-                                                    )
+                                                onChange={
+                                                    setVolume
                                                 }
                                                 className="flex-1"
                                             />
@@ -2434,7 +2441,7 @@ export default function MusicPlayer() {
                                                     type="button"
                                                     disabled={busyItemId === playlist.id}
                                                     onClick={() =>
-                                                        deletePlaylist(
+                                                        setPlaylistPendingDelete(
                                                             playlist.id
                                                         )
                                                     }
@@ -2635,46 +2642,36 @@ export default function MusicPlayer() {
                                     Add to playlist
                                 </label>
 
-                                <select
+                                <Select
+                                    ariaLabel="Add to playlist"
                                     value={
                                         importTargetId ??
                                         ""
                                     }
                                     onChange={(
-                                        event
+                                        next
                                     ) =>
                                         setImportTargetId(
-                                            event
-                                                .target
-                                                .value ||
+                                            next ||
                                                 null
                                         )
                                     }
+                                    options={[
+                                        {
+                                            value: "",
+                                            label: "Create a new playlist",
+                                        },
+                                        ...playlists.map(
+                                            (
+                                                playlist
+                                            ) => ({
+                                                value: playlist.id,
+                                                label: playlist.name,
+                                            })
+                                        ),
+                                    ]}
                                     className="mt-1 w-full rounded-lg border px-3 py-2"
-                                >
-                                    <option value="">
-                                        Create a new playlist
-                                    </option>
-
-                                    {playlists.map(
-                                        (
-                                            playlist
-                                        ) => (
-                                            <option
-                                                key={
-                                                    playlist.id
-                                                }
-                                                value={
-                                                    playlist.id
-                                                }
-                                            >
-                                                {
-                                                    playlist.name
-                                                }
-                                            </option>
-                                        )
-                                    )}
-                                </select>
+                                />
                             </>
                         )}
 

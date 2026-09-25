@@ -1,5 +1,6 @@
 "use client";
 
+import NumberField from "@/components/ui/NumberField";
 import { useEffect, useRef, useState } from "react";
 import { GamificationState } from "@/types/gamification";
 import { TownState, KingdomStage, MascotTrigger } from "@/types/townState";
@@ -331,15 +332,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                     real mascot/XP/growth/streak flow.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
-                    <input
-                        type="number"
-                        min={1}
-                        max={20}
-                        value={fakeTaskCount}
-                        onChange={(event) => setFakeTaskCount(Math.min(20, Math.max(1, Number(event.target.value) || 1)))}
-                        className="w-16 rounded-md border px-2 py-1 text-xs"
-                        style={{ borderColor: "var(--border)", background: "var(--panel-muted)" }}
-                    />
+                    <NumberField ariaLabel="Number of fake tasks" min={1} max={20} value={fakeTaskCount} onChange={setFakeTaskCount} />
                     <button
                         type="button"
                         onClick={generateFakeTasks}

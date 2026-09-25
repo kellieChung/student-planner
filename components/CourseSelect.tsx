@@ -3,6 +3,7 @@
 import React, {useState} from "react";
 import {Course} from "@/types/course";
 import Spinner from "@/components/Spinner";
+import Select from "@/components/ui/Select";
 
 const ADD_NEW_VALUE = "__add_new__";
 
@@ -24,15 +25,15 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
         ? [{ id: value, name: value, hidden: false, isCustom: false }, ...courses]
         : courses;
 
-    const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        if (e.target.value === ADD_NEW_VALUE) {
+    const handleSelect = (selected: string) => {
+        if (selected === ADD_NEW_VALUE) {
             setIsAdding(true);
             setNewName("");
             setError(null);
             return;
         }
 
-        onChange(e.target.value);
+        onChange(selected);
     };
 
     const handleCreate = async () => {
@@ -104,19 +105,17 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
             <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
                 Course / Category
             </label>
-            <select
+            <Select
+                ariaLabel="Course or category"
                 value={value}
                 onChange={handleSelect}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-            >
-                {!value && <option value="">Select a course...</option>}
-                {options.map((course) => (
-                    <option key={course.id} value={course.name}>
-                        {course.name}
-                    </option>
-                ))}
-                <option value={ADD_NEW_VALUE}>+ Add new course...</option>
-            </select>
+                placeholder="Select a course..."
+                options={[
+                    ...options.map((course) => ({ value: course.name, label: course.name })),
+                    { value: ADD_NEW_VALUE, label: "+ Add new course..." },
+                ]}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500"
+            />
         </div>
     );
 }
