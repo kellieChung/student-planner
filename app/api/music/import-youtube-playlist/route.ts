@@ -51,6 +51,7 @@ function extractPlaylistId(
             "youtube.com",
             "www.youtube.com",
             "m.youtube.com",
+            "music.youtube.com",
             "youtu.be",
             "www.youtube-nocookie.com",
         ];
@@ -65,23 +66,36 @@ function extractPlaylistId(
     }
 }
 
+// YouTube's own messages ("playlist not found", "private") are safe and
+// useful to show; anything else is reported generically.
+class YouTubeApiError extends Error {}
+
+const YOUTUBE_TIMEOUT_MS = 10_000;
+
 async function fetchYouTube<T>(
     url: string,
     apiKey: string
 ): Promise<T> {
-    const response = await fetch(url, {
-        headers: {
-            "X-Goog-Api-Key": apiKey,
-        },
-        cache: "no-store",
-    });
+    let response: Response;
 
-    const data = await response.json();
+    try {
+        response = await fetch(url, {
+            headers: {
+                "X-Goog-Api-Key": apiKey,
+            },
+            cache: "no-store",
+            signal: AbortSignal.timeout(YOUTUBE_TIMEOUT_MS),
+        });
+    } catch {
+        throw new YouTubeApiError("YouTube didn't respond. Please try again.");
+    }
+
+    const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-        throw new Error(
+        throw new YouTubeApiError(
             data?.error?.message ||
-                `YouTube API returned ${response.status}`
+                `YouTube returned an error (${response.status}).`
         );
     }
 
@@ -239,14 +253,14 @@ export async function POST(request: Request) {
                 const videoId =
                     item.snippet?.resourceId?.videoId;
 
-                // Deleted/private videos don't have a usable video ID.
-                if (!videoId) {
-                    continue;
-                }
-
                 const title =
                     item.snippet?.title?.trim() ||
                     "Untitled Track";
+
+                // Deleted/private videos keep a video ID but can never play.
+                if (!videoId || title === "Private video" || title === "Deleted video") {
+                    continue;
+                }
 
                 const thumbnail =
                     item.snippet?.thumbnails?.high?.url ??
@@ -298,7 +312,7 @@ export async function POST(request: Request) {
             })),
         });
 
-        // Return the updated Student Planner playlist.
+        // Return the updated Lodestar playlist.
         const updatedPlaylist =
             await prisma.musicPlaylist.findUnique({
                 where: {
@@ -323,14 +337,14 @@ export async function POST(request: Request) {
             error
         );
 
+        const fromYouTube = error instanceof YouTubeApiError;
+
         return NextResponse.json(
             {
-                error:
-                    error instanceof Error
-                        ? error.message
-                        : "Failed to import YouTube playlist.",
+                success: false,
+                error: fromYouTube ? error.message : "Failed to import YouTube playlist.",
             },
-            { status: 500 }
+            { status: fromYouTube ? 502 : 500 }
         );
     }
 }

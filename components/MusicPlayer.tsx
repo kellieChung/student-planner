@@ -51,6 +51,10 @@ declare global {
                             data: number;
                             target: YTPlayer;
                         }) => void;
+                        onError?: (event: {
+                            data: number;
+                            target: YTPlayer;
+                        }) => void;
                     };
                 }
             ) => YTPlayer;
@@ -65,6 +69,7 @@ declare global {
 }
 
 type YTPlayer = {
+    seekTo?: (seconds: number, allowSeekAhead: boolean) => void;
     playVideo: () => void;
     pauseVideo: () => void;
     stopVideo: () => void;
@@ -73,6 +78,10 @@ type YTPlayer = {
     getDuration: () => number;
     setVolume: (volume: number) => void;
 };
+
+const YOUTUBE_LOAD_TIMEOUT_MS = 10_000;
+const YOUTUBE_BLOCKED_MESSAGE =
+    "YouTube's player couldn't load. It may be blocked by your network or an ad blocker.";
 
 function getYouTubeVideoId(url: string): string | null {
     try {
@@ -410,6 +419,18 @@ export default function MusicPlayer() {
         selectedPlaylist?.tracks[currentIndex] ??
         null;
 
+    // Read from the long-lived player's onError handler.
+    const selectedPlaylistRef = useRef(selectedPlaylist);
+    const consecutiveErrorsRef = useRef(0);
+    // The player's ENDED/onError handlers advance through this, not the
+    // playNext captured when that player was created.
+    const advanceRef = useRef<() => void>(() => {});
+
+    useEffect(() => {
+        selectedPlaylistRef.current = selectedPlaylist;
+        advanceRef.current = playNext;
+    });
+
     /*
      * Guards the loop/shuffle persist effects below from firing
      * with their default values before the load effect has had a
@@ -600,6 +621,11 @@ export default function MusicPlayer() {
 
         script.async = true;
 
+        // School networks and ad blockers often block this script.
+        script.onerror = () => {
+            setError(YOUTUBE_BLOCKED_MESSAGE);
+        };
+
         document.body.appendChild(script);
     }, []);
 
@@ -758,8 +784,42 @@ export default function MusicPlayer() {
                                         return;
                                     }
 
-                                    playNext();
+                                    // The ref, not the playNext captured when
+                                    // this player was created: tracks added
+                                    // since would otherwise be skipped.
+                                    advanceRef.current();
                                 }
+
+                                if (
+                                    event.data ===
+                                    window.YT.PlayerState
+                                        .PLAYING
+                                ) {
+                                    consecutiveErrorsRef.current = 0;
+                                }
+                            },
+
+                            // Private, removed or embed-disabled videos
+                            // never reach ENDED, so without this the
+                            // playlist would just stall.
+                            onError: () => {
+                                if (cancelled) {
+                                    return;
+                                }
+
+                                consecutiveErrorsRef.current += 1;
+                                setIsPlaying(false);
+
+                                const trackCount =
+                                    selectedPlaylistRef.current?.tracks.length ?? 0;
+
+                                if (consecutiveErrorsRef.current >= Math.max(1, trackCount)) {
+                                    setError("None of the videos in this playlist can be played here.");
+                                    return;
+                                }
+
+                                setError("That video can't be played here (it may be private, removed or not allowed to embed), so it was skipped.");
+                                advanceRef.current();
                             },
                         },
                     }
@@ -773,6 +833,8 @@ export default function MusicPlayer() {
         ) {
             createPlayer();
         } else {
+            const startedWaiting = Date.now();
+
             const checkYouTube =
                 window.setInterval(() => {
                     if (
@@ -785,6 +847,12 @@ export default function MusicPlayer() {
                         );
 
                         createPlayer();
+                    } else if (Date.now() - startedWaiting > YOUTUBE_LOAD_TIMEOUT_MS) {
+                        window.clearInterval(
+                            checkYouTube
+                        );
+
+                        setError(YOUTUBE_BLOCKED_MESSAGE);
                     }
                 }, 100);
 
@@ -1038,6 +1106,11 @@ export default function MusicPlayer() {
             return;
         }
 
+        // A playlist created just for this import is removed again if the
+        // import fails, so a bad URL doesn't leave an empty playlist behind.
+        let createdPlaylistId: string | null = null;
+        const previousSelectedId = selectedPlaylistId;
+
         try {
             setIsSubmitting(true);
             setError("");
@@ -1047,7 +1120,7 @@ export default function MusicPlayer() {
 
             /*
              * No destination selected:
-             * create a new Student Planner playlist.
+             * create a new Lodestar playlist.
              */
             if (!destinationId) {
                 if (
@@ -1098,6 +1171,8 @@ export default function MusicPlayer() {
 
                 destinationId =
                     newPlaylist.id;
+
+                createdPlaylistId = newPlaylist.id;
 
                 setSelectedPlaylistId(
                     destinationId
@@ -1161,6 +1236,15 @@ export default function MusicPlayer() {
                     ? err.message
                     : "Failed to import YouTube playlist."
             );
+
+            if (createdPlaylistId) {
+                const orphanId = createdPlaylistId;
+
+                void fetch(`/api/music/${orphanId}`, { method: "DELETE" }).catch(() => {});
+                setPlaylists((current) => current.filter((playlist) => playlist.id !== orphanId));
+                setSelectedPlaylistId(previousSelectedId);
+                setCurrentIndex(0);
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -1523,6 +1607,20 @@ export default function MusicPlayer() {
      * called from a long-lived player event handler; see those
      * refs' comment above.
      */
+    // Advancing to the track that's already current (repeat-all on a
+    // one-track playlist, or a reshuffle that starts where it ended) wouldn't
+    // change currentIndex, so the player effect wouldn't re-run; restart it.
+    function goToTrack(index: number) {
+        if (index === currentIndex && playerRef.current) {
+            playerRef.current.seekTo?.(0, true);
+            playerRef.current.playVideo();
+            return;
+        }
+
+        shouldAutoplayRef.current = true;
+        setCurrentIndex(index);
+    }
+
     function playNext() {
         if (!selectedPlaylist) {
             return;
@@ -1554,8 +1652,7 @@ export default function MusicPlayer() {
                     buildShuffleOrder(trackCount);
 
                 setShuffleOrder(reshuffled);
-                shouldAutoplayRef.current = true;
-                setCurrentIndex(reshuffled[0]);
+                goToTrack(reshuffled[0]);
                 return;
             }
 
@@ -1568,8 +1665,7 @@ export default function MusicPlayer() {
 
         if (nextIndex >= trackCount) {
             if (loopModeRef.current === "all") {
-                shouldAutoplayRef.current = true;
-                setCurrentIndex(0);
+                goToTrack(0);
                 return;
             }
 
