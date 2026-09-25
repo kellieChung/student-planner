@@ -128,11 +128,91 @@ function parseTimeInput(value: string): number | null {
     return totalSeconds;
 }
 
+// The state after the current session runs out: a focus session counts and
+// moves to a break; a break returns to focus. Shared by the live countdown and
+// the restore path (a timer that ran out while the page was closed).
+function finishSession(current: PomodoroState): PomodoroState {
+    if (current.mode === "focus") {
+        const completedSessions = current.completedSessions + 1;
+        const nextMode = getNextMode("focus", completedSessions);
+
+        return {
+            mode: nextMode,
+            timeRemaining: DURATIONS[nextMode],
+            duration: DURATIONS[nextMode],
+            isRunning: false,
+            completedSessions,
+            endTime: null,
+        };
+    }
+
+    return {
+        ...current,
+        mode: "focus",
+        timeRemaining: DURATIONS.focus,
+        duration: DURATIONS.focus,
+        isRunning: false,
+        endTime: null,
+    };
+}
+
+// A short two-note chime (no audio asset), plus a tab title change while the
+// tab is in the background, so a session ending in another tab is noticed.
+function signalSessionEnd(finishedMode: PomodoroMode) {
+    try {
+        const AudioContextClass =
+            window.AudioContext ??
+            (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+        if (AudioContextClass) {
+            const context = new AudioContextClass();
+
+            [660, 880].forEach((frequency, index) => {
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+                const start = context.currentTime + index * 0.22;
+
+                oscillator.frequency.value = frequency;
+                gain.gain.setValueAtTime(0.0001, start);
+                gain.gain.exponentialRampToValueAtTime(0.15, start + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
+                oscillator.connect(gain).connect(context.destination);
+                oscillator.start(start);
+                oscillator.stop(start + 0.21);
+            });
+
+            window.setTimeout(() => void context.close(), 1000);
+        }
+    } catch {
+        // Autoplay policy or no audio device — the title change still works.
+    }
+
+    if (document.hidden) {
+        const originalTitle = document.title;
+        document.title = finishedMode === "focus" ? "Break time · Lodestar" : "Back to focus · Lodestar";
+
+        const restore = () => {
+            if (document.hidden) return;
+            document.title = originalTitle;
+            document.removeEventListener("visibilitychange", restore);
+        };
+
+        document.addEventListener("visibilitychange", restore);
+    }
+}
+
 export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroTimerProps) {
     const [state, setState] =
         useState<PomodoroState>(DEFAULT_STATE);
 
     const [hydrated, setHydrated] = useState(false);
+    const stateRef = useRef(state);
+    const signalledEndTimeRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        stateRef.current = state;
+    }, [state]);
+
     const [isEditingTime, setIsEditingTime] = useState(false);
     const [timeInput, setTimeInput] = useState("");
 
@@ -173,11 +253,21 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
             }
 
             let timeRemaining = parsed.timeRemaining;
-            let isRunning = parsed.isRunning;
-            let endTime =
+            const isRunning = parsed.isRunning;
+            const endTime =
                 typeof parsed.endTime === "number"
                     ? parsed.endTime
                     : null;
+
+            const restored: PomodoroState = {
+                mode: parsed.mode,
+                timeRemaining,
+                duration: parsed.duration,
+                isRunning,
+                completedSessions:
+                    parsed.completedSessions,
+                endTime,
+            };
 
             /*
              * If the timer was running, determine how much time
@@ -191,21 +281,15 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                 if (remaining > 0) {
                     timeRemaining = remaining;
                 } else {
-                    timeRemaining = 0;
-                    isRunning = false;
-                    endTime = null;
+                    // Ran out while the page was closed: move on to the
+                    // next session instead of sitting at 00:00.
+                    setState(finishSession(restored));
+                    setHydrated(true);
+                    return;
                 }
             }
 
-            setState({
-                mode: parsed.mode,
-                timeRemaining,
-                duration: parsed.duration,
-                isRunning,
-                completedSessions:
-                    parsed.completedSessions,
-                endTime,
-            });
+            setState({ ...restored, timeRemaining });
         } catch {
             localStorage.removeItem(STORAGE_KEY);
         }
@@ -248,6 +332,20 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
         }
 
         const updateTimer = () => {
+            // Side effects stay outside the state updater; the ref guards
+            // against signalling the same session twice.
+            const live = stateRef.current;
+
+            if (
+                live.isRunning &&
+                live.endTime !== null &&
+                live.endTime <= Date.now() &&
+                signalledEndTimeRef.current !== live.endTime
+            ) {
+                signalledEndTimeRef.current = live.endTime;
+                signalSessionEnd(live.mode);
+            }
+
             setState((current) => {
                 if (
                     !current.isRunning ||
@@ -267,41 +365,7 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                     };
                 }
 
-                /*
-                 * Timer finished.
-                 */
-                if (current.mode === "focus") {
-                    const completedSessions =
-                        current.completedSessions + 1;
-
-                    const nextMode = getNextMode(
-                        "focus",
-                        completedSessions
-                    );
-
-                    return {
-                        mode: nextMode,
-                        timeRemaining:
-                            DURATIONS[nextMode],
-                        duration:
-                            DURATIONS[nextMode],
-                        isRunning: false,
-                        completedSessions,
-                        endTime: null,
-                    };
-                }
-
-                /*
-                 * Break finished → return to focus.
-                 */
-                return {
-                    ...current,
-                    mode: "focus",
-                    timeRemaining: DURATIONS.focus,
-                    duration: DURATIONS.focus,
-                    isRunning: false,
-                    endTime: null,
-                };
+                return finishSession(current);
             });
         };
 
@@ -540,7 +604,7 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
                     </p>
 
                     <p className="text-sm font-bold text-[var(--accent)]">
-                        {state.completedSessions} / 4
+                        {state.completedSessions % 4} / 4
                     </p>
                 </div>
             </div>
