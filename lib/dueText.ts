@@ -82,6 +82,11 @@ function resolveMonthDay(referenceDate: Date, month: number, day: number): Date 
     return candidate;
 }
 
+// "Feb 30" makes Date roll over into March; that's a misread, not a date.
+function keyIfRealDay(date: Date, day: number): string | null {
+    return date.getDate() === day ? toDateKey(date) : null;
+}
+
 export function resolveDueTextToDate(
     dueText: string | null,
     referenceDate: Date
@@ -100,7 +105,11 @@ export function resolveDueTextToDate(
         return null;
     }
 
-    if (text === "tomorrow" || text === "tonight") {
+    if (text === "today" || text === "tonight") {
+        return toDateKey(referenceDate);
+    }
+
+    if (text === "tomorrow") {
         return toDateKey(addDays(referenceDate, 1));
     }
 
@@ -119,9 +128,7 @@ export function resolveDueTextToDate(
         const day = parseInt(monthDayMatch[2], 10);
 
         if (monthName in MONTH_ALIASES && day >= 1 && day <= 31) {
-            return toDateKey(
-                resolveMonthDay(referenceDate, MONTH_ALIASES[monthName], day)
-            );
+            return keyIfRealDay(resolveMonthDay(referenceDate, MONTH_ALIASES[monthName], day), day);
         }
     }
 
@@ -139,10 +146,10 @@ export function resolveDueTextToDate(
                         ? 2000 + parseInt(yearPart, 10)
                         : parseInt(yearPart, 10);
 
-                return toDateKey(new Date(year, month, day));
+                return keyIfRealDay(new Date(year, month, day), day);
             }
 
-            return toDateKey(resolveMonthDay(referenceDate, month, day));
+            return keyIfRealDay(resolveMonthDay(referenceDate, month, day), day);
         }
     }
 
