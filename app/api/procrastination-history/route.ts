@@ -21,100 +21,116 @@ async function getAuthenticatedUser() {
 }
 
 export async function GET() {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
+        if (!user) {
+            return NextResponse.json(
+                { success: false, error: "You must be logged in." },
+                { status: 401 }
+            );
+        }
+
+        const records = await prisma.procrastinationRecord.findMany({
+            where: { userId: user.id },
+        });
+
+        return NextResponse.json({
+            success: true,
+            records: records.map((record) => ({
+                taskType: record.taskType,
+                addedAt: record.addedAt.toISOString(),
+                dueAt: record.dueAt.toISOString(),
+                completedAt: record.completedAt.toISOString(),
+            })),
+        });
+    } catch (error) {
+        console.error("GET /api/procrastination-history failed:", error);
         return NextResponse.json(
-            { success: false, error: "You must be logged in." },
-            { status: 401 }
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
         );
     }
-
-    const records = await prisma.procrastinationRecord.findMany({
-        where: { userId: user.id },
-    });
-
-    return NextResponse.json({
-        success: true,
-        records: records.map((record) => ({
-            taskType: record.taskType,
-            addedAt: record.addedAt.toISOString(),
-            dueAt: record.dueAt.toISOString(),
-            completedAt: record.completedAt.toISOString(),
-        })),
-    });
 }
 
 export async function POST(request: Request) {
-    const user = await getAuthenticatedUser();
-
-    if (!user) {
-        return NextResponse.json(
-            { success: false, error: "You must be logged in." },
-            { status: 401 }
-        );
-    }
-
-    let body: unknown;
     try {
-        body = await request.json();
-    } catch {
-        return NextResponse.json(
-            { success: false, error: "Invalid JSON body." },
-            { status: 400 }
-        );
-    }
+        const user = await getAuthenticatedUser();
 
-    const { taskType, addedAt, dueAt, completedAt } = body as {
-        taskType?: unknown;
-        addedAt?: unknown;
-        dueAt?: unknown;
-        completedAt?: unknown;
-    } | null ?? {};
+        if (!user) {
+            return NextResponse.json(
+                { success: false, error: "You must be logged in." },
+                { status: 401 }
+            );
+        }
 
-    const isValidDate = (value: unknown) =>
-        typeof value === "string" && !Number.isNaN(new Date(value).getTime());
+        let body: unknown;
+        try {
+            body = await request.json();
+        } catch {
+            return NextResponse.json(
+                { success: false, error: "Invalid JSON body." },
+                { status: 400 }
+            );
+        }
 
-    if (typeof taskType !== "string" || !taskType.trim()) {
-        return NextResponse.json(
-            { success: false, error: "'taskType' is required." },
-            { status: 400 }
-        );
-    }
+        const { taskType, addedAt, dueAt, completedAt } = body as {
+            taskType?: unknown;
+            addedAt?: unknown;
+            dueAt?: unknown;
+            completedAt?: unknown;
+        } | null ?? {};
 
-    if (!isValidDate(addedAt) || !isValidDate(dueAt) || !isValidDate(completedAt)) {
-        return NextResponse.json(
-            { success: false, error: "'addedAt', 'dueAt', and 'completedAt' must be valid ISO datetime strings." },
-            { status: 400 }
-        );
-    }
+        const isValidDate = (value: unknown) =>
+            typeof value === "string" && !Number.isNaN(new Date(value).getTime());
 
-    const normalizedType = taskType.trim().toLowerCase();
+        if (typeof taskType !== "string" || !taskType.trim()) {
+            return NextResponse.json(
+                { success: false, error: "'taskType' is required." },
+                { status: 400 }
+            );
+        }
 
-    await prisma.procrastinationRecord.create({
-        data: {
-            userId: user.id,
-            taskType: normalizedType,
-            addedAt: new Date(addedAt as string),
-            dueAt: new Date(dueAt as string),
-            completedAt: new Date(completedAt as string),
-        },
-    });
+        if (!isValidDate(addedAt) || !isValidDate(dueAt) || !isValidDate(completedAt)) {
+            return NextResponse.json(
+                { success: false, error: "'addedAt', 'dueAt', and 'completedAt' must be valid ISO datetime strings." },
+                { status: 400 }
+            );
+        }
 
-    // Prune oldest rows for this (userId, taskType) beyond the cap.
-    const rows = await prisma.procrastinationRecord.findMany({
-        where: { userId: user.id, taskType: normalizedType },
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
-    });
+        const normalizedType = taskType.trim().toLowerCase();
 
-    const staleIds = rows.slice(MAX_RECORDS_PER_TYPE).map((row) => row.id);
-
-    if (staleIds.length > 0) {
-        await prisma.procrastinationRecord.deleteMany({
-            where: { id: { in: staleIds } },
+        await prisma.procrastinationRecord.create({
+            data: {
+                userId: user.id,
+                taskType: normalizedType,
+                addedAt: new Date(addedAt as string),
+                dueAt: new Date(dueAt as string),
+                completedAt: new Date(completedAt as string),
+            },
         });
-    }
 
-    return NextResponse.json({ success: true });
+        // Prune oldest rows for this (userId, taskType) beyond the cap.
+        const rows = await prisma.procrastinationRecord.findMany({
+            where: { userId: user.id, taskType: normalizedType },
+            orderBy: { createdAt: "desc" },
+            select: { id: true },
+        });
+
+        const staleIds = rows.slice(MAX_RECORDS_PER_TYPE).map((row) => row.id);
+
+        if (staleIds.length > 0) {
+            await prisma.procrastinationRecord.deleteMany({
+                where: { id: { in: staleIds } },
+            });
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error("POST /api/procrastination-history failed:", error);
+        return NextResponse.json(
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
+        );
+    }
 }

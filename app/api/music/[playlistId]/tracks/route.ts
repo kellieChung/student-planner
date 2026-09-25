@@ -38,230 +38,254 @@ export async function POST(
     request: Request,
     { params }: Params
 ) {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
-        return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
+        if (!user) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 }
+            );
+        }
+
+        const { playlistId } = await params;
+
+        const playlist = await getUserPlaylist(
+            playlistId,
+            user.id
         );
-    }
 
-    const { playlistId } = await params;
+        if (!playlist) {
+            return NextResponse.json(
+                { error: "Playlist not found." },
+                { status: 404 }
+            );
+        }
 
-    const playlist = await getUserPlaylist(
-        playlistId,
-        user.id
-    );
+        const body = await request.json();
 
-    if (!playlist) {
-        return NextResponse.json(
-            { error: "Playlist not found." },
-            { status: 404 }
-        );
-    }
+        const title =
+            typeof body.title === "string"
+                ? body.title.trim()
+                : "";
 
-    const body = await request.json();
+        const sourceUrl =
+            typeof body.sourceUrl === "string"
+                ? body.sourceUrl.trim()
+                : "";
 
-    const title =
-        typeof body.title === "string"
-            ? body.title.trim()
-            : "";
+        if (!title || !sourceUrl) {
+            return NextResponse.json(
+                {
+                    error:
+                        "Track title and YouTube URL are required.",
+                },
+                { status: 400 }
+            );
+        }
 
-    const sourceUrl =
-        typeof body.sourceUrl === "string"
-            ? body.sourceUrl.trim()
-            : "";
-
-    if (!title || !sourceUrl) {
-        return NextResponse.json(
-            {
-                error:
-                    "Track title and YouTube URL are required.",
+        const trackCount = await prisma.musicTrack.count({
+            where: {
+                playlistId,
             },
-            { status: 400 }
+        });
+
+        const track = await prisma.musicTrack.create({
+            data: {
+                title,
+                sourceUrl,
+                thumbnail:
+                    typeof body.thumbnail === "string"
+                        ? body.thumbnail
+                        : null,
+                position: trackCount,
+                playlistId,
+            },
+        });
+
+        return NextResponse.json(track);
+    } catch (error) {
+        console.error("POST /api/music/[playlistId]/tracks failed:", error);
+        return NextResponse.json(
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
         );
     }
-
-    const trackCount = await prisma.musicTrack.count({
-        where: {
-            playlistId,
-        },
-    });
-
-    const track = await prisma.musicTrack.create({
-        data: {
-            title,
-            sourceUrl,
-            thumbnail:
-                typeof body.thumbnail === "string"
-                    ? body.thumbnail
-                    : null,
-            position: trackCount,
-            playlistId,
-        },
-    });
-
-    return NextResponse.json(track);
 }
 
 export async function PATCH(
     request: Request,
     { params }: Params
 ) {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
-        return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
-        );
-    }
+        if (!user) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
-    const { playlistId } = await params;
+        const { playlistId } = await params;
 
-    const playlist = await getUserPlaylist(
-        playlistId,
-        user.id
-    );
-
-    if (!playlist) {
-        return NextResponse.json(
-            { error: "Playlist not found." },
-            { status: 404 }
-        );
-    }
-
-    const body = await request.json();
-
-    const trackId =
-        typeof body.trackId === "string"
-            ? body.trackId
-            : "";
-
-    const title =
-        typeof body.title === "string"
-            ? body.title.trim()
-            : "";
-
-    if (!trackId || !title) {
-        return NextResponse.json(
-            { error: "Track ID and title are required." },
-            { status: 400 }
-        );
-    }
-
-    const track = await prisma.musicTrack.findFirst({
-        where: {
-            id: trackId,
+        const playlist = await getUserPlaylist(
             playlistId,
-        },
-    });
+            user.id
+        );
 
-    if (!track) {
+        if (!playlist) {
+            return NextResponse.json(
+                { error: "Playlist not found." },
+                { status: 404 }
+            );
+        }
+
+        const body = await request.json();
+
+        const trackId =
+            typeof body.trackId === "string"
+                ? body.trackId
+                : "";
+
+        const title =
+            typeof body.title === "string"
+                ? body.title.trim()
+                : "";
+
+        if (!trackId || !title) {
+            return NextResponse.json(
+                { error: "Track ID and title are required." },
+                { status: 400 }
+            );
+        }
+
+        const track = await prisma.musicTrack.findFirst({
+            where: {
+                id: trackId,
+                playlistId,
+            },
+        });
+
+        if (!track) {
+            return NextResponse.json(
+                { error: "Track not found." },
+                { status: 404 }
+            );
+        }
+
+        const updatedTrack = await prisma.musicTrack.update({
+            where: {
+                id: trackId,
+            },
+            data: {
+                title,
+            },
+        });
+
+        return NextResponse.json(updatedTrack);
+    } catch (error) {
+        console.error("PATCH /api/music/[playlistId]/tracks failed:", error);
         return NextResponse.json(
-            { error: "Track not found." },
-            { status: 404 }
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
         );
     }
-
-    const updatedTrack = await prisma.musicTrack.update({
-        where: {
-            id: trackId,
-        },
-        data: {
-            title,
-        },
-    });
-
-    return NextResponse.json(updatedTrack);
 }
 
 export async function DELETE(
     request: Request,
     { params }: Params
 ) {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
-        return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
-        );
-    }
+        if (!user) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
-    const { playlistId } = await params;
+        const { playlistId } = await params;
 
-    const playlist = await getUserPlaylist(
-        playlistId,
-        user.id
-    );
-
-    if (!playlist) {
-        return NextResponse.json(
-            { error: "Playlist not found." },
-            { status: 404 }
-        );
-    }
-
-    const body = await request.json();
-
-    const trackId =
-        typeof body.trackId === "string"
-            ? body.trackId
-            : "";
-
-    if (!trackId) {
-        return NextResponse.json(
-            { error: "Track ID is required." },
-            { status: 400 }
-        );
-    }
-
-    const track = await prisma.musicTrack.findFirst({
-        where: {
-            id: trackId,
+        const playlist = await getUserPlaylist(
             playlistId,
-        },
-    });
-
-    if (!track) {
-        return NextResponse.json(
-            { error: "Track not found." },
-            { status: 404 }
+            user.id
         );
-    }
 
-    await prisma.musicTrack.delete({
-        where: {
-            id: trackId,
-        },
-    });
+        if (!playlist) {
+            return NextResponse.json(
+                { error: "Playlist not found." },
+                { status: 404 }
+            );
+        }
 
-    const remainingTracks =
-        await prisma.musicTrack.findMany({
+        const body = await request.json();
+
+        const trackId =
+            typeof body.trackId === "string"
+                ? body.trackId
+                : "";
+
+        if (!trackId) {
+            return NextResponse.json(
+                { error: "Track ID is required." },
+                { status: 400 }
+            );
+        }
+
+        const track = await prisma.musicTrack.findFirst({
             where: {
+                id: trackId,
                 playlistId,
-            },
-            orderBy: {
-                position: "asc",
             },
         });
 
-    await prisma.$transaction(
-        remainingTracks.map((track, index) =>
-            prisma.musicTrack.update({
-                where: {
-                    id: track.id,
-                },
-                data: {
-                    position: index,
-                },
-            })
-        )
-    );
+        if (!track) {
+            return NextResponse.json(
+                { error: "Track not found." },
+                { status: 404 }
+            );
+        }
 
-    return NextResponse.json({
-        success: true,
-    });
+        await prisma.musicTrack.delete({
+            where: {
+                id: trackId,
+            },
+        });
+
+        const remainingTracks =
+            await prisma.musicTrack.findMany({
+                where: {
+                    playlistId,
+                },
+                orderBy: {
+                    position: "asc",
+                },
+            });
+
+        await prisma.$transaction(
+            remainingTracks.map((track, index) =>
+                prisma.musicTrack.update({
+                    where: {
+                        id: track.id,
+                    },
+                    data: {
+                        position: index,
+                    },
+                })
+            )
+        );
+
+        return NextResponse.json({
+            success: true,
+        });
+    } catch (error) {
+        console.error("DELETE /api/music/[playlistId]/tracks failed:", error);
+        return NextResponse.json(
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
+        );
+    }
 }

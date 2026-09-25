@@ -17,71 +17,87 @@ async function getAuthenticatedUser() {
 }
 
 export async function GET() {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
-        return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
-        );
-    }
+        if (!user) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 }
+            );
+        }
 
-    const playlists = await prisma.musicPlaylist.findMany({
-        where: {
-            userId: user.id,
-        },
-        include: {
-            tracks: {
-                orderBy: {
-                    position: "asc",
+        const playlists = await prisma.musicPlaylist.findMany({
+            where: {
+                userId: user.id,
+            },
+            include: {
+                tracks: {
+                    orderBy: {
+                        position: "asc",
+                    },
                 },
             },
-        },
-        orderBy: {
-            createdAt: "asc",
-        },
-    });
+            orderBy: {
+                createdAt: "asc",
+            },
+        });
 
-    return NextResponse.json(playlists);
+        return NextResponse.json(playlists);
+    } catch (error) {
+        console.error("GET /api/music/playlists failed:", error);
+        return NextResponse.json(
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
+        );
+    }
 }
 
 export async function POST(request: Request) {
-    const user = await getAuthenticatedUser();
+    try {
+        const user = await getAuthenticatedUser();
 
-    if (!user) {
+        if (!user) {
+            return NextResponse.json(
+                { error: "Unauthorized" },
+                { status: 401 }
+            );
+        }
+
+        const body = await request.json();
+
+        const name =
+            typeof body.name === "string"
+                ? body.name.trim()
+                : "";
+
+        if (!name) {
+            return NextResponse.json(
+                { error: "Playlist name is required." },
+                { status: 400 }
+            );
+        }
+
+        const playlist = await prisma.musicPlaylist.create({
+            data: {
+                name,
+                sourceUrl:
+                    typeof body.sourceUrl === "string"
+                        ? body.sourceUrl.trim()
+                        : null,
+                userId: user.id,
+            },
+            include: {
+                tracks: true,
+            },
+        });
+
+        return NextResponse.json(playlist);
+    } catch (error) {
+        console.error("POST /api/music/playlists failed:", error);
         return NextResponse.json(
-            { error: "Unauthorized" },
-            { status: 401 }
+            { success: false, error: "Something went wrong." },
+            { status: 500 }
         );
     }
-
-    const body = await request.json();
-
-    const name =
-        typeof body.name === "string"
-            ? body.name.trim()
-            : "";
-
-    if (!name) {
-        return NextResponse.json(
-            { error: "Playlist name is required." },
-            { status: 400 }
-        );
-    }
-
-    const playlist = await prisma.musicPlaylist.create({
-        data: {
-            name,
-            sourceUrl:
-                typeof body.sourceUrl === "string"
-                    ? body.sourceUrl.trim()
-                    : null,
-            userId: user.id,
-        },
-        include: {
-            tracks: true,
-        },
-    });
-
-    return NextResponse.json(playlist);
 }
