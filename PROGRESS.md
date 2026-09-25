@@ -6,6 +6,76 @@ documentation (that's what `CLAUDE.md` and code comments are for).
 
 ## Architecture decisions
 
+**Login screen polish (2026-09-24)**
+- Sign in / Create account is a segmented control (equal weight, soft gold tint
+  + gold underline when active); solid gold is reserved for the Google and
+  submit buttons. **Confirm password is gone** — replaced by a show/hide eye
+  toggle on the single Password field, and `signUp` in `app/login/actions.ts` no
+  longer reads/compares `confirmPassword` (`/settings/account` still has its
+  own confirm field). Under Password a live checklist (`aria-describedby`)
+  shows the rules.
+- **Password policy (user decision, 2026-09-24): 8–128 chars + an uppercase
+  letter + a special character** (`lib/passwordRules.ts`, Node-free so the
+  form runs the same checks the server enforces). Sign-up's submit is disabled
+  until all three pass; `signUp` and `changePassword` re-check server-side.
+  Sign-in is deliberately unchecked (existing passwords predate the rule).
+  This supersedes the earlier "no composition rules (NIST)" note under Auth.
+- Every field uses an explicit `<label htmlFor>` (`useId`). Checkboxes
+  (`ConsentCheckboxes`, shared with `/accept-terms`) are custom: navy box, gold
+  fill + a sibling SVG check (a CSS var can't go in a background-image URI).
+- **New token `--field-border`** (Night `#7d86ab`, Day `#857d66`): the old
+  `--border` was 1.66:1 / 1.55:1 against the panel, under WCAG 1.4.11's 3:1 for
+  form controls. Inputs, checkboxes and the toggle use it; text contrast
+  already passed (muted 8.35:1/7.73:1, gold links 9.29:1/5.27:1). Focus ring:
+  `.auth-page :is(a, button, input):focus-visible` (2px gold) — put
+  `auth-page` on any new auth screen's `<main>`.
+- Static stars on `/login` via `StarField` (`twinkle={false}`, `sizeScale={1.5}`,
+  90 stars) inside a `sky relative overflow-hidden` main, plus faint fully
+  charted Orion / Big Dipper behind the card (md+ only); all `.auth-stars`,
+  hidden in Day. A small Cassiopeia in the card header (`AuthProgress.tsx`,
+  context shared with `CredentialsForm`) lights stars as required steps are
+  done (sign-up: email, password, 13+, terms; sign-in: email, password) and
+  redraws its lines when the form is complete. `.auth-constellation` recolours
+  it with the accent in Day.
+- Verified in-browser: layout, checkbox, eye toggle, focus ring, label
+  association, Day theme, short-password server error. Not verified: a real
+  sign-up/sign-in (shared prod DB), `/accept-terms` rendering (needs a signed-in
+  user), keyboard ring on every stop, narrow phone width. Known, pre-existing:
+  React resets the form after a failed action, so consent checkboxes and the
+  password clear on an error.
+
+**Landing hero: scroll-linked constellation, parallax, demo (2026-09-24)**
+- `ScrollHero.tsx` (client) is a thin shell: one passive scroll listener + rAF
+  writes `--p` (0–1 through the hero) on the `<header>`; nothing re-renders per
+  frame. All motion is CSS `calc()`/`clamp()` off `--p` (`.ls-hero*` in
+  `globals.css`). The stage is `position: sticky` inside a `2.6 × 100svh`
+  header (`svh`, so the mobile URL bar can't resize it mid-scroll). **Never put
+  `overflow: hidden/auto` on an ancestor of the stage** — it silently breaks
+  sticky; clipping lives on the stage itself.
+- Timeline constants live in `components/landing/heroTimeline.ts`: sky draws
+  over p 0.12–0.85, headline settles over 0.60–0.85 (finishes with the last
+  edge), 0.85–1.0 is a hold. `HeroConstellation.tsx` (server) derives each
+  star/edge start from them; edges use real `Math.hypot` lengths for
+  `stroke-dasharray/offset` (no `pathLength`, flaky on `<line>` in WebKit).
+- Parallax = three layers at -4vh / -10vh / -22vh × p (far dim starfield, mid
+  starfield, constellation). No-JS and `prefers-reduced-motion` pin `--p: 1`
+  (finished sky, plain one-screen hero). `data-settled` (set at p ≥ 0.85)
+  gates the headline CTA's pointer-events; `:focus-within` reveals it for
+  keyboard users. The nav (with a small "Get started" pill) lives in the
+  pinned stage so the CTA is reachable before the headline appears.
+- `DemoPlanner.tsx` ("Try it" section under the hero): 5 cards labelled via the
+  real `formatTaskLabel`, built server-side in `demoTasks.ts` and passed as
+  props — importing `lib/taskLabel` in a client component would drag the
+  Anthropic SDK into the bundle. Star i ↔ task i of Cassiopeia (reuses
+  `ConstellationFigure`); Starlight values are illustrative. Styled with
+  `--ls-*` tokens, deliberately not inside `.theme-surface` (Day theme would
+  turn it cream).
+- Verified: `tsc`, eslint on changed files, in-browser at desktop and 390×667 /
+  390×844 (via iframes — this window couldn't be resized), scroll draw, demo
+  clicks incl. full celebration. **Not verified:** `npm run build` (a dev server
+  owned `.next`), Safari/Firefox, real-phone scroll feel, reduced-motion/no-JS
+  rendering (by CSS reading only), landscape phone.
+
 **Per-check announcement cap (2026-09-24)**
 - `MAX_ANNOUNCEMENTS_PER_CHECK = 10` (`lib/analysisLimits.ts`, shared by route
   and UI) bounds Anthropic spend per check. The route slices the eligible
@@ -832,6 +902,12 @@ documentation (that's what `CLAUDE.md` and code comments are for).
   `npx tsx` script, not part of any suite.
 
 ## Active TODOs
+
+- **Landing hero (2026-09-24)** — uncommitted. Run `npm run build`, then check
+  Safari/Firefox and a real phone (scroll-linked `calc()` stroke-dashoffset,
+  sticky pinning), landscape phone, and `prefers-reduced-motion`/JS-off (should
+  show the finished sky + headline at once). Tune scroll length (`HERO_SCREENS`)
+  if it feels long.
 
 - **Analyzer live pass (2026-09-24):** signed in as the dev account, open
   `/dev` → Analyzer tools → reset (deletes your suggestion decisions), grant

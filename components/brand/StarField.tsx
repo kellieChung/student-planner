@@ -2,6 +2,9 @@ type Props = {
     count: number;
     seed: number;
     className?: string;
+    twinkle?: boolean;
+    // Multiplies every star's radius (1 = the landing page's size).
+    sizeScale?: number;
 };
 
 // Seeded so server and client render identical star positions.
@@ -15,7 +18,7 @@ function mulberry32(seed: number) {
     };
 }
 
-export default function StarField({ count, seed, className = "" }: Props) {
+export default function StarField({ count, seed, className = "", twinkle = true, sizeScale = 1 }: Props) {
     const random = mulberry32(seed);
     const stars = Array.from({ length: count }, (_, index) => {
         const lit = random() < 0.14;
@@ -42,8 +45,8 @@ export default function StarField({ count, seed, className = "" }: Props) {
                     key={star.id}
                     cx={`${star.x}%`}
                     cy={`${star.y}%`}
-                    r={star.r}
-                    className={`${star.lit ? "ls-star-lit" : "ls-star-dim"} ${star.twinkle ? "ls-twinkle" : ""}`}
+                    r={star.r * sizeScale}
+                    className={`${star.lit ? "ls-star-lit" : "ls-star-dim"} ${twinkle && star.twinkle ? "ls-twinkle" : ""}`}
                     style={{ animationDelay: `${star.delay}s`, animationDuration: `${star.duration}s` }}
                 />
             ))}

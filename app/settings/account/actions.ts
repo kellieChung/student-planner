@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, verifyPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
+import { PASSWORD_REQUIREMENTS_MESSAGE, passwordMeetsRules } from "@/lib/passwordRules";
 
 export type AccountFormState = {
     error: string | null;
@@ -73,11 +74,8 @@ export async function changePassword(_prevState: AccountFormState, formData: For
         return { error: "Your current password is incorrect.", success: null };
     }
 
-    if (newPassword.length < MIN_PASSWORD_LENGTH || newPassword.length > MAX_PASSWORD_LENGTH) {
-        return {
-            error: `New password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters.`,
-            success: null,
-        };
+    if (!passwordMeetsRules(newPassword)) {
+        return { error: PASSWORD_REQUIREMENTS_MESSAGE, success: null };
     }
 
     if (newPassword !== confirmPassword) {

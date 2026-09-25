@@ -5,9 +5,6 @@ const scryptAsync = promisify(scrypt) as (password: string, salt: Buffer, keylen
 
 const KEY_LENGTH = 64;
 
-export const MIN_PASSWORD_LENGTH = 8;
-export const MAX_PASSWORD_LENGTH = 128;
-
 // Stored as "scrypt$<saltHex>$<hashHex>" so the algorithm can be swapped later
 // without a schema change.
 export async function hashPassword(password: string): Promise<string> {

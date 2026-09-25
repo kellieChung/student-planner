@@ -3,7 +3,8 @@
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH, normalizeEmail } from "@/lib/password";
+import { hashPassword, normalizeEmail } from "@/lib/password";
+import { PASSWORD_REQUIREMENTS_MESSAGE, passwordMeetsRules } from "@/lib/passwordRules";
 import { safeRedirectPath, TERMS_VERSION, UNDERAGE_MESSAGE } from "@/lib/legal";
 
 export type CredentialsFormState = {
@@ -49,7 +50,6 @@ export async function signUp(_prevState: CredentialsFormState, formData: FormDat
     const name = readString(formData, "name").trim();
     const email = normalizeEmail(readString(formData, "email"));
     const password = readString(formData, "password");
-    const confirmPassword = readString(formData, "confirmPassword");
     const fields = { email, name };
 
     if (formData.get("ageConfirmed") !== "on") {
@@ -64,12 +64,8 @@ export async function signUp(_prevState: CredentialsFormState, formData: FormDat
         return { error: "Enter a valid email address.", ...fields };
     }
 
-    if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
-        return { error: `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters.`, ...fields };
-    }
-
-    if (password !== confirmPassword) {
-        return { error: "Passwords don't match.", ...fields };
+    if (!passwordMeetsRules(password)) {
+        return { error: PASSWORD_REQUIREMENTS_MESSAGE, ...fields };
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });

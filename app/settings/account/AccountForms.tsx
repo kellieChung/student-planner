@@ -72,7 +72,7 @@ export default function AccountForms({ name, email, hasPassword, hasGoogle }: Pr
                         Confirm new password
                         <input name="confirmPassword" type="password" autoComplete="new-password" className={INPUT_CLASS} />
                     </label>
-                    <p className="text-xs text-[var(--muted)]">At least 8 characters.</p>
+                    <p className="text-xs text-[var(--muted)]">At least 8 characters, with an uppercase letter and a special character.</p>
                     <FormStatus state={passwordState} />
                     <button type="submit" disabled={passwordPending} className={BUTTON_CLASS}>
                         {passwordPending ? "Saving…" : hasPassword ? "Change password" : "Set password"}
