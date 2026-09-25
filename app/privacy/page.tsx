@@ -1,13 +1,13 @@
 import LegalPage from "@/components/LegalPage";
-import { MINIMUM_AGE } from "@/lib/legal";
+import { CONTACT_EMAIL, MINIMUM_AGE } from "@/lib/legal";
 
 export const metadata = {
     title: "Privacy Policy",
 };
 
-// TEMPLATE: replace [CONTACT EMAIL] and have this reviewed
-// before relying on it — it is not legal advice. Keep the "What we collect"
-// and "Who we share it with" sections in sync with the actual data flows.
+// TEMPLATE: have this reviewed before relying on it — it is not legal advice.
+// Keep the "What we collect" and "Who we share it with" sections in sync with
+// the actual data flows, and bump TERMS_VERSION when they change materially.
 export default function PrivacyPage() {
     return (
         <LegalPage title="Privacy Policy">
@@ -34,7 +34,7 @@ export default function PrivacyPage() {
                     </li>
                     <li>
                         <strong>Content you create:</strong> custom and recurring tasks, task edits, planner settings,
-                        music playlists, and game progress (XP, town and map layout).
+                        music playlists, and game progress (XP, Starlight, and the stars you&apos;ve charted).
                     </li>
                     <li>
                         <strong>Usage records inside the app:</strong> such as when you complete, reschedule, or
@@ -64,12 +64,9 @@ export default function PrivacyPage() {
                     <li><strong>Our database provider</strong> — stores your account and planner data.</li>
                     <li><strong>Google</strong> — if you choose &quot;Continue with Google&quot; to sign in.</li>
                     <li>
-                        <strong>Anthropic</strong> — the text of Canvas announcements is sent to Anthropic&apos;s
-                        Claude API to extract suggested tasks.
-                    </li>
-                    <li>
-                        <strong>AI model server (Ollama)</strong> — assignment titles and descriptions are processed by
-                        an Ollama language-model server we run to estimate importance, difficulty, and time.
+                        <strong>Anthropic</strong> — assignment titles, course names and descriptions are sent to
+                        Anthropic&apos;s Claude API to estimate importance, difficulty, and time, and the text of
+                        Canvas announcements you choose to check is sent to extract suggested tasks.
                     </li>
                     <li>
                         <strong>YouTube</strong> — the music player embeds YouTube, which may set its own cookies and
@@ -100,7 +97,7 @@ export default function PrivacyPage() {
                 <h2>Retention and deletion</h2>
                 <p>
                     We keep your data for as long as your account exists. You can permanently delete your account
-                    and all associated data at any time from Account settings in the app (from the account menu in the app (&quot;Deletequot;Delete
+                    and all associated data at any time from Account settings in the app (&quot;Delete
                     Account&quot;). Deletion is immediate and can&apos;t be undone.
                 </p>
             </section>
@@ -111,7 +108,7 @@ export default function PrivacyPage() {
                     Depending on where you live (for example, under the GDPR or California&apos;s CCPA/CPRA), you may
                     have the right to access, correct, export, or delete your personal information, and to object to
                     or restrict certain processing. You can delete your data yourself in the app; for any other
-                    request, contact [CONTACT EMAIL]. We won&apos;t discriminate against you for exercising these
+                    request, contact <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. We won&apos;t discriminate against you for exercising these
                     rights.
                 </p>
             </section>
@@ -121,7 +118,7 @@ export default function PrivacyPage() {
                 <p>
                     The Service is not intended for children under {MINIMUM_AGE}, and we don&apos;t knowingly collect
                     personal information from them. If you believe a child under {MINIMUM_AGE} has created an
-                    account, contact [CONTACT EMAIL] and we will delete it.
+                    account, contact <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will delete it.
                 </p>
             </section>
 
@@ -143,7 +140,10 @@ export default function PrivacyPage() {
 
             <section>
                 <h2>Contact</h2>
-                <p>Questions or requests? Contact Kellie Chung at [CONTACT EMAIL].</p>
+                <p>
+                    Questions or requests? Contact Kellie Chung at{" "}
+                    <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+                </p>
             </section>
         </LegalPage>
     );

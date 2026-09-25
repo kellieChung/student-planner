@@ -14,7 +14,7 @@ export default function LegalPage({ title, children }: Props) {
                 <h1 className="text-2xl font-bold text-[var(--heading)]">{title}</h1>
                 <p className="mt-1 text-xs text-[var(--muted)]">Effective {TERMS_VERSION}</p>
 
-                <div className="mt-6 space-y-6 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:uppercase [&_h2]:tracking-wider [&_h2]:text-[var(--muted)] [&_li]:ml-5 [&_li]:list-disc [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:space-y-1">
+                <div className="mt-6 space-y-6 [&_a]:text-[var(--accent)] [&_a]:underline [&_h2]:text-sm [&_h2]:font-bold [&_h2]:uppercase [&_h2]:tracking-wider [&_h2]:text-[var(--muted)] [&_li]:ml-5 [&_li]:list-disc [&_p]:mt-2 [&_ul]:mt-2 [&_ul]:space-y-1">
                     {children}
                 </div>
 

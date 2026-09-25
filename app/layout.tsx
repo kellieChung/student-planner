@@ -15,9 +15,29 @@ const spectral = Spectral({
   style: ["normal", "italic"],
 });
 
+const DESCRIPTION =
+  "The student planner that catches assignments hidden in Canvas announcements and turns your finished work into a night sky.";
+
 export const metadata: Metadata = {
-  title: "Lodestar",
-  description: "The student planner that catches assignments hidden in Canvas announcements and turns your finished work into a night sky.",
+  // Absolute URLs for link previews; update if the production domain changes.
+  metadataBase: new URL("https://lodestarplanner.vercel.app"),
+  title: {
+    default: "Lodestar",
+    template: "%s · Lodestar",
+  },
+  description: DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "Lodestar",
+    title: "Lodestar",
+    description: DESCRIPTION,
+    images: ["/brand/lodestar-logo-temp.png"],
+  },
+  twitter: {
+    card: "summary",
+    title: "Lodestar",
+    description: DESCRIPTION,
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

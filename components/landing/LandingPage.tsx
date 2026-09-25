@@ -8,14 +8,15 @@ import { DEMO_TASKS } from "@/components/landing/demoTasks";
 import HeroConstellation from "@/components/landing/HeroConstellation";
 import ScrollHero from "@/components/landing/ScrollHero";
 import StarMap from "@/components/landing/StarMap";
+import { CONTACT_EMAIL } from "@/lib/legal";
 
 const SIGN_UP_HREF = "/login?mode=signup";
 const LOG_IN_HREF = "/login";
 
 const STEPS: { title: string; body: string; illustration: ReactNode }[] = [
     {
-        title: "Canvas syncs itself",
-        body: "A small browser extension brings in your courses, assignments, discussions, and announcements while you're signed in to Canvas.",
+        title: "Canvas comes to you",
+        body: "A small Chrome extension brings in your courses, assignments, and announcements in one click while you're signed in to Canvas.",
         illustration: <SyncIllustration />,
     },
     {
@@ -36,7 +37,7 @@ const STEPS: { title: string; body: string; illustration: ReactNode }[] = [
 ];
 
 const ALSO_INSIDE = [
-    "A weekly planner you can drag tasks around in",
+    "A weekly planner that lays out every task by the day it's due",
     "Priority and time estimates for every assignment",
     "Recurring tasks for the things you do every week",
     "The Watch, a focus timer, and Comms, music while you work",
@@ -254,6 +255,7 @@ export default function LandingPage() {
                         <Link href="/terms" className="ls-link-quiet">Terms</Link>
                         <Link href="/privacy" className="ls-link-quiet">Privacy</Link>
                         <Link href="/credits" className="ls-link-quiet">Credits</Link>
+                        <a href={`mailto:${CONTACT_EMAIL}`} className="ls-link-quiet">Contact</a>
                     </nav>
                 </div>
                 <p className="mx-auto max-w-6xl px-4 pb-10 text-xs sm:px-8">

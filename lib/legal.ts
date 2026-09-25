@@ -1,6 +1,10 @@
 // Bump this whenever /terms or /privacy change materially — every user whose
 // stored termsVersion differs is sent back through /accept-terms.
-export const TERMS_VERSION = "2026-09-22";
+export const TERMS_VERSION = "2026-09-25";
+
+// Shown on /terms, /privacy and the landing footer. Temporary personal
+// address until a domain email exists.
+export const CONTACT_EMAIL = "kelliecpiano@gmail.com";
 
 export const MINIMUM_AGE = 13;
 

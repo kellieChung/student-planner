@@ -1,12 +1,11 @@
 import LegalPage from "@/components/LegalPage";
-import { MINIMUM_AGE } from "@/lib/legal";
+import { CONTACT_EMAIL, MINIMUM_AGE } from "@/lib/legal";
 
 export const metadata = {
     title: "Terms of Service",
 };
 
-// TEMPLATE: replace [CONTACT EMAIL] and have
-// this reviewed before relying on it — it is not legal advice.
+// TEMPLATE: have this reviewed before relying on it — it is not legal advice.
 export default function TermsPage() {
     return (
         <LegalPage title="Terms of Service">
@@ -33,7 +32,8 @@ export default function TermsPage() {
                 <h2>2. Your account</h2>
                 <p>
                     You&apos;re responsible for keeping your login credentials secure and for all activity under your
-                    account. Provide accurate information and tell us at [CONTACT EMAIL] if you believe your account
+                    account. Provide accurate information and tell us at{" "}
+                    <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> if you believe your account
                     has been accessed without permission. You can delete your account at any time from the account
                     menu inside the app.
                 </p>
@@ -123,7 +123,10 @@ export default function TermsPage() {
 
             <section>
                 <h2>12. Contact</h2>
-                <p>Questions about these Terms? Contact Kellie Chung at [CONTACT EMAIL].</p>
+                <p>
+                    Questions about these Terms? Contact Kellie Chung at{" "}
+                    <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+                </p>
             </section>
         </LegalPage>
     );
