@@ -83,10 +83,15 @@ export async function changePassword(_prevState: AccountFormState, formData: For
     }
 
     try {
-        await prisma.user.update({
-            where: { id: user.id },
-            data: { passwordHash: await hashPassword(newPassword) },
-        });
+        // A password change also disconnects every Chrome extension signed in
+        // to this account (they re-pair with the new credentials).
+        await prisma.$transaction([
+            prisma.user.update({
+                where: { id: user.id },
+                data: { passwordHash: await hashPassword(newPassword) },
+            }),
+            prisma.extensionSession.deleteMany({ where: { userId: user.id } }),
+        ]);
     } catch (error) {
         console.error("Failed to change password:", error);
         return { error: "Couldn't update your password. Please try again.", success: null };

@@ -29,7 +29,7 @@ export function middleware(request: NextRequest) {
                 "Access-Control-Allow-Origin":
                     EXTENSION_ORIGIN,
                 "Access-Control-Allow-Methods":
-                    "GET, POST, OPTIONS",
+                    "GET, POST, DELETE, OPTIONS",
                 "Access-Control-Allow-Headers":
                     "Content-Type, Authorization",
             },
@@ -45,7 +45,7 @@ export function middleware(request: NextRequest) {
 
     response.headers.set(
         "Access-Control-Allow-Methods",
-        "GET, POST, OPTIONS"
+        "GET, POST, DELETE, OPTIONS"
     );
 
     response.headers.set(

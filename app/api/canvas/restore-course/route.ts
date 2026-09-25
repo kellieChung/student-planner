@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
     getCanvasSyncUserId,
+    isValidCanvasOrigin,
     upsertCanvasCourses,
     RawCourseSyncPayload,
 } from "@/lib/canvasIngest";
@@ -10,6 +11,8 @@ import {
 // anything else — unlike /api/canvas/sync, this never prunes, so it's safe
 // to call for a single course a user wants back after deleting it (see
 // components/CoursesPanel.tsx's delete confirmation copy).
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
     try {
         const userId = await getCanvasSyncUserId(request);
@@ -36,9 +39,9 @@ export async function POST(request: Request) {
             courses?: unknown;
         };
 
-        if (typeof canvasOrigin !== "string" || !canvasOrigin) {
+        if (!isValidCanvasOrigin(canvasOrigin)) {
             return NextResponse.json(
-                { success: false, error: "Canvas origin is required." },
+                { success: false, error: "A valid https Canvas origin is required." },
                 { status: 400 }
             );
         }
@@ -90,7 +93,7 @@ export async function POST(request: Request) {
             announcementCount,
         });
     } catch (error) {
-        console.error("❌ Canvas course restore failed:", error);
+        console.error("Canvas course restore failed:", error);
 
         return NextResponse.json(
             { success: false, error: "Failed to restore course from Canvas." },

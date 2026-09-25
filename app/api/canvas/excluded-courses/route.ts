@@ -40,7 +40,7 @@ export async function GET(request: Request) {
             canvasIds: deletedCourses.map((deleted) => deleted.canvasId),
         });
     } catch (error) {
-        console.error("❌ Failed to load excluded Canvas courses:", error);
+        console.error("Failed to load excluded Canvas courses:", error);
 
         return NextResponse.json(
             { success: false, error: "Failed to load excluded courses." },

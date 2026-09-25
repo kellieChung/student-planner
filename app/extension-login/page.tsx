@@ -1,4 +1,5 @@
-import { signIn } from "@/auth";
+import { redirect } from "next/navigation";
+import { auth, signIn } from "@/auth";
 import CredentialsForm from "@/components/auth/CredentialsForm";
 import LegalLinks from "@/components/auth/LegalLinks";
 
@@ -9,12 +10,18 @@ export default async function ExtensionLoginPage({
         state?: string;
     }>;
 }) {
-    const params = await searchParams;
-    const state = params.state;
+    const { state } = await searchParams;
     const redirectTo = `/extension-callback?state=${encodeURIComponent(state ?? "")}`;
 
+    // Already signed in: go straight to the Connect confirmation.
+    const session = await auth();
+
+    if (session?.user?.email) {
+        redirect(redirectTo);
+    }
+
     return (
-        <main className="min-h-screen flex items-center justify-center p-4">
+        <main className="auth-page min-h-screen flex items-center justify-center p-4">
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
                 <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
                 <p className="mt-1 text-sm text-[var(--muted)]">Sign in to connect the Canvas extension.</p>

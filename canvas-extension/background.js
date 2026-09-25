@@ -1,5 +1,3 @@
-console.log("Student Planner background service worker loaded!");
-
 // The backend origin comes from config.js (the only place it's set — no
 // user-facing setting). Any "appOrigin" an earlier build saved from the old
 // popup field is dropped so a stale localhost value can't silently redirect a
@@ -12,42 +10,38 @@ async function getAppOrigin() {
     return APP_ORIGIN;
 }
 
-// Checked between courses in SYNC_CANVAS's loop, set by the CANCEL_SYNC
-// handler. One popup drives one sync at a time, so a single module-level
-// flag is enough — a second popup should see/cancel the same in-flight
-// sync, not race a separate one.
-let syncCancelled = false;
+// How long a sign-in started from the popup stays claimable. The token only
+// ever arrives from the Lodestar tab via site-bridge.js, and only for the
+// state this worker generated, so an attacker's link can't pair an account.
+const AUTH_STATE_TTL_MS = 30 * 60 * 1000;
 
-// Single source of truth for sync progress, read by the popup both live
-// (while open) and on reopen (mid-sync or after). If the service worker is
-// killed/reloaded mid-sync, this is left at status:"running" forever with a
-// stale `updatedAt` — that's a known, disclosed limitation handled on the
-// popup side (staleness check in restoreSyncProgress), not solved here with
-// keep-alive machinery.
+// Canvas HTML bodies are kept (the Rundown highlights evidence in the
+// original markup) but capped so one huge page can't blow the request-body
+// limit on the sync POST.
+const MAX_HTML_LENGTH = 50_000;
+
+// Canvas's announcements endpoint defaults to the last 14 days; an early-term
+// announcement about a later deadline is exactly what the Rundown looks for.
+const ANNOUNCEMENT_LOOKBACK_DAYS = 120;
+
+// Checked between courses in SYNC_CANVAS's loop, set by the CANCEL_SYNC
+// handler. One sync at a time (see syncInProgress), so a single module-level
+// flag is enough.
+let syncCancelled = false;
+let syncInProgress = false;
+
+// Single source of truth for sync progress; the popup renders from it both
+// on open and live (chrome.storage.onChanged). If the service worker is
+// killed mid-sync this is left at "running"/"saving" with a stale
+// `updatedAt`, which the popup treats as interrupted.
 async function setSyncProgress(progress) {
     await chrome.storage.local.set({
         canvasSyncProgress: { ...progress, updatedAt: Date.now() },
     });
 }
 
-// Fire-and-forget: no popup listening is the common case (most of a sync
-// runs with the popup closed), and that's not an error — storage already
-// has the same data for when the popup reopens.
-function broadcastSyncProgress(progress) {
-    chrome.runtime.sendMessage(
-        { type: "SYNC_PROGRESS", ...progress },
-        () => {
-            if (chrome.runtime.lastError) {
-                // No popup open to receive it — expected.
-            }
-        }
-    );
-}
-
 // Follows Canvas's RFC 5988 `Link` header pagination (every call site here
-// requests per_page=100 and expects a flat array back) — without this, a
-// course with more than 100 assignments/discussions/announcements would
-// silently lose everything past page 1.
+// requests per_page=100 and expects a flat array back).
 function getNextPageUrl(linkHeader) {
     if (!linkHeader) return null;
 
@@ -77,16 +71,12 @@ async function getCanvasData(url) {
     return results;
 }
 
-// Looked up on demand (rather than relying solely on theme-sync.js having
-// already run in an already-open tab) so the popup shows the right theme
-// even right after installing/reloading the extension.
+// Looked up on demand (rather than relying solely on site-bridge.js having
+// already run in an open tab) so the popup shows the right theme even right
+// after installing/reloading the extension.
 async function getPlannerTabTheme() {
     const appOrigin = await getAppOrigin();
 
-    // Checks the configured app origin plus both localhost forms
-    // (regardless of which one is currently configured) so a still-open
-    // local dev tab is still picked up for theming even while the
-    // extension itself is pointed at production, and vice versa.
     const tabs = await chrome.tabs.query({
         url: [
             `${appOrigin}/*`,
@@ -96,7 +86,6 @@ async function getPlannerTabTheme() {
     });
 
     if (tabs.length === 0) {
-        console.log("No open Student Planner tab found.");
         return null;
     }
 
@@ -108,15 +97,57 @@ async function getPlannerTabTheme() {
                 : "dark",
     });
 
-    console.log("Read live planner theme from open tab:", result);
-
     return result ?? null;
 }
 
-// Shared by the full SYNC_CANVAS loop and the single-course RESTORE_COURSE
-// handler below — both need the identical assignments/discussions/
-// announcements fetch for one course.
+function capHtml(value) {
+    return typeof value === "string" ? value.slice(0, MAX_HTML_LENGTH) : null;
+}
+
+// Only the fields lib/canvasIngest.ts reads — Canvas objects carry rubrics,
+// permissions, attachments etc. that would otherwise bloat the sync POST.
+function pickCourse(course) {
+    return { id: course.id, name: course.name };
+}
+
+function pickAssignment(assignment) {
+    return {
+        id: assignment.id,
+        name: assignment.name,
+        description: capHtml(assignment.description),
+        due_at: assignment.due_at ?? null,
+        html_url: assignment.html_url ?? null,
+    };
+}
+
+function pickDiscussion(discussion) {
+    return {
+        id: discussion.id,
+        title: discussion.title,
+        message: capHtml(discussion.message),
+        html_url: discussion.html_url ?? null,
+        posted_at: discussion.posted_at ?? null,
+        due_at: discussion.due_at ?? discussion.assignment?.due_at ?? null,
+    };
+}
+
+function pickAnnouncement(announcement) {
+    return {
+        id: announcement.id,
+        title: announcement.title,
+        message: capHtml(announcement.message),
+        html_url: announcement.html_url ?? null,
+        posted_at: announcement.posted_at ?? null,
+    };
+}
+
+// Shared by SYNC_CANVAS and RESTORE_COURSE — both need the identical
+// assignments/discussions/announcements fetch for one course.
 async function fetchCourseData(canvasOrigin, course) {
+    const announcementStart = new Date(
+        Date.now() - ANNOUNCEMENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+
     const assignments = await getCanvasData(
         `${canvasOrigin}/api/v1/courses/${course.id}/assignments?per_page=100`
     );
@@ -126,873 +157,335 @@ async function fetchCourseData(canvasOrigin, course) {
     );
 
     const announcements = await getCanvasData(
-        `${canvasOrigin}/api/v1/announcements?context_codes[]=course_${course.id}&active_only=true&per_page=100`
+        `${canvasOrigin}/api/v1/announcements?context_codes[]=course_${course.id}&active_only=true&start_date=${encodeURIComponent(announcementStart)}&per_page=100`
     );
 
-    return { course, assignments, discussions, announcements };
+    return {
+        course: pickCourse(course),
+        assignments: assignments.map(pickAssignment),
+        discussions: discussions.map(pickDiscussion),
+        announcements: announcements.map(pickAnnouncement),
+    };
 }
 
 async function clearExtensionAuth() {
-    console.log("Clearing stale extension authentication...");
-
     await chrome.storage.local.remove([
         "extensionToken",
         "extensionAuthState",
+        "extensionAuthStartedAt",
     ]);
-
-    console.log("Extension authentication cleared.");
 }
 
-console.log("Background service worker loaded!");
+// Revokes the token server-side (best effort) before forgetting it locally.
+async function signOut() {
+    const { extensionToken } = await chrome.storage.local.get("extensionToken");
 
-async function startExtensionAuth() {
-    console.log("Starting extension authentication...");
-
-    try {
+    if (extensionToken) {
         const appOrigin = await getAppOrigin();
 
-        const response = await fetch(
-            `${appOrigin}/api/extension/auth/start`
-        );
-
-        const data = await response.json();
-
-        console.log(
-            "Auth start response:",
-            data
-        );
-
-        if (!response.ok) {
-            throw new Error(
-                data.error ||
-                `Server returned ${response.status}`
-            );
-        }
-
-        const state = data.state;
-
-        console.log(
-            "Got auth state:",
-            state
-        );
-
-        await chrome.storage.local.set({
-            extensionAuthState: state,
+        await fetch(`${appOrigin}/api/extension/auth/session`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${extensionToken}` },
+        }).catch((error) => {
+            console.warn("Could not revoke the extension session:", error);
         });
-
-        await chrome.tabs.create({
-            url:
-                `${appOrigin}/extension-login?state=${encodeURIComponent(state)}`,
-        });
-
-        console.log(
-            "Login page opened!"
-        );
-
-        const authenticated = await watchAuthState(state);
-
-        if (!authenticated) {
-            throw new Error(
-                "Sign-in timed out. Please try again."
-            );
-        }
-
-    } catch (error) {
-        console.error(
-            "Extension auth failed:",
-            error
-        );
     }
+
+    await clearExtensionAuth();
 }
 
-async function watchAuthState(state) {
-    console.log(
-        "Watching auth state:",
-        state
-    );
+function randomState() {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function startExtensionAuth() {
+    const appOrigin = await getAppOrigin();
+    const state = randomState();
+
+    await chrome.storage.local.set({
+        extensionAuthState: state,
+        extensionAuthStartedAt: Date.now(),
+    });
+
+    await chrome.tabs.create({
+        url: `${appOrigin}/extension-login?state=${encodeURIComponent(state)}`,
+    });
+}
+
+// Called when site-bridge.js relays the token the /extension-callback page
+// handed over. Accepts it only from the configured Lodestar origin and only
+// for the sign-in this worker started.
+async function acceptSiteToken(message, sender) {
+    const appOrigin = await getAppOrigin();
+    const senderOrigin = sender.origin ?? (sender.url ? new URL(sender.url).origin : null);
+
+    if (sender.id !== chrome.runtime.id || senderOrigin !== appOrigin) {
+        return { ok: false, error: "This page isn't the Lodestar app this extension uses." };
+    }
+
+    const { extensionAuthState, extensionAuthStartedAt } = await chrome.storage.local.get([
+        "extensionAuthState",
+        "extensionAuthStartedAt",
+    ]);
+
+    const fresh =
+        typeof extensionAuthStartedAt === "number" &&
+        Date.now() - extensionAuthStartedAt < AUTH_STATE_TTL_MS;
+
+    if (!extensionAuthState || !fresh || message.state !== extensionAuthState) {
+        return {
+            ok: false,
+            error: "This sign-in wasn't started from your extension. Open the extension and click Sign in.",
+        };
+    }
+
+    if (typeof message.token !== "string" || message.token.length < 32) {
+        return { ok: false, error: "Sign-in response was malformed." };
+    }
+
+    await chrome.storage.local.set({ extensionToken: message.token });
+    await chrome.storage.local.remove(["extensionAuthState", "extensionAuthStartedAt"]);
+
+    return { ok: true };
+}
+
+async function authorizedFetch(url, token, init = {}) {
+    const response = await fetch(url, {
+        ...init,
+        headers: {
+            ...(init.headers ?? {}),
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    if (response.status === 401) {
+        await clearExtensionAuth();
+        throw new Error("Your session expired. Please sign in again.");
+    }
+
+    return response;
+}
+
+async function runCanvasSync(canvasOrigin) {
+    syncCancelled = false;
+
+    const { extensionToken } = await chrome.storage.local.get("extensionToken");
+
+    if (!extensionToken) {
+        await clearExtensionAuth();
+        throw new Error("Extension is not authenticated. Please sign in again.");
+    }
 
     const appOrigin = await getAppOrigin();
 
-    for (let i = 0; i < 60; i++) {
+    await setSyncProgress({
+        status: "running",
+        totalCourses: 0,
+        completedCourses: 0,
+        currentCourseName: null,
+    });
 
-        try {
-            const response = await fetch(
-                `${appOrigin}/api/extension/auth/exchange`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        state,
-                    }),
-                }
-            );
+    const courses = await getCanvasData(
+        `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
+    );
 
-            const data = await response.json();
+    // Skip courses the user deleted in Lodestar (the server would drop them
+    // anyway). Fails open except on 401.
+    let excludedIds = new Set();
 
-            console.log(
-                "Auth check:",
-                data
-            );
-
-            if (data.success) {
-
-                await chrome.storage.local.set({
-                    extensionToken: data.token,
-                });
-
-                console.log(
-                    "Extension successfully authenticated!"
-                );
-
-                return true;
-            }
-
-        } catch (error) {
-            console.error(
-                "Auth check failed:",
-                error
-            );
-        }
-
-        await new Promise(
-            resolve => setTimeout(resolve, 2000)
+    try {
+        const excludedResponse = await authorizedFetch(
+            `${appOrigin}/api/canvas/excluded-courses?canvasOrigin=${encodeURIComponent(canvasOrigin)}`,
+            extensionToken
         );
+
+        if (excludedResponse.ok) {
+            const excludedData = await excludedResponse.json().catch(() => null);
+
+            if (Array.isArray(excludedData?.canvasIds)) {
+                excludedIds = new Set(excludedData.canvasIds.map(String));
+            }
+        }
+    } catch (error) {
+        if (error.message.startsWith("Your session expired")) throw error;
+        console.warn("Excluded-courses lookup failed; syncing everything.", error);
     }
 
-    console.log(
-        "Extension authentication timed out."
-    );
+    const coursesToSync = courses.filter((course) => !excludedIds.has(String(course.id)));
 
-    return false;
-}
+    if (coursesToSync.length === 0) {
+        return { status: "success", totalCourses: 0, completedCourses: 0, courseCount: 0, failedCourseNames: [] };
+    }
 
-async function signInWithGoogle() {
+    const courseData = [];
+    const failedCourses = [];
+    let completed = 0;
 
-    const redirectUri =
-        chrome.identity.getRedirectURL();
+    for (const course of coursesToSync) {
+        if (syncCancelled) {
+            return { status: "cancelled", totalCourses: coursesToSync.length, completedCourses: completed };
+        }
 
-    console.log(
-        "Extension redirect URI:",
-        redirectUri
-    );
-
-    const clientId =
-        "knlfelipiolfnoicdagnagoecdjdijil";
-
-    const authUrl =
-        "https://accounts.google.com/o/oauth2/v2/auth" +
-        `?client_id=${encodeURIComponent(clientId)}` +
-        `&response_type=token` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&scope=${encodeURIComponent("openid email profile")}` +
-        `&prompt=select_account`;
-
-    const responseUrl =
-        await chrome.identity.launchWebAuthFlow({
-            url: authUrl,
-            interactive: true,
+        await setSyncProgress({
+            status: "running",
+            totalCourses: coursesToSync.length,
+            completedCourses: completed,
+            currentCourseName: course.name ?? null,
         });
 
-    console.log(
-        "Google authentication complete!"
-    );
+        // One restricted endpoint or flaky page shouldn't block every other
+        // course; a failed course is reported and kept (not pruned) server-side.
+        try {
+            courseData.push(await fetchCourseData(canvasOrigin, course));
+        } catch (error) {
+            console.warn(`Could not read ${course.name ?? course.id} from Canvas:`, error);
+            failedCourses.push(course);
+        }
 
-    const url =
-        new URL(responseUrl);
-
-    const fragment =
-        new URLSearchParams(
-            url.hash.substring(1)
-        );
-
-    const accessToken =
-        fragment.get("access_token");
-
-    if (!accessToken) {
-        throw new Error(
-            "Google did not return an access token."
-        );
+        completed++;
     }
 
-    return accessToken;
+    if (syncCancelled) {
+        return { status: "cancelled", totalCourses: coursesToSync.length, completedCourses: completed };
+    }
+
+    if (courseData.length === 0) {
+        throw new Error("Couldn't read any of your courses from Canvas. Try again in a minute.");
+    }
+
+    await setSyncProgress({
+        status: "saving",
+        totalCourses: coursesToSync.length,
+        completedCourses: completed,
+        currentCourseName: null,
+    });
+
+    // A cancelled sync never reaches this POST: /api/canvas/sync treats the
+    // payload as a full snapshot and prunes courses missing from it.
+    const backendResponse = await authorizedFetch(`${appOrigin}/api/canvas/sync`, extensionToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            canvasOrigin,
+            courses: courseData,
+            failedCourseIds: failedCourses.map((course) => String(course.id)),
+        }),
+    });
+
+    if (!backendResponse.ok) {
+        const errorData = await backendResponse.json().catch(() => null);
+        throw new Error(errorData?.error || `Lodestar returned ${backendResponse.status}`);
+    }
+
+    return {
+        status: "success",
+        totalCourses: coursesToSync.length,
+        completedCourses: completed,
+        courseCount: courseData.length,
+        failedCourseNames: failedCourses.map((course) => course.name ?? `Course ${course.id}`),
+    };
 }
 
-chrome.runtime.onMessage.addListener(
-    (message, sender, sendResponse) => {
+async function restoreCourse(canvasOrigin, course) {
+    const { extensionToken } = await chrome.storage.local.get("extensionToken");
 
-        if (message.type === "GET_PLANNER_THEME") {
+    if (!extensionToken) {
+        await clearExtensionAuth();
+        throw new Error("Extension is not authenticated. Please sign in again.");
+    }
 
-            getPlannerTabTheme()
-                .then((theme) => {
-                    sendResponse({
-                        success: true,
-                        theme,
-                    });
-                })
-                .catch((error) => {
-                    console.error(
-                        "Could not read planner theme:",
-                        error
-                    );
+    const restoredCourse = await fetchCourseData(canvasOrigin, course);
+    const appOrigin = await getAppOrigin();
 
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
+    const backendResponse = await authorizedFetch(`${appOrigin}/api/canvas/restore-course`, extensionToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canvasOrigin, courses: [restoredCourse] }),
+    });
 
+    if (!backendResponse.ok) {
+        const errorData = await backendResponse.json().catch(() => null);
+        throw new Error(errorData?.error || `Lodestar returned ${backendResponse.status}`);
+    }
+}
+
+function reply(promise, sendResponse) {
+    promise
+        .then((result) => sendResponse({ success: true, ...(result ?? {}) }))
+        .catch((error) => {
+            console.error(error);
+            sendResponse({ success: false, error: error.message });
+        });
+
+    return true;
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    switch (message?.type) {
+        case "GET_PLANNER_THEME":
+            return reply(getPlannerTabTheme().then((theme) => ({ theme })), sendResponse);
+
+        case "START_EXTENSION_AUTH":
+            return reply(startExtensionAuth(), sendResponse);
+
+        case "SIGN_OUT":
+            return reply(signOut(), sendResponse);
+
+        case "SITE_EXTENSION_TOKEN":
+            acceptSiteToken(message, sender)
+                .then(sendResponse)
+                .catch((error) => sendResponse({ ok: false, error: error.message }));
             return true;
-        }
 
-        if (message.type === "START_EXTENSION_AUTH") {
+        case "SYNC_CANVAS": {
+            if (syncInProgress) {
+                sendResponse({ success: false, alreadyRunning: true, error: "A sync is already running." });
+                return false;
+            }
 
-            startExtensionAuth()
-                .then(() => {
-                    sendResponse({
-                        success: true,
-                    });
-                })
-                .catch((error) => {
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
-
-            return true;
-        }
-
-        if (message.type === "SIGN_IN_GOOGLE") {
-
-            signInWithGoogle()
-                .then(async (accessToken) => {
-
-                    await chrome.storage.local.set({
-                        googleAccessToken:
-                            accessToken,
-                    });
-
-                    sendResponse({
-                        success: true,
-                    });
-                })
-                .catch((error) => {
-
-                    console.error(
-                        "Google sign-in failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
-
-            return true;
-        }
-
-        if (message.type === "GET_COURSES") {
-
-            getCanvasData(
-                `${message.canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
-            )
-                .then((courses) => {
-
-                    sendResponse({
-                        success: true,
-                        courses,
-                    });
-                })
-                .catch((error) => {
-
-                    console.error(
-                        "Canvas request failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
-
-            return true;
-        }
-
-        if (message.type === "GET_ASSIGNMENTS") {
-
-            const courseId =
-                message.courseId;
-
-            getCanvasData(
-                `${message.canvasOrigin}/api/v1/courses/${courseId}/assignments?per_page=100`
-            )
-                .then((assignments) => {
-
-                    sendResponse({
-                        success: true,
-                        assignments,
-                    });
-                })
-                .catch((error) => {
-
-                    console.error(
-                        "Canvas assignment request failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
-
-            return true;
-        }
-
-        if (message.type === "GET_DISCUSSIONS") {
-
-            const courseId =
-                message.courseId;
-
-            getCanvasData(
-                `${message.canvasOrigin}/api/v1/courses/${courseId}/discussion_topics?per_page=100`
-            )
-                .then((discussions) => {
-
-                    sendResponse({
-                        success: true,
-                        discussions,
-                    });
-                })
-                .catch((error) => {
-
-                    console.error(
-                        "Canvas discussion request failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
-
-            return true;
-        }
-
-        if (message.type === "GET_ANNOUNCEMENTS") {
-
-            const courseId =
-                message.courseId;
-
-            getCanvasData(
-                `${message.canvasOrigin}/api/v1/announcements?context_codes[]=course_${courseId}&active_only=true&per_page=100`
-            )
-                .then((announcements) => {
-
-                    sendResponse({
-                        success: true,
-                        announcements,
-                    });
-                })
-                .catch((error) => {
-
-                    console.error(
-                        "Canvas announcement request failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                });
-
-            return true;
-        }
-
-        if (message.type === "SYNC_CANVAS") {
-
-            (async () => {
-
-                // Reset at the start of every sync, not only on cancel —
-                // otherwise a past cancellation would permanently poison
-                // every sync after it.
-                syncCancelled = false;
-
-                try {
-
-                    const canvasOrigin =
-                        message.canvasOrigin;
-
-                    console.log(
-                        "Starting Canvas sync..."
-                    );
-
-                    // Fetched up front (not just before the final POST, as
-                    // before) — needed now for the excluded-courses lookup
-                    // below, and failing fast on missing auth before doing
-                    // any Canvas API work is a real improvement on its own.
-                    const authResult =
-                        await chrome.storage.local.get(
-                            "extensionToken"
-                        );
-
-                    if (!authResult.extensionToken) {
-                        await clearExtensionAuth();
-
-                        throw new Error(
-                            "Extension is not authenticated. Please sign in again."
-                        );
-                    }
-
-                    const appOrigin = await getAppOrigin();
-
-                    const courses =
-                        await getCanvasData(
-                            `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
-                        );
-
-                    console.log(
-                        `Found ${courses.length} courses`
-                    );
-
-                    // Skip fetching (and syncing) a course the user already
-                    // deleted — upsertCanvasCourses would throw the data
-                    // away anyway, so there's no reason to spend a Canvas
-                    // API round trip (assignments/discussions/announcements)
-                    // on it every single sync. Purely a speed optimization:
-                    // any failure here falls open (syncs everything, same
-                    // as before this existed) except a 401, which means the
-                    // token is stale and the sync POST would fail anyway.
-                    let excludedIds = new Set();
-
-                    const excludedResponse =
-                        await fetch(
-                            `${appOrigin}/api/canvas/excluded-courses?canvasOrigin=${encodeURIComponent(canvasOrigin)}`,
-                            {
-                                headers: {
-                                    "Authorization":
-                                        `Bearer ${authResult.extensionToken}`,
-                                },
-                            }
-                        ).catch((error) => {
-                            console.warn(
-                                "Excluded-courses lookup failed — syncing everything.",
-                                error
-                            );
-
-                            return null;
-                        });
-
-                    if (excludedResponse && excludedResponse.status === 401) {
-                        await clearExtensionAuth();
-
-                        throw new Error(
-                            "Your session expired. Please sign in again."
-                        );
-                    } else if (excludedResponse && excludedResponse.ok) {
-                        const excludedData =
-                            await excludedResponse
-                                .json()
-                                .catch(() => null);
-
-                        if (Array.isArray(excludedData?.canvasIds)) {
-                            excludedIds = new Set(
-                                excludedData.canvasIds.map(String)
-                            );
-                        }
-                    } else if (excludedResponse) {
-                        console.warn(
-                            `Excluded-courses lookup returned ${excludedResponse.status} — syncing everything.`
-                        );
-                    }
-
-                    const coursesToSync =
-                        courses.filter(
-                            (course) => !excludedIds.has(String(course.id))
-                        );
-
-                    if (coursesToSync.length < courses.length) {
-                        console.log(
-                            `⏭Skipping ${courses.length - coursesToSync.length} deleted course(s)`
-                        );
-                    }
-
-                    if (coursesToSync.length === 0) {
-                        console.log(
-                            "Nothing to sync — every course is excluded."
-                        );
-
-                        await setSyncProgress({
-                            status: "success",
-                            totalCourses: 0,
-                            completedCourses: 0,
-                            currentCourseName: null,
-                            courseCount: 0,
-                            errorMessage: null,
-                        });
-
-                        try {
-                            sendResponse({
-                                success: true,
-                                courseCount: 0,
-                            });
-                        } catch {
-                            // Popup already gone — fine, storage has the
-                            // success state for next time it opens.
-                        }
-
-                        return;
-                    }
-
-                    await setSyncProgress({
-                        status: "running",
-                        totalCourses: coursesToSync.length,
-                        completedCourses: 0,
-                        currentCourseName: null,
-                        startedAt: Date.now(),
-                        courseCount: null,
-                        errorMessage: null,
-                    });
-
-                    const courseData = [];
-                    let wasCancelled = false;
-
-                    for (const course of coursesToSync) {
-
-                        if (syncCancelled) {
-                            wasCancelled = true;
-                            break;
-                        }
-
-                        console.log(
-                            `Syncing: ${course.name}`
-                        );
-
-                        courseData.push(
-                            await fetchCourseData(canvasOrigin, course)
-                        );
-
-                        await setSyncProgress({
-                            status: "running",
-                            totalCourses: coursesToSync.length,
-                            completedCourses: courseData.length,
-                            currentCourseName: course.name,
-                            startedAt: Date.now(),
-                            courseCount: null,
-                            errorMessage: null,
-                        });
-
-                        broadcastSyncProgress({
-                            completedCourses: courseData.length,
-                            totalCourses: coursesToSync.length,
-                            currentCourseName: course.name,
-                        });
-                    }
-
-                    if (wasCancelled) {
-
-                        console.log(
-                            "Canvas sync cancelled by user."
-                        );
-
-                        await setSyncProgress({
-                            status: "cancelled",
-                            totalCourses: coursesToSync.length,
-                            completedCourses: courseData.length,
-                            currentCourseName: null,
-                            courseCount: null,
-                            errorMessage: null,
-                        });
-
-                        try {
-                            sendResponse({
-                                success: false,
-                                cancelled: true,
-                            });
-                        } catch {
-                            // Popup/port already gone — fine, storage has
-                            // the cancelled state for next time it opens.
-                        }
-
-                        // Deliberately return here, before ever reaching
-                        // the backend POST below: /api/canvas/sync treats
-                        // its payload as a full snapshot and prunes any
-                        // course missing from it, so POSTing a partial
-                        // courseData array would delete every not-yet-
-                        // synced course. A cancelled sync must never reach
-                        // that call.
-                        return;
-                    }
-
-                    console.log(
-                        "Canvas sync complete!"
-                    );
-
-                    console.log(
-                        courseData
-                    );
-
-                    console.log(
-                        "Sending Canvas data to Student Planner..."
-                    );
-
-                    // authResult/appOrigin were already fetched at the top
-                    // of this handler (needed earlier for the
-                    // excluded-courses lookup) — reused here, not re-fetched.
-
-                    console.log(
-                        "Sending canvasOrigin:",
-                        canvasOrigin
-                    );
-
-                    console.log(
-                        "Sending course count:",
-                        courseData.length
-                    );
-
-                    const backendResponse =
-                        await fetch(
-                            `${appOrigin}/api/canvas/sync`,
-                            {
-                                method: "POST",
-                                headers: {
-                                    "Content-Type":
-                                        "application/json",
-                                    "Authorization":
-                                        `Bearer ${authResult.extensionToken}`,
-                                },
-                                body: JSON.stringify({
-                                    canvasOrigin,
-                                    courses:
-                                        courseData,
-                                }),
-                            }
-                        );
-
-                    if (!backendResponse.ok) {
-
-                        const errorData =
-                            await backendResponse
-                                .json()
-                                .catch(() => null);
-
-                        if (backendResponse.status === 401) {
-                            await clearExtensionAuth();
-
-                            throw new Error(
-                                "Your session expired. Please sign in again."
-                            );
-                        }
-
-                        throw new Error(
-                            errorData?.error ||
-                            `Lodestar returned ${backendResponse.status}`
-                        );
-                    }
-
-                    const backendResult =
-                        await backendResponse.json();
-
-                    console.log(
-                        "Student Planner received Canvas data!"
-                    );
-
-                    console.log(
-                        backendResult
-                    );
-
-                    await setSyncProgress({
-                        status: "success",
-                        totalCourses: coursesToSync.length,
-                        completedCourses: courseData.length,
-                        currentCourseName: null,
-                        courseCount: courseData.length,
-                        errorMessage: null,
-                    });
-
-                    try {
-                        sendResponse({
-                            success: true,
-                            courseCount:
-                                courseData.length,
-                        });
-                    } catch {
-                        // Popup already gone — fine, storage has the
-                        // success state for next time it opens.
-                    }
-
-                } catch (error) {
-
-                    console.error(
-                        "Canvas sync failed:",
-                        error
-                    );
-
-                    await setSyncProgress({
-                        status: "error",
-                        errorMessage: error.message,
-                    });
-
-                    try {
-                        sendResponse({
-                            success: false,
-                            error: error.message,
-                        });
-                    } catch {
-                        // Popup already gone — fine, storage has the
-                        // error state for next time it opens.
-                    }
-                }
-
-            })();
-
-            return true;
-        }
-
-        if (message.type === "CANCEL_SYNC") {
-
-            syncCancelled = true;
-
+            syncInProgress = true;
             sendResponse({ success: true });
 
-            return true;
-        }
-
-        if (message.type === "LIST_CANVAS_COURSES") {
-
-            const canvasOrigin = message.canvasOrigin;
-
-            // Includes concluded ("completed") courses, unlike GET_COURSES/
-            // SYNC_CANVAS above (both intentionally active-only) — this is
-            // what lets a course that's no longer active in Canvas still
-            // show up to be restored.
-            getCanvasData(
-                `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state[]=active&enrollment_state[]=completed&per_page=100`
-            )
-                .then((courses) => {
-
-                    sendResponse({
-                        success: true,
-                        courses,
-                    });
-                })
+            // The popup renders from canvasSyncProgress (storage), so the
+            // outcome is written there rather than sent to one popup.
+            runCanvasSync(message.canvasOrigin)
+                .then((result) => setSyncProgress({ currentCourseName: null, errorMessage: null, ...result }))
                 .catch((error) => {
-
-                    console.error(
-                        "Canvas course list request failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
+                    console.error("Canvas sync failed:", error);
+                    return setSyncProgress({ status: "error", errorMessage: error.message });
+                })
+                .finally(() => {
+                    syncInProgress = false;
                 });
 
-            return true;
+            return false;
         }
 
-        if (message.type === "RESTORE_COURSE") {
+        case "CANCEL_SYNC":
+            syncCancelled = true;
+            sendResponse({ success: true });
+            return false;
 
-            (async () => {
+        case "LIST_CANVAS_COURSES":
+            // Active courses only: SYNC_CANVAS is active-only too, so a
+            // restored concluded course would be pruned again on the next sync.
+            return reply(
+                getCanvasData(
+                    `${message.canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
+                ).then((courses) => ({ courses: courses.map(pickCourse) })),
+                sendResponse
+            );
 
-                try {
+        case "RESTORE_COURSE":
+            return reply(
+                restoreCourse(message.canvasOrigin, message.course).then(() => ({ courseName: message.course?.name })),
+                sendResponse
+            );
 
-                    const canvasOrigin = message.canvasOrigin;
-                    const course = message.course;
-
-                    const authResult =
-                        await chrome.storage.local.get(
-                            "extensionToken"
-                        );
-
-                    if (!authResult.extensionToken) {
-                        await clearExtensionAuth();
-
-                        throw new Error(
-                            "Extension is not authenticated. Please sign in again."
-                        );
-                    }
-
-                    console.log(
-                        `Restoring course: ${course.name}`
-                    );
-
-                    const restoredCourse =
-                        await fetchCourseData(canvasOrigin, course);
-
-                    const appOrigin = await getAppOrigin();
-
-                    const backendResponse =
-                        await fetch(
-                            `${appOrigin}/api/canvas/restore-course`,
-                            {
-                                method: "POST",
-                                headers: {
-                                    "Content-Type":
-                                        "application/json",
-                                    "Authorization":
-                                        `Bearer ${authResult.extensionToken}`,
-                                },
-                                body: JSON.stringify({
-                                    canvasOrigin,
-                                    courses: [restoredCourse],
-                                }),
-                            }
-                        );
-
-                    if (!backendResponse.ok) {
-
-                        const errorData =
-                            await backendResponse
-                                .json()
-                                .catch(() => null);
-
-                        if (backendResponse.status === 401) {
-                            await clearExtensionAuth();
-
-                            throw new Error(
-                                "Your session expired. Please sign in again."
-                            );
-                        }
-
-                        throw new Error(
-                            errorData?.error ||
-                            `Lodestar returned ${backendResponse.status}`
-                        );
-                    }
-
-                    console.log(
-                        `Restored course: ${course.name}`
-                    );
-
-                    sendResponse({
-                        success: true,
-                        courseName: course.name,
-                    });
-
-                } catch (error) {
-
-                    console.error(
-                        "Course restore failed:",
-                        error
-                    );
-
-                    sendResponse({
-                        success: false,
-                        error: error.message,
-                    });
-                }
-
-            })();
-
-            return true;
-        }
+        default:
+            return false;
     }
-);
+});

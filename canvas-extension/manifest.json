@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lodestar Canvas",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Connects Canvas to Lodestar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -11,7 +11,6 @@
   },
   "permissions": [
     "storage",
-    "identity",
     "scripting"
   ],
   "host_permissions": [
@@ -47,7 +46,7 @@
         "https://lodestarplanner.vercel.app/*"
       ],
       "js": [
-        "theme-sync.js"
+        "site-bridge.js"
       ]
     }
   ]

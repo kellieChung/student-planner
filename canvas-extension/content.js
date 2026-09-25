@@ -1,5 +1,3 @@
-console.log("Lodestar Canvas extension loaded!");
-
 // Lets the popup ask an open tab "is this Canvas?" so it can offer to connect
 // without the user typing a URL. Answers with a boolean and the page's origin
 // only; nothing else about the page leaves it.

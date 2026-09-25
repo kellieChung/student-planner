@@ -1,8 +1,15 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { randomBytes } from "crypto";
 import { redirect } from "next/navigation";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
+import ConnectExtension from "@/app/extension-callback/ConnectExtension";
+
+export const metadata = {
+    title: "Connect the extension",
+};
+
+// The extension generates 32 random bytes, hex-encoded.
+const STATE_PATTERN = /^[0-9a-f]{64}$/;
 
 export default async function ExtensionCallbackPage({
     searchParams,
@@ -11,17 +18,16 @@ export default async function ExtensionCallbackPage({
         state?: string;
     }>;
 }) {
-    const params = await searchParams;
-    const state = params.state;
+    const { state } = await searchParams;
 
-    if (!state) {
-        return <ExtensionCallbackMessage text="❌ Missing extension state." />;
+    if (!state || !STATE_PATTERN.test(state)) {
+        return <ExtensionCallbackMessage text="This sign-in link is invalid. Open the Lodestar extension and click Sign in again." />;
     }
 
     const session = await auth();
 
     if (!session?.user?.email) {
-        return <ExtensionCallbackMessage text="❌ You are not signed in." />;
+        redirect(`/extension-login?state=${state}`);
     }
 
     const user = await prisma.user.findUnique({
@@ -31,67 +37,18 @@ export default async function ExtensionCallbackPage({
     });
 
     if (!user) {
-        return (
-            <ExtensionCallbackMessage text="❌ Could not find your Lodestar account." />
-        );
+        return <ExtensionCallbackMessage text="Could not find your Lodestar account." />;
     }
 
     if (!hasAcceptedCurrentTerms(user)) {
-        redirect(
-            `/accept-terms?next=${encodeURIComponent(
-                `/extension-callback?state=${encodeURIComponent(state)}`
-            )}`
-        );
-    }
-
-    // Check whether this authentication attempt
-    // has already created an ExtensionSession.
-    const existingSession =
-        await prisma.extensionSession.findUnique({
-            where: {
-                state,
-            },
-        });
-
-    let token: string;
-
-    if (existingSession) {
-        // The callback was already processed.
-        token = existingSession.token;
-
-        console.log(
-            "🔐 Extension session already exists for this state."
-        );
-    } else {
-        // First time processing this authentication attempt.
-        token = randomBytes(32).toString("hex");
-
-        await prisma.extensionSession.create({
-            data: {
-                userId: user.id,
-                state,
-                token,
-                expiresAt: new Date(
-                    Date.now() + 30 * 24 * 60 * 60 * 1000
-                ),
-            },
-        });
-
-        console.log(
-            "🎉 Extension session created successfully."
-        );
+        redirect(`/accept-terms?next=${encodeURIComponent(`/extension-callback?state=${state}`)}`);
     }
 
     return (
-        <main className="min-h-screen flex items-center justify-center p-4">
+        <main className="auth-page min-h-screen flex items-center justify-center p-4">
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
                 <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
-
-                <p className="mt-4 text-sm font-semibold text-[var(--foreground)]">✅ You&apos;re signed in!</p>
-
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                    You can close this tab and return to the extension.
-                </p>
+                <ConnectExtension state={state} email={user.email ?? session.user.email} />
             </div>
         </main>
     );
@@ -99,7 +56,7 @@ export default async function ExtensionCallbackPage({
 
 function ExtensionCallbackMessage({ text }: { text: string }) {
     return (
-        <main className="min-h-screen flex items-center justify-center p-4">
+        <main className="auth-page min-h-screen flex items-center justify-center p-4">
             <div className="theme-surface w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-8 text-center">
                 <h1 className="text-2xl font-bold text-[var(--heading)]">Lodestar</h1>
                 <p className="mt-4 text-sm font-semibold text-[var(--status-overdue-text)]">{text}</p>

@@ -3,7 +3,7 @@
 
 /* ── Night (data-theme="dark") ── Lodestar navy + gold.
    The "dark"/"light" keys are kept so ThemeScript and the Canvas
-   extension's theme-sync.js keep working unchanged. */
+   extension's site-bridge.js keep working unchanged. */
 :root,
 html[data-theme="dark"] {
   --background: #f7f3ec;

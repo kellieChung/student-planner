@@ -1,5 +1,8 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
+import { hashExtensionToken, readBearerToken } from "@/lib/extensionAuth";
+import { hasAcceptedCurrentTerms } from "@/lib/legal";
 
 // Shared by app/api/canvas/sync/route.ts (full snapshot, prunes anything
 // missing) and app/api/canvas/restore-course/route.ts (single-course
@@ -23,27 +26,72 @@ export async function getCanvasSyncUserId(
         });
 
         if (user) {
-            return user.id;
+            return hasAcceptedCurrentTerms(user) ? user.id : null;
         }
     }
 
-    const authorization = request.headers.get("authorization");
+    const token = readBearerToken(request);
 
-    if (!authorization || !authorization.startsWith("Bearer ")) {
+    if (!token) {
         return null;
     }
 
-    const token = authorization.substring("Bearer ".length);
-
     const extensionSession = await prisma.extensionSession.findUnique({
-        where: { token },
+        where: { token: hashExtensionToken(token) },
+        include: { user: { select: { termsAcceptedAt: true, termsVersion: true } } },
     });
 
     if (!extensionSession || extensionSession.expiresAt < new Date()) {
         return null;
     }
 
+    // A terms bump sends web users back through /accept-terms; an extension
+    // token issued before it stops working until they accept on the site.
+    if (!hasAcceptedCurrentTerms(extensionSession.user)) {
+        return null;
+    }
+
     return extensionSession.userId;
+}
+
+// Canvas is always served over https; anything else (including the "custom"
+// sentinel used for personal courses) must never be written or pruned by a
+// sync.
+export function isValidCanvasOrigin(value: unknown): value is string {
+    if (typeof value !== "string" || value === CUSTOM_COURSE_ORIGIN) {
+        return false;
+    }
+
+    try {
+        const url = new URL(value);
+        return url.protocol === "https:" && url.origin === value;
+    } catch {
+        return false;
+    }
+}
+
+const MAX_NAME_LENGTH = 300;
+const MAX_HTML_LENGTH = 50_000;
+const MAX_URL_LENGTH = 2_000;
+
+function text(value: unknown, fallback: string): string {
+    return typeof value === "string" && value.trim() ? value.slice(0, MAX_NAME_LENGTH) : fallback;
+}
+
+function html(value: unknown): string | null {
+    return typeof value === "string" ? value.slice(0, MAX_HTML_LENGTH) : null;
+}
+
+function httpUrl(value: unknown): string | null {
+    return typeof value === "string" && /^https:\/\//.test(value) ? value.slice(0, MAX_URL_LENGTH) : null;
+}
+
+// An unparseable timestamp becomes null instead of making Prisma throw and
+// failing the whole sync.
+function instant(value: unknown): Date | null {
+    if (typeof value !== "string" || !value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function upsertCanvasCourses(
@@ -93,13 +141,13 @@ export async function upsertCanvasCourses(
                 },
             },
             update: {
-                name: (canvasCourse.name as string | undefined) ?? "Unnamed Course",
+                name: text(canvasCourse.name, "Unnamed Course"),
             },
             create: {
                 userId,
                 canvasOrigin,
                 canvasId: String(canvasCourse.id),
-                name: (canvasCourse.name as string | undefined) ?? "Unnamed Course",
+                name: text(canvasCourse.name, "Unnamed Course"),
             },
         });
 
@@ -122,23 +170,19 @@ export async function upsertCanvasCourses(
                     },
                 },
                 update: {
-                    name: (assignment.name as string | undefined) ?? "Unnamed Assignment",
-                    description: (assignment.description as string | undefined) ?? null,
-                    dueAt: assignment.due_at
-                        ? new Date(assignment.due_at as string)
-                        : null,
-                    htmlUrl: (assignment.html_url as string | undefined) ?? null,
+                    name: text(assignment.name, "Unnamed Assignment"),
+                    description: html(assignment.description),
+                    dueAt: instant(assignment.due_at),
+                    htmlUrl: httpUrl(assignment.html_url),
                 },
                 create: {
                     userId,
                     courseId: savedCourse.id,
                     canvasId: String(assignment.id),
-                    name: (assignment.name as string | undefined) ?? "Unnamed Assignment",
-                    description: (assignment.description as string | undefined) ?? null,
-                    dueAt: assignment.due_at
-                        ? new Date(assignment.due_at as string)
-                        : null,
-                    htmlUrl: (assignment.html_url as string | undefined) ?? null,
+                    name: text(assignment.name, "Unnamed Assignment"),
+                    description: html(assignment.description),
+                    dueAt: instant(assignment.due_at),
+                    htmlUrl: httpUrl(assignment.html_url),
                 },
             });
 
@@ -162,29 +206,21 @@ export async function upsertCanvasCourses(
                     },
                 },
                 update: {
-                    title: (discussion.title as string | undefined) ?? "Untitled Discussion",
-                    message: (discussion.message as string | undefined) ?? null,
-                    htmlUrl: (discussion.html_url as string | undefined) ?? null,
-                    postedAt: discussion.posted_at
-                        ? new Date(discussion.posted_at as string)
-                        : null,
-                    dueAt: discussion.due_at
-                        ? new Date(discussion.due_at as string)
-                        : null,
+                    title: text(discussion.title, "Untitled Discussion"),
+                    message: html(discussion.message),
+                    htmlUrl: httpUrl(discussion.html_url),
+                    postedAt: instant(discussion.posted_at),
+                    dueAt: instant(discussion.due_at),
                 },
                 create: {
                     userId,
                     courseId: savedCourse.id,
                     canvasId: String(discussion.id),
-                    title: (discussion.title as string | undefined) ?? "Untitled Discussion",
-                    message: (discussion.message as string | undefined) ?? null,
-                    htmlUrl: (discussion.html_url as string | undefined) ?? null,
-                    postedAt: discussion.posted_at
-                        ? new Date(discussion.posted_at as string)
-                        : null,
-                    dueAt: discussion.due_at
-                        ? new Date(discussion.due_at as string)
-                        : null,
+                    title: text(discussion.title, "Untitled Discussion"),
+                    message: html(discussion.message),
+                    htmlUrl: httpUrl(discussion.html_url),
+                    postedAt: instant(discussion.posted_at),
+                    dueAt: instant(discussion.due_at),
                 },
             });
 
@@ -208,23 +244,19 @@ export async function upsertCanvasCourses(
                     },
                 },
                 update: {
-                    title: (announcement.title as string | undefined) ?? "Untitled Announcement",
-                    message: (announcement.message as string | undefined) ?? null,
-                    htmlUrl: (announcement.html_url as string | undefined) ?? null,
-                    postedAt: announcement.posted_at
-                        ? new Date(announcement.posted_at as string)
-                        : null,
+                    title: text(announcement.title, "Untitled Announcement"),
+                    message: html(announcement.message),
+                    htmlUrl: httpUrl(announcement.html_url),
+                    postedAt: instant(announcement.posted_at),
                 },
                 create: {
                     userId,
                     courseId: savedCourse.id,
                     canvasId: String(announcement.id),
-                    title: (announcement.title as string | undefined) ?? "Untitled Announcement",
-                    message: (announcement.message as string | undefined) ?? null,
-                    htmlUrl: (announcement.html_url as string | undefined) ?? null,
-                    postedAt: announcement.posted_at
-                        ? new Date(announcement.posted_at as string)
-                        : null,
+                    title: text(announcement.title, "Untitled Announcement"),
+                    message: html(announcement.message),
+                    htmlUrl: httpUrl(announcement.html_url),
+                    postedAt: instant(announcement.posted_at),
                 },
             });
 

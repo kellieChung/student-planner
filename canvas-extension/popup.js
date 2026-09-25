@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const authChip = $("authChip");
 const canvasChip = $("canvasChip");
 const loginButton = $("loginButton");
+const signOutButton = $("signOutButton");
 const connectPanel = $("connectPanel");
 const detectedRow = $("detectedRow");
 const detectedHost = $("detectedHost");
@@ -114,6 +115,7 @@ function render() {
     }
 
     loginButton.hidden = state.signedIn;
+    signOutButton.hidden = !state.signedIn;
 
     connectPanel.hidden = !showConnectForm;
     syncPanel.hidden = showConnectForm;
@@ -137,9 +139,14 @@ function render() {
         syncProgressFill.style.width = `${pct}%`;
         syncProgressStar.style.left = `${pct}%`;
         syncProgressBar.setAttribute("aria-valuenow", String(pct));
-        syncProgressText.textContent = currentCourseName
-            ? `Syncing ${completedCourses}/${totalCourses}: ${currentCourseName}`
-            : `Syncing ${completedCourses}/${totalCourses} courses...`;
+        syncProgressText.textContent =
+            state.syncing.status === "saving"
+                ? "Saving to Lodestar..."
+                : currentCourseName
+                    ? `Syncing ${completedCourses + 1}/${totalCourses}: ${currentCourseName}`
+                    : totalCourses > 0
+                        ? `Syncing ${completedCourses}/${totalCourses} courses...`
+                        : "Looking up your courses...";
     }
 
     const synced = !running && state.lastSyncCourseCount !== null;
@@ -176,8 +183,8 @@ function render() {
 
 // Prefer asking the background worker to read the theme live from an open
 // Lodestar tab (works even if the extension was just installed or reloaded,
-// since it doesn't depend on theme-sync.js having already run in that tab).
-// Falls back to the last theme theme-sync.js relayed into storage, then to
+// since it doesn't depend on site-bridge.js having already run in that tab).
+// Falls back to the last theme site-bridge.js relayed into storage, then to
 // the OS color-scheme preference, if no tab is open.
 async function applyPlannerTheme() {
     const liveTheme = await new Promise((resolve) => {
@@ -264,7 +271,20 @@ loginButton.addEventListener("click", () => {
 
         // Left disabled: a sign-in tab is now open, and the storage listener
         // above updates the popup automatically once auth completes.
-        showMessage("Finish signing in in the browser tab that just opened.");
+        showMessage("Finish signing in in the new tab, then reopen this popup.");
+    });
+});
+
+signOutButton.addEventListener("click", () => {
+    signOutButton.disabled = true;
+
+    chrome.runtime.sendMessage({ type: "SIGN_OUT" }, () => {
+        if (chrome.runtime.lastError) {
+            console.error("Runtime error signing out:", chrome.runtime.lastError);
+        }
+
+        signOutButton.disabled = false;
+        showMessage("Signed out of Lodestar.");
     });
 });
 
@@ -421,32 +441,43 @@ changeCanvasButton.addEventListener("click", async () => {
 // stale record would leave the popup stuck on "syncing" forever.
 const STALE_SYNC_MS = 90_000;
 
-// A sync begun in one popup instance keeps running in the background
-// service worker even after that popup closes — this reads that record back
-// on open so "resume showing progress" and live updates share one path.
-async function restoreSyncProgress() {
-    const result = await chrome.storage.local.get("canvasSyncProgress");
-    const progress = result.canvasSyncProgress;
-
+// The background worker writes every sync stage to canvasSyncProgress; the
+// popup renders from that record both on open and live, so a popup reopened
+// mid-sync still sees the outcome.
+function applySyncProgress(progress, { onOpen = false } = {}) {
     if (!progress) return;
 
-    if (progress.status === "running" && Date.now() - progress.updatedAt > STALE_SYNC_MS) {
+    const active = progress.status === "running" || progress.status === "saving";
+
+    if (active && Date.now() - progress.updatedAt > STALE_SYNC_MS) {
         state.syncing = null;
         showMessage("The last sync was interrupted. Try again.", "error");
         return;
     }
 
-    if (progress.status === "running") {
+    if (active) {
         state.syncing = progress;
         render();
         return;
     }
 
+    const wasSyncing = state.syncing !== null;
     state.syncing = null;
 
     if (progress.status === "success") {
         state.lastSyncCourseCount = progress.courseCount;
-        render();
+        const failed = progress.failedCourseNames ?? [];
+
+        if (failed.length > 0) {
+            showMessage(
+                describeError(`Synced ${progress.courseCount} of ${progress.totalCourses} courses. Couldn't read`, failed.join(", ")),
+                "error"
+            );
+        } else if (wasSyncing && !onOpen) {
+            showMessage(null);
+        } else {
+            render();
+        }
     } else if (progress.status === "cancelled") {
         showMessage("Sync cancelled. No changes were saved.");
     } else if (progress.status === "error") {
@@ -456,19 +487,18 @@ async function restoreSyncProgress() {
     }
 }
 
-chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "SYNC_PROGRESS") {
-        state.syncing = {
-            status: "running",
-            completedCourses: message.completedCourses,
-            totalCourses: message.totalCourses,
-            currentCourseName: message.currentCourseName,
-        };
-        render();
+async function restoreSyncProgress() {
+    const result = await chrome.storage.local.get("canvasSyncProgress");
+    applySyncProgress(result.canvasSyncProgress, { onOpen: true });
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.canvasSyncProgress) {
+        applySyncProgress(changes.canvasSyncProgress.newValue);
     }
 });
 
-async function syncCanvas() {
+function syncCanvas() {
     if (!state.signedIn) {
         showMessage("Sign in to Lodestar first.", "error");
         return;
@@ -487,28 +517,15 @@ async function syncCanvas() {
     chrome.runtime.sendMessage(
         { type: "SYNC_CANVAS", canvasOrigin: state.canvasOrigin },
         (response) => {
-            // Only the popup that started the sync runs this callback; a
-            // reopened popup picks the same outcome up from
-            // restoreSyncProgress instead.
-            state.syncing = null;
-
-            if (!response) {
+            if (chrome.runtime.lastError || !response) {
+                state.syncing = null;
                 showMessage("No response from the extension.", "error");
                 return;
             }
 
-            if (response.cancelled) {
-                showMessage("Sync cancelled. No changes were saved.");
-                return;
+            if (response.alreadyRunning) {
+                restoreSyncProgress();
             }
-
-            if (!response.success) {
-                showMessage(describeError("Sync failed", response.error), "error");
-                return;
-            }
-
-            state.lastSyncCourseCount = response.courseCount;
-            showMessage(null);
         }
     );
 }

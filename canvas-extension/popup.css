@@ -1,6 +1,6 @@
 /* Mirrors the app's Night / Day palettes (app/globals.css) so the popup reads
    as the same product. popup.js sets documentElement's data-theme from the
-   theme the web app last used (see theme-sync.js); Night is the default. */
+   theme the web app last used (see site-bridge.js); Night is the default. */
 @font-face {
     font-family: "Manrope";
     font-style: normal;
