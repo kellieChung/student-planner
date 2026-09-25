@@ -63,9 +63,8 @@ export default function Onboarding({ onFinish }: Props) {
                 title: "Your week, all in one place.",
                 body: (
                     <p>
-                        Every assignment, discussion, and task lands here on the day it&apos;s due. Drag a card to a
-                        different day to plan when you&apos;ll actually do it, and switch between Weekly and Monthly up
-                        top.
+                        Every assignment and task lands here on the day it&apos;s due. Open a card to give it a start
+                        date and it stretches back to when you&apos;ll begin; switch between Weekly and Monthly up top.
                     </p>
                 ),
             },

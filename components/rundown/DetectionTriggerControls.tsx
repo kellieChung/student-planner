@@ -29,6 +29,9 @@ const PAUSE_AVAILABLE = false;
 type DetectionTriggerControlsProps = {
     onNewCandidates: (tasks: ProposedTask[]) => void;
     onRunFinished?: () => void;
+    // Lets the Rundown window ask before closing mid-check (closing aborts
+    // the stream).
+    onRunningChange?: (running: boolean) => void;
 };
 
 type RangePreset = "thisWeek" | "thisAndLastWeek" | "last30Days" | "custom";
@@ -144,6 +147,7 @@ function resolvePresetRange(
 export default function DetectionTriggerControls({
     onNewCandidates,
     onRunFinished,
+    onRunningChange,
 }: DetectionTriggerControlsProps) {
     const [loading, setLoading] = useState(false);
     const [started, setStarted] = useState(false);
@@ -174,6 +178,10 @@ export default function DetectionTriggerControls({
     const { say } = useMascot();
 
     useEffect(() => () => abortRef.current?.abort(), []);
+
+    useEffect(() => {
+        onRunningChange?.(loading);
+    }, [loading, onRunningChange]);
 
     function currentRange(): { from: string; to: string } | null {
         if (preset === "custom") {

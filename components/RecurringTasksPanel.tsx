@@ -248,7 +248,7 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
                                                     type="button"
                                                     disabled={busyId === task.id}
                                                     onClick={() => deleteSeries(task)}
-                                                    className="rounded bg-red-600 px-2 py-1 text-xs font-semibold hover:bg-red-500"
+                                                    className="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700"
                                                 >
                                                     Confirm delete
                                                 </button>

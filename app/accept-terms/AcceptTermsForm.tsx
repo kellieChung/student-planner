@@ -45,7 +45,7 @@ export default function AcceptTermsForm({ next }: Props) {
                 <form action={declineAndDeleteAccount} className="mt-3">
                     <button
                         type="submit"
-                        className="w-full rounded-lg border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/10"
+                        className="w-full rounded-lg border border-red-500/40 px-4 py-2 text-sm font-semibold text-red-400 transition-colors hover:bg-[var(--status-overdue-bg)]"
                     >
                         Delete my account and data
                     </button>

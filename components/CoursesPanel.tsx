@@ -466,7 +466,7 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                                             type="button"
                                             disabled={busyCourseId === course.id}
                                             onClick={() => deleteCourse(course)}
-                                            className="rounded bg-red-600 px-2 py-1 text-xs font-semibold hover:bg-red-500"
+                                            className="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700"
                                         >
                                             Confirm delete
                                         </button>

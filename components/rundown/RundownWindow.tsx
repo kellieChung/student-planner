@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Window from "@/components/os/Window";
 import { useWindowManager } from "@/components/os/WindowManagerContext";
@@ -12,6 +12,7 @@ import { AddedFromCanvasItem } from "@/types/rundown";
 import AddedFromCanvasSection from "@/components/rundown/AddedFromCanvasSection";
 import AiFoundSection from "@/components/rundown/AiFoundSection";
 import DetectionTriggerControls from "@/components/rundown/DetectionTriggerControls";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 // AutoTaskCreation.md's "rundown" screen, shown on app open whenever there's
 // anything new since the last visit. A normal floating OS window (draggable,
@@ -46,8 +47,10 @@ export default function RundownWindow({
     onRunFinished,
     onClose,
 }: RundownWindowProps) {
-    const { openWindow } = useWindowManager();
+    const { openWindow, closeWindow } = useWindowManager();
     const floatingLayer = useFloatingLayer();
+    const [checkRunning, setCheckRunning] = useState(false);
+    const [confirmClose, setConfirmClose] = useState(false);
 
     useEffect(() => {
         openWindow("rundown");
@@ -58,7 +61,30 @@ export default function RundownWindow({
     if (!floatingLayer) return null;
 
     return createPortal(
-        <Window app="rundown" title="Rundown" icon={<ListIcon size={14} />} onBeforeClose={onClose}>
+        <Window
+            app="rundown"
+            title="Rundown"
+            icon={<ListIcon size={14} />}
+            onBeforeClose={onClose}
+            interceptClose={() => {
+                if (!checkRunning) return false;
+                setConfirmClose(true);
+                return true;
+            }}
+        >
+            <ConfirmDialog
+                open={confirmClose}
+                onOpenChange={setConfirmClose}
+                title="Stop the announcement check?"
+                description="Closing the Rundown stops the check that's running. Suggestions already found are kept, but the rest of this check won't run and it still counts as used."
+                confirmLabel="Stop and close"
+                cancelLabel="Keep checking"
+                onConfirm={() => {
+                    setConfirmClose(false);
+                    onClose();
+                    closeWindow("rundown");
+                }}
+            />
             <div className="theme-surface flex h-full flex-col gap-6 overflow-y-auto px-5 py-4" style={{ boxShadow: "none" }}>
                 <h2 className="text-xl font-bold">What&apos;s new</h2>
 
@@ -83,6 +109,7 @@ export default function RundownWindow({
                     <DetectionTriggerControls
                         onNewCandidates={onNewCandidates}
                         onRunFinished={onRunFinished}
+                        onRunningChange={setCheckRunning}
                     />
                 </div>
             </div>

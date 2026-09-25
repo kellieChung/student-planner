@@ -14,6 +14,9 @@ type Props = {
     // in the background while the window is gone — unlike Music, where
     // unmounting the player already stops the audio for free).
     onBeforeClose?: () => void;
+    // Return true to keep the window open (e.g. to ask for confirmation
+    // first; the caller then closes it itself).
+    interceptClose?: () => boolean;
 };
 
 // Generic draggable, resizable OS window chrome: a title bar (drag handle +
@@ -21,7 +24,7 @@ type Props = {
 // content. Dragging/resizing/position/size/z-order all live in
 // WindowManagerContext, shared with the taskbar and the World's themed
 // panels.
-export default function Window({ app, title, icon, children, onBeforeClose }: Props) {
+export default function Window({ app, title, icon, children, onBeforeClose, interceptClose }: Props) {
     const { windows, moveWindow, resizeWindow, minimizeWindow, closeWindow, focusWindow } = useWindowManager();
     const meta = windows[app];
 
@@ -159,11 +162,12 @@ export default function Window({ app, title, icon, children, onBeforeClose }: Pr
                             type="button"
                             onClick={(event) => {
                                 event.stopPropagation();
+                                if (interceptClose?.()) return;
                                 onBeforeClose?.();
                                 closeWindow(app);
                             }}
                             aria-label={`Close ${title}`}
-                            className="flex h-5 w-5 items-center justify-center rounded text-xs font-bold transition-colors hover:bg-red-500/40"
+                            className="flex h-5 w-5 items-center justify-center rounded text-xs font-bold transition-colors hover:bg-[var(--status-overdue-bg)]"
                             style={{ color: "var(--muted)" }}
                         >
                             ✕

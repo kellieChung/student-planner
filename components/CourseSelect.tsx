@@ -20,10 +20,10 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const knownNames = new Set(courses.map((course) => course.name));
-    const options = value && !knownNames.has(value)
-        ? [{ id: value, name: value, hidden: false, isCustom: false }, ...courses]
-        : courses;
+    // Two courses can share a display name; one option per name keeps the
+    // select's values (and React keys) unique.
+    const uniqueNames = [...new Set(courses.map((course) => course.name))];
+    const optionNames = value && !uniqueNames.includes(value) ? [value, ...uniqueNames] : uniqueNames;
 
     const handleSelect = (selected: string) => {
         if (selected === ADD_NEW_VALUE) {
@@ -37,7 +37,7 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
     };
 
     const handleCreate = async () => {
-        if (!newName.trim()) return;
+        if (!newName.trim() || creating) return;
 
         setCreating(true);
         setError(null);
@@ -75,8 +75,20 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
                         autoFocus
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
+                        onKeyDown={(e) => {
+                            // Inside the task form: Enter would submit the task
+                            // (with the old course) instead of creating this one.
+                            if (e.key === "Enter") {
+                                e.preventDefault();
+                                void handleCreate();
+                            } else if (e.key === "Escape") {
+                                e.preventDefault();
+                                setIsAdding(false);
+                            }
+                        }}
+                        aria-label="New course name"
                         placeholder="e.g. Personal"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500"
                     />
                     <button
                         type="button"
@@ -111,7 +123,7 @@ export default function CourseSelect({courses, value, onChange, onCourseCreated}
                 onChange={handleSelect}
                 placeholder="Select a course..."
                 options={[
-                    ...options.map((course) => ({ value: course.name, label: course.name })),
+                    ...optionNames.map((name) => ({ value: name, label: name })),
                     { value: ADD_NEW_VALUE, label: "+ Add new course..." },
                 ]}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500"

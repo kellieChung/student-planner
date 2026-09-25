@@ -40,7 +40,7 @@ export default function AddedFromCanvasSection({ items, onRemove }: AddedFromCan
                         <button
                             type="button"
                             onClick={() => onRemove(item)}
-                            className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] transition hover:bg-red-500/10 hover:text-red-400"
+                            className="shrink-0 rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--status-overdue-bg)] hover:text-red-400"
                         >
                             Remove
                         </button>
