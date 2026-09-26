@@ -400,6 +400,19 @@ html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
   animation: task-status-pop 400ms ease-out;
 }
 
+/* Per-day "+" buttons. A dedicated class rather than slate/indigo utilities,
+   which the remap above flattens to --muted/--border — too faint on dark. */
+.planner-shell .day-add-button {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.planner-shell .day-add-button:hover {
+  color: var(--accent-hover);
+  border-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
 /* Laptop lid close/open transition between the World and OS views
    (components/world/LaptopFrame.tsx) — the frame rotates shut around its
    bottom edge, the view swaps while visually closed, then it rotates back

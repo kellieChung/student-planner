@@ -2259,7 +2259,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     <button
                                         type="button"
                                         onClick={() => openAddTaskForDate(day.dateKey)}
-                                        className="flex h-5 w-5 items-center justify-center rounded-full border border-slate-700 text-xs leading-none text-slate-400 transition-colors hover:border-indigo-500 hover:bg-indigo-600/20 hover:text-white"
+                                        className="day-add-button flex h-5 w-5 items-center justify-center rounded-full border text-xs leading-none transition-colors"
                                         aria-label={`Add task due ${day.dateKey}`}
                                     >
                                         +
@@ -2347,7 +2347,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                             <button
                                                 type="button"
                                                 onClick={() => openAddTaskForDate(dateKey)}
-                                                className="rounded px-1 text-xs leading-none text-slate-400 opacity-0 transition-opacity hover:text-white group-hover:opacity-100 focus:opacity-100"
+                                                className="day-add-button rounded px-1 text-xs leading-none opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                                                 aria-label={`Add task due ${dateKey}`}
                                             >
                                                 +
