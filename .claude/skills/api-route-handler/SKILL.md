@@ -5,12 +5,9 @@ metadata:
   type: project
 ---
 
-# Writing app/api/**/route.ts handlers in this repo
+# Writing `app/api/**/route.ts` handlers
 
-Every existing route handler follows the same shape. New/edited handlers
-should match it rather than inventing a new error-handling or auth style.
-
-## Shape
+Match the existing shape; don't invent a new auth or error style.
 
 ```ts
 import { NextResponse } from "next/server";
@@ -22,61 +19,28 @@ export async function POST(request: Request) {
         const session = await auth();
 
         if (!session?.user?.email) {
-            return NextResponse.json(
-                { success: false, error: "You must be logged in." },
-                { status: 401 }
-            );
+            return NextResponse.json({ success: false, error: "You must be logged in." }, { status: 401 });
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = await prisma.user.findUnique({ where: { email: session.user.email } });
 
         if (!user) {
-            return NextResponse.json(
-                { success: false, error: "User not found." },
-                { status: 404 }
-            );
+            return NextResponse.json({ success: false, error: "User not found." }, { status: 404 });
         }
 
-        // ...scope every Prisma query by user.id from here on...
-
-        return NextResponse.json({ success: true, /* ... */ });
+        // scope every Prisma query by user.id from here on
+        return NextResponse.json({ success: true });
     } catch (error) {
-        console.error("❌ Failed to <do the thing>:", error);
-        return NextResponse.json(
-            { success: false, error: "Something went wrong." },
-            { status: 500 }
-        );
+        console.error("Failed to <do the thing>:", error);
+        return NextResponse.json({ success: false, error: "Something went wrong." }, { status: 500 });
     }
 }
 ```
 
 ## Rules
-
-1. **Auth**: look up the user via `auth()` → `session.user.email` →
-   `prisma.user.findUnique`. Never trust a client-supplied `userId`. Scope
-   every query by the resolved `user.id`.
-2. **Extension-facing routes** (anything the Chrome extension in
-   `canvas-extension/` calls) must also accept a `Bearer <token>` checked
-   against `prisma.extensionSession`, as a fallback when there's no browser
-   session — see `app/api/canvas/sync/route.ts` for the exact pattern before
-   reimplementing it.
-3. **Errors**: catch at the top level of the handler, `console.error` with
-   context, return `{ success: false, error }` with an appropriate status
-   (400 bad input, 401 unauthenticated, 404 missing resource, 500 unexpected).
-   Don't leak raw error objects/stack traces in the JSON response.
-4. **Calling the local Ollama server**: always pair with a deterministic
-   fallback (see `fallbackAnalysis`/`fallbackXp` in
-   `app/api/task-planning/route.ts` / `app/api/task-xp/route.ts`) and an
-   `AbortSignal.timeout(...)` on the `fetch` — the Ollama server may not be
-   running, and a hung request shouldn't hang the route.
-5. **Validation**: parse `await request.json()` inside a `try/catch` and
-   return 400 on failure; narrow `unknown` body fields explicitly (see the
-   `PlanningTask` filter in `app/api/task-planning/route.ts`) rather than
-   trusting the shape.
-6. Match the surrounding 4-space indentation and double-quote style — see
-   the root `CLAUDE.md` conventions section.
-
-For the full annotated reference (including the extension Bearer-token
-branch in detail), see `reference.md` in this folder.
+1. **Auth:** resolve the user as above; never trust a client `userId`; scope every query by `user.id`.
+2. **Extension-facing routes** (called by `canvas-extension/`, no cookie session) also accept `Authorization: Bearer <token>` checked against `prisma.extensionSession` (`token` → `userId`); 401 for a missing/malformed header or unknown token. Copy the dual-path pattern from `app/api/canvas/sync/route.ts`.
+3. **Errors:** catch at the top level, `console.error` with context, return `{ success: false, error }` with 400 (bad input) / 401 / 404 / 500; never leak raw errors or stacks.
+4. **AI calls:** always a timeout (`AbortSignal.timeout`) plus a deterministic fallback; normalize/clamp model output; use `lib/ai/anthropicClient.ts` (Haiku) when `ANTHROPIC_API_KEY` is set, else Ollama (`lib/ollamaConfig.ts`).
+5. **Validation:** parse `await request.json()` in a `try/catch` (400 on failure); narrow `unknown` fields explicitly and cap array sizes from client input (e.g. `.slice(0, 40)`) before per-item work, especially per-item AI calls (see `app/api/task-planning/route.ts`).
+6. 4-space indent, double quotes (`CLAUDE.md`).

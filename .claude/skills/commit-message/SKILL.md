@@ -1,45 +1,26 @@
 ---
 name: commit-message
-description: Use when writing the commit message for a `git commit` in this repo — i.e. right before staging/committing changes, or when the user asks "write a commit message" / "commit this". Not for PR descriptions.
+description: Use when writing the commit message for a `git commit` in this repo — right before staging/committing, or when asked to "write a commit message" / "commit this". Not for PR descriptions.
 metadata:
   type: project
 ---
 
-# Commit messages for this repo
+# Commit messages
 
-This repo's history so far is informal, free-text subjects (see `git log`:
-"got playlist importing from youtube working, ui looks ugly now"). Going
-forward, use **Conventional Commits** instead — it makes the history
-scannable now that the project has multiple moving areas (planner, AI
-scoring, extension, music, gamification).
-
-## Format
+Conventional Commits:
 
 ```
-<type>(<scope>): <short summary, imperative, no trailing period>
+<type>(<scope>): <summary, lowercase, imperative, no trailing period>
 
-<optional body: why, not what>
+<optional body: the why, not the what>
 ```
 
-- `type`: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `style`, `perf`.
-- `scope`: the area touched — one of `planner`, `ai` (Ollama/prioritization),
-  `extension` (canvas-extension/), `auth`, `music`, `gamification`,
-  `pomodoro`, `db` (Prisma schema/migrations), or omit if repo-wide.
-- Summary: lowercase, imperative mood ("add", not "added"/"adds").
-- Body only when the *why* isn't obvious from the diff — e.g. a workaround,
-  a tradeoff, or a bug root cause. Skip it for small mechanical changes.
+- **type:** `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `style`, `perf`.
+- **scope:** `planner`, `ai`, `extension` (`canvas-extension/`), `auth`, `music`, `gamification`, `pomodoro`, `db`; omit if repo-wide.
+- Body only when the *why* isn't obvious (workaround, tradeoff, bug root cause). Skip it for mechanical changes.
+- One logical change per commit; split unrelated areas (e.g. a `lib/utils.ts` fix apart from a new feature).
+- If `prisma/schema.prisma` changed, mention the migration in the body (e.g. "requires `prisma migrate dev`").
+- Never name internal tools or this assistant in the subject.
+- End the body with the attribution lines the session was given (Co-Authored-By, etc.).
 
-## Examples
-
-See `examples.md` in this folder for full before/after examples drawn from
-this repo's actual recent commits.
-
-## Rules
-
-- One logical change per commit; don't bundle unrelated areas.
-- If the diff touches `prisma/schema.prisma`, mention the migration in the
-  body (e.g. "requires `prisma migrate dev`").
-- Never mention internal tool names or this assistant in the subject line.
-- Always end the message body with the attribution lines this session has
-  been given (Co-Authored-By / Claude-Session), per top-level instructions —
-  this skill only governs the subject/body content above that.
+Example: `fix(planner): refresh the weekly grid when a proposed task is accepted` — body: "Accepted tasks weren't triggering a re-render."
