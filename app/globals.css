@@ -871,6 +871,16 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
   font-size: 14px;
 }
 
+/* The grid is a real <table>. Some browser extensions (dark-mode and
+   reading tools) restyle tables as stacked blocks, which put one day per line;
+   pin the table layout so the calendar looks the same everywhere. */
+.lodestar-day-picker table { display: table !important; border-collapse: collapse; }
+.lodestar-day-picker thead { display: table-header-group !important; }
+.lodestar-day-picker tbody { display: table-row-group !important; }
+.lodestar-day-picker tr { display: table-row !important; }
+.lodestar-day-picker th,
+.lodestar-day-picker td { display: table-cell !important; }
+
 .lodestar-day-picker:focus {
   outline: none;
 }
