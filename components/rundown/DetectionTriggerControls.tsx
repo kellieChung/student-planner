@@ -9,6 +9,7 @@ import { MAX_ANNOUNCEMENTS_PER_CHECK } from "@/lib/analysisLimits";
 import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString, parseLocalDate } from "@/lib/utils";
 import { useMascot } from "@/components/world/LaptopFrame";
+import { ChevronDownIcon } from "@/components/brand/Icons";
 
 // Pause is only checked between extraction batches, and a check is capped at
 // MAX_ANNOUNCEMENTS_PER_CHECK, which equals Haiku's batch size — so a running
@@ -168,6 +169,10 @@ export default function DetectionTriggerControls({
     const [alreadyAnalyzedCount, setAlreadyAnalyzedCount] = useState(0);
     const [previewAnnouncements, setPreviewAnnouncements] = useState<PreviewAnnouncement[]>([]);
     const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
+    // Already-checked announcements are opt-in: none is re-run unless ticked.
+    const [checkedAnnouncements, setCheckedAnnouncements] = useState<PreviewAnnouncement[]>([]);
+    const [recheckIds, setRecheckIds] = useState<Set<string>>(new Set());
+    const [showChecked, setShowChecked] = useState(false);
     const [selectionTouched, setSelectionTouched] = useState(false);
     const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -222,6 +227,8 @@ export default function DetectionTriggerControls({
                             .map((announcement) => announcement.id)
                     )
                 );
+                setCheckedAnnouncements(data.checkedPreview ?? []);
+                setRecheckIds(new Set());
                 setSelectionTouched(false);
 
                 if (data.quota) {
@@ -264,12 +271,11 @@ export default function DetectionTriggerControls({
         void loadPreview(currentRange(), ++previewSeq.current);
     }
 
+    const selectedCount = previewAnnouncements.length - deselectedIds.size + recheckIds.size;
+
     function toggleAnnouncement(id: string) {
         // Can't tick past the per-check cap.
-        if (
-            deselectedIds.has(id) &&
-            previewAnnouncements.length - deselectedIds.size >= MAX_ANNOUNCEMENTS_PER_CHECK
-        ) {
+        if (deselectedIds.has(id) && selectedCount >= MAX_ANNOUNCEMENTS_PER_CHECK) {
             return;
         }
 
@@ -288,7 +294,25 @@ export default function DetectionTriggerControls({
         });
     }
 
-    const selectedCount = previewAnnouncements.length - deselectedIds.size;
+    function toggleRecheck(id: string) {
+        if (!recheckIds.has(id) && selectedCount >= MAX_ANNOUNCEMENTS_PER_CHECK) {
+            return;
+        }
+
+        setSelectionTouched(true);
+
+        setRecheckIds((current) => {
+            const next = new Set(current);
+
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+
+            return next;
+        });
+    }
 
     async function runDetectionPass(mode: "check" | "regenerate" | "resume" = "check") {
         const range = currentRange();
@@ -309,17 +333,25 @@ export default function DetectionTriggerControls({
             const scope =
                 mode === "check" && selectionTouched
                     ? {
-                          selectedAnnouncementIds: previewAnnouncements
-                              .filter((a) => !deselectedIds.has(a.id))
-                              .map((a) => a.id),
+                          selectedAnnouncementIds: [
+                              ...previewAnnouncements
+                                  .filter((a) => !deselectedIds.has(a.id))
+                                  .map((a) => a.id),
+                              ...recheckIds,
+                          ],
                       }
                     : { ...(range ?? {}), ...rangeWindow(range) };
+
+            // The server skips already-checked announcements unless told to
+            // regenerate, which would silently drop the ticked re-checks.
+            const reanalyze =
+                mode === "regenerate" || (mode === "check" && selectionTouched && recheckIds.size > 0);
 
             body = {
                 ...scope,
                 tzOffset: new Date().getTimezoneOffset(),
                 runId: runIdRef.current,
-                ...(mode === "regenerate" ? { regenerate: true } : {}),
+                ...(reanalyze ? { regenerate: true } : {}),
             };
 
             lastBodyRef.current = body;
@@ -505,10 +537,12 @@ export default function DetectionTriggerControls({
 
     const nothingNew = previewCount === 0;
 
+    const hasRechecks = recheckIds.size > 0;
+
     const canAnalyze =
         !rangeIsInvalid &&
         !outOfChecks &&
-        previewCount !== 0 &&
+        (previewCount !== 0 || hasRechecks) &&
         !(selectionTouched && selectedCount === 0);
 
     const canRegenerate = !rangeIsInvalid && !outOfChecks && inRangeCount > 0;
@@ -620,6 +654,57 @@ export default function DetectionTriggerControls({
                         </div>
                     )}
 
+                    {checkedAnnouncements.length > 0 && (
+                        <div className="mb-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowChecked((open) => !open)}
+                                aria-expanded={showChecked}
+                                className="flex items-center gap-1 rounded-md py-1 text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]"
+                            >
+                                <ChevronDownIcon
+                                    size={16}
+                                    className={`transition-transform ${showChecked ? "rotate-180" : ""}`}
+                                />
+                                Already checked ({checkedAnnouncements.length})
+                                {hasRechecks && ` · ${recheckIds.size} to re-check`}
+                            </button>
+
+                            {showChecked && (
+                                <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-[var(--border)]">
+                                    {checkedAnnouncements.map((announcement) => (
+                                        <label
+                                            key={announcement.id}
+                                            className="flex cursor-pointer items-start gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--border)]/20"
+                                        >
+                                            <Checkbox
+                                                checked={recheckIds.has(announcement.id)}
+                                                disabled={
+                                                    !recheckIds.has(announcement.id) &&
+                                                    selectedCount >= MAX_ANNOUNCEMENTS_PER_CHECK
+                                                }
+                                                onChange={() => toggleRecheck(announcement.id)}
+                                                className="mt-1"
+                                            />
+
+                                            <div className="min-w-0">
+                                                <p className="truncate text-sm font-semibold">
+                                                    {announcement.title}
+                                                </p>
+
+                                                <p className="text-xs text-[var(--muted)]">
+                                                    {announcement.course}
+                                                    {announcement.postedAt &&
+                                                        ` · ${new Date(announcement.postedAt).toLocaleDateString()}`}
+                                                </p>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {rateLimitError && (
                         <p className="mb-3 text-xs text-[var(--status-overdue-text)]">
                             {rateLimitError}
@@ -636,13 +721,13 @@ export default function DetectionTriggerControls({
 
                             {inRangeCount > 0 && (
                                 <p className="mt-1 text-xs text-[var(--muted)]">
-                                    All {inRangeCount} announcement{inRangeCount === 1 ? " has" : "s have"} already been checked. You can re-check them if you want fresh results.
+                                    All {inRangeCount} announcement{inRangeCount === 1 ? " has" : "s have"} already been checked. You can re-check them all, or pick specific ones under Already checked.
                                 </p>
                             )}
                         </div>
                     )}
 
-                    {!nothingNew && (
+                    {(!nothingNew || hasRechecks) && (
                         <button
                             onClick={() => void runDetectionPass("check")}
                             disabled={!canAnalyze}
@@ -671,7 +756,7 @@ export default function DetectionTriggerControls({
                             onClick={() => void runDetectionPass("regenerate")}
                             disabled={!canRegenerate}
                             className={`flex items-center gap-2 rounded-xl border border-[var(--border)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50 ${
-                                nothingNew ? "" : "mt-2"
+                                nothingNew && !hasRechecks ? "" : "mt-2"
                             }`}
                         >
                             {inRangeCount > MAX_ANNOUNCEMENTS_PER_CHECK
@@ -680,7 +765,7 @@ export default function DetectionTriggerControls({
                         </button>
                     )}
 
-                    {(!nothingNew || showRegenerate) && !outOfChecks && (
+                    {(!nothingNew || showRegenerate || hasRechecks) && !outOfChecks && (
                         <p className="mt-2 text-xs text-[var(--muted)]">
                             Each check uses 1 of your checks.
                         </p>

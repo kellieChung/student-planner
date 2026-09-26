@@ -540,6 +540,7 @@ export async function POST(
 
         const backfillIds: string[] = [];
         const selectedCount = announcements.length;
+        const inRangeAnnouncements = announcements;
 
         // Regenerate deliberately re-runs announcements that were already
         // analyzed (and skips the legacy backfill, which would mark them
@@ -624,6 +625,13 @@ export async function POST(
         // --------------------------------------------------
 
         if (dryRun) {
+            const toPreviewItem = (announcement: Announcement) => ({
+                id: announcement.id,
+                title: announcement.title,
+                course: announcement.course,
+                postedAt: announcement.postedAt,
+            });
+
             return NextResponse.json({
                 success: true,
                 dryRun: true,
@@ -651,12 +659,14 @@ export async function POST(
                 // doesn't need full announcement bodies, and shipping them
                 // on every preset change works against the point of a dry
                 // run (minimizing load, not just AI cost).
-                preview: announcements.map((announcement) => ({
-                    id: announcement.id,
-                    title: announcement.title,
-                    course: announcement.course,
-                    postedAt: announcement.postedAt,
-                })),
+                preview: announcements.map(toPreviewItem),
+
+                // The in-range announcements the list above skips as
+                // already checked, so the student can pick some to re-check
+                // (sent back as a regenerate with selectedAnnouncementIds).
+                checkedPreview: inRangeAnnouncements
+                    .filter((announcement) => !announcements.includes(announcement))
+                    .map(toPreviewItem),
             });
         }
 
