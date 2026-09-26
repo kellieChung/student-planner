@@ -32,7 +32,15 @@ export default function Select({ value, onChange, options, ariaLabel, id, placeh
             // Radix's own "" means "nothing selected, show the placeholder" and
             // keeps the select controlled (undefined would flip it).
             value={hasSelection ? toRadix(value) : ""}
-            onValueChange={(next) => onChange(fromRadix(next))}
+            // Radix's hidden native <select> reports "" when the value changes
+            // before its options have registered (e.g. a modal filling in a
+            // task's status right after mount). Real options never use "" here
+            // (it's mapped to EMPTY), so that event is noise; passing it on
+            // blanked the field and saved an empty status.
+            onValueChange={(next) => {
+                if (next === "") return;
+                onChange(fromRadix(next));
+            }}
             disabled={disabled}
         >
             <RadixSelect.Trigger

@@ -36,10 +36,10 @@ export default function StartDateField({ value, onChange }: StartDateFieldProps)
 
             {mode === "custom" && (
                 <DatePicker
+                    inline
                     value={value}
                     onChange={onChange}
                     ariaLabel="Start date"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 color-scheme-dark"
                 />
             )}
         </div>

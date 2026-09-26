@@ -300,21 +300,21 @@ export default function EditTaskModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
+            <div className="col-span-2">
               <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
                 Due Date
               </label>
               <DatePicker
+                inline
+                clearable={task.id.startsWith("custom-")}
                 value={due}
                 onChange={setDue}
                 ariaLabel="Due date"
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 color-scheme-dark"
+                placeholder="No due date"
               />
             </div>
 
             <DueTimeField value={dueTime} onChange={setDueTime} disabled={!due} />
-
-            <StartDateField value={start} onChange={setStart} />
 
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">
@@ -333,6 +333,8 @@ export default function EditTaskModal({
               />
             </div>
           </div>
+
+          <StartDateField value={start} onChange={setStart} />
 
           {isRecurringOccurrence && recurringTaskRule && (
             <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800/60 p-2.5 text-sm">

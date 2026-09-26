@@ -21,6 +21,11 @@ type Props = {
     // For inline editors that mount the picker already open, and need to know when it closes.
     defaultOpen?: boolean;
     onClose?: () => void;
+    // Always-visible month grid in the form instead of a button that pops one
+    // open. Used by every form field; the popover is kept for click-to-edit spots.
+    inline?: boolean;
+    // Inline only: offers "Clear" for an optional date.
+    clearable?: boolean;
 };
 
 const COARSE_POINTER = "(pointer: coarse)";
@@ -59,9 +64,26 @@ export default function DatePicker({
     className = "",
     defaultOpen = false,
     onClose,
+    inline = false,
+    clearable = false,
 }: Props) {
     const [open, setOpen] = useState(defaultOpen);
     const useNativePicker = useSyncExternalStore(subscribeToPointerType, isCoarsePointer, () => false);
+
+    if (inline) {
+        return (
+            <InlineCalendar
+                id={id}
+                value={value}
+                onChange={onChange}
+                min={min}
+                max={max}
+                ariaLabel={ariaLabel}
+                placeholder={placeholder}
+                clearable={clearable}
+            />
+        );
+    }
 
     if (useNativePicker) {
         return (
@@ -147,5 +169,78 @@ export default function DatePicker({
                 </Popover.Content>
             </Popover.Portal>
         </Popover.Root>
+    );
+}
+
+type InlineCalendarProps = {
+    id?: string;
+    value: string;
+    onChange: (value: string) => void;
+    min?: string;
+    max?: string;
+    ariaLabel: string;
+    placeholder: string;
+    clearable: boolean;
+};
+
+// Shown on every pointer type: the grid's 34px day buttons are fine touch
+// targets, and it's what the forms are meant to look like everywhere.
+function InlineCalendar({ id, value, onChange, min, max, ariaLabel, placeholder, clearable }: InlineCalendarProps) {
+    const selected = value ? parseLocalDate(value) : undefined;
+    const today = getTodayString();
+    const disabled: Matcher[] = [];
+
+    if (min) disabled.push({ before: parseLocalDate(min) });
+    if (max) disabled.push({ after: parseLocalDate(max) });
+
+    const todayOutOfRange = Boolean((min && today < min) || (max && today > max));
+
+    // Follows the selection when it changes from outside (e.g. the modal
+    // reopening on another task), while still letting the user page months.
+    const [month, setMonth] = useState<Date>(selected ?? new Date());
+    const [shownValue, setShownValue] = useState(value);
+
+    if (value !== shownValue) {
+        setShownValue(value);
+        if (selected) setMonth(selected);
+    }
+
+    return (
+        <div id={id} role="group" aria-label={ariaLabel} className="lodestar-day-picker lodestar-day-picker--inline">
+            <p className="lodestar-day-picker-value" aria-live="polite">
+                {selected ? DISPLAY_FORMAT.format(selected) : placeholder}
+            </p>
+
+            <DayPicker
+                mode="single"
+                selected={selected}
+                month={month}
+                onMonthChange={setMonth}
+                onSelect={(date) => {
+                    if (date) onChange(toDateKey(date));
+                }}
+                disabled={disabled}
+                weekStartsOn={0}
+                showOutsideDays
+            />
+
+            <div className="lodestar-day-picker-footer">
+                {clearable && value && (
+                    <button type="button" onClick={() => onChange("")}>
+                        Clear
+                    </button>
+                )}
+                <button
+                    type="button"
+                    disabled={todayOutOfRange}
+                    onClick={() => {
+                        onChange(today);
+                        setMonth(parseLocalDate(today));
+                    }}
+                >
+                    Today
+                </button>
+            </div>
+        </div>
     );
 }

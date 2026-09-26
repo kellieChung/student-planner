@@ -143,13 +143,15 @@ export default function RecurrenceField({ value, onChange, anchorDue }: Recurren
                         </div>
 
                         {value.endDate && (
-                            <DatePicker
-                                value={value.endDate}
-                                min={anchorDue}
-                                onChange={(endDate) => onChange({ ...value, endDate })}
-                                ariaLabel="Repeat until"
-                                className="w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-sm text-white focus:border-indigo-500 color-scheme-dark"
-                            />
+                            <div className="mt-2">
+                                <DatePicker
+                                    inline
+                                    value={value.endDate}
+                                    min={anchorDue}
+                                    onChange={(endDate) => onChange({ ...value, endDate })}
+                                    ariaLabel="Repeat until"
+                                />
+                            </div>
                         )}
                     </div>
 
