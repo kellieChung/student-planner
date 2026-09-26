@@ -80,7 +80,7 @@ Examples:
 "Prepare for the upcoming quiz" vs "Quiz 3: Chapters 4-5" -> DUPLICATE, low
 "Write a response about Chapter 1" vs "Read Chapter 1" -> NOT DUPLICATE
 
-Confidence: high = clearly the same work or explicitly included; medium = probably; low = weak but plausible overlap.
+Confidence: high = the task IS the assignment, or the assignment's name or description explicitly names this work; medium = probably; low = weak but plausible overlap. A preparation step (a reading, a video, making a copy of a document, a preview) that the assignment does not explicitly name is at most medium.
 
 For each proposed task, pick the single best match from ITS OWN course only and give that ASSIGNMENT number (never an ID). No reasonable match -> isDuplicate false, matchingAssignmentNumber null, confidence low. "index" is the PROPOSED TASK number (1-based).
 `.trim();
@@ -168,7 +168,13 @@ function matchByName(
         return null;
     }
 
-    const exact = assignments.find((a) => normalizeName(a.name) === task);
+    // "Complete REFLECT: Scholarships" is the assignment "REFLECT: Scholarships".
+    const withoutVerb = task.replace(/^(complete|submit|finish|do|turn in) /, "");
+
+    const exact = assignments.find((a) => {
+        const assignment = normalizeName(a.name);
+        return assignment === task || assignment === withoutVerb;
+    });
 
     if (exact) {
         return {
@@ -206,6 +212,85 @@ function matchByName(
     }
 
     return null;
+}
+
+const NUMBERED_KINDS: Record<string, string> = {
+    week: "week", wk: "week", 周: "week",
+    part: "part",
+    chapter: "chapter", ch: "chapter", 章: "chapter",
+    unit: "unit", 单元: "unit",
+    lesson: "lesson", 课: "lesson",
+    section: "section", 节: "section",
+    module: "module",
+    homework: "homework", hw: "homework",
+};
+
+const CHINESE_DIGITS: Record<string, number> = {
+    一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+};
+
+// 一..九十九 → 1..99; anything else → NaN.
+function parseChineseNumber(text: string): number {
+    if (/^\d+$/.test(text)) {
+        return parseInt(text, 10);
+    }
+
+    const [tens, ones] = text.includes("十") ? text.split("十") : ["", text];
+    const tensValue = text.includes("十") ? (tens ? CHINESE_DIGITS[tens] : 1) : 0;
+    const onesValue = ones ? CHINESE_DIGITS[ones] : 0;
+
+    return tensValue === undefined || onesValue === undefined ? NaN : tensValue * 10 + onesValue;
+}
+
+// "week 5", "chapters 2-3", "HW 6", "第六周", "第三节" → kind → numbers.
+function numberedReferences(name: string): Map<string, Set<number>> {
+    const refs = new Map<string, Set<number>>();
+
+    function add(kind: string, from: number, to: number = from) {
+        if (Number.isNaN(from) || Number.isNaN(to) || to < from || to - from > 50) {
+            return;
+        }
+
+        const numbers = refs.get(kind) ?? new Set<number>();
+
+        for (let n = from; n <= to; n++) {
+            numbers.add(n);
+        }
+
+        refs.set(kind, numbers);
+    }
+
+    for (const match of name.matchAll(
+        /\b(week|wk|part|chapter|ch|unit|lesson|section|module|homework|hw)s?\.?\s*#?\s*(\d+)(?:\s*[-–]\s*(\d+))?/gi
+    )) {
+        const from = parseInt(match[2], 10);
+        add(NUMBERED_KINDS[match[1].toLowerCase()], from, match[3] ? parseInt(match[3], 10) : from);
+    }
+
+    for (const match of name.matchAll(/第\s*([\d一二三四五六七八九十]+)\s*(周|节|课|章|单元)/g)) {
+        add(NUMBERED_KINDS[match[2]], parseChineseNumber(match[1]));
+    }
+
+    return refs;
+}
+
+// "Week 5 notes" vs "Week 6 notes" name different work however alike the
+// rest reads, and the model has matched exactly that at high confidence —
+// which auto-accept then suppresses unseen. True when both names number
+// the same kind of thing and the numbers don't overlap.
+export function hasConflictingNumbers(taskName: string, assignmentName: string): boolean {
+    const taskRefs = numberedReferences(taskName);
+    const assignmentRefs = numberedReferences(assignmentName);
+
+    for (const [kind, taskNumbers] of taskRefs) {
+        const assignmentNumbers = assignmentRefs.get(kind);
+
+        if (assignmentNumbers && ![...taskNumbers].some((n) => assignmentNumbers.has(n))) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 type NumberedAssignment = CanvasAssignment & { courseKey: string };
@@ -432,10 +517,17 @@ function toDuplicateResults(
             );
         }
 
+        // Capped at medium so it surfaces as a card instead of being
+        // auto-suppressed.
+        const confidence =
+            result.confidence === "high" && hasConflictingNumbers(item.taskName, matched.name)
+                ? "medium"
+                : (result.confidence as DuplicateCheckResult["confidence"]);
+
         return {
             isDuplicate: true,
             matchingAssignmentId: matched.id,
-            confidence: result.confidence as DuplicateCheckResult["confidence"],
+            confidence,
             reason: "This task may already be covered by an existing Canvas assignment.",
             checkStatus: "checked",
         };

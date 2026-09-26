@@ -10,7 +10,7 @@ import {
     isAnthropicEnabled,
     logAnthropicUsage,
 } from "@/lib/ai/anthropicClient";
-import { stripHtml, truncateText } from "@/lib/htmlText";
+import { stripHtml, stripHtmlKeepLines, truncateText } from "@/lib/htmlText";
 import { computeSuggestionKey } from "@/lib/suggestionKey";
 
 // Bumped from 25s: a batch of real-prose announcements under concurrency
@@ -78,7 +78,7 @@ export type AnnouncementAnalysisResult = {
 // since not every teacher's announcement uses Canvas's assignment-link
 // annotations or lays calendars out as tables.
 const ACTIONABLE_KEYWORDS =
-    /\b(read|reading|watch|watching|video|quiz|quizzes|exam|exams|test|tests|homework|hw|complete|completed|submit|submission|discuss|discussion|due|deadline|prepare|preparation|prep|turn in|worksheet|worksheets|chapter|chapters|pp\.|assignment|assignments|project|projects|essay|essays|presentation|presentations|problem set|pset|lab|labs|reflect|reflection|post|response|responses|respond|annotate|annotation|translate|translation|study guide)\b/i;
+    /\b(read|reading|watch|watching|video|quiz|quizzes|exam|exams|test|tests|homework|hw|complete|completed|submit|submission|discuss|discussion|due|deadline|prepare|preparation|prep|turn in|worksheet|worksheets|chapter|chapters|assignment|assignments|project|projects|essay|essays|presentation|presentations|problem set|pset|lab|labs|reflect|reflection|post|response|responses|respond|annotate|annotation|translate|translation|study guide)\b|\bpp\./i;
 
 // Canvas's rich-content editor tags links to assignments/quizzes/
 // discussions/pages with this attribute when present — a bonus, stronger
@@ -110,14 +110,14 @@ function isActionableBlock(block: string): boolean {
 // Falls back to the full text if filtering finds nothing actionable at
 // all, rather than risking sending an empty/near-empty message.
 function extractActionableHtml(html: string, maxLength: number): string {
-    const fullStripped = stripHtml(html);
+    const fullStripped = stripHtmlKeepLines(html);
 
     if (fullStripped.length <= maxLength) {
         return fullStripped;
     }
 
     const kept = splitIntoBlocks(html).filter(isActionableBlock);
-    const filteredStripped = stripHtml(kept.join("\n"));
+    const filteredStripped = stripHtmlKeepLines(kept.join("\n"));
 
     return filteredStripped.length > 0 ? filteredStripped : fullStripped;
 }
@@ -182,7 +182,10 @@ MEDIUM:
 The work is strongly implied or preparation is clearly expected.
 
 LOW:
-The work is optional or only weakly suggested.
+The teacher explicitly calls the work optional, extra, or for fun.
+
+Flexible timing is not optional: "read before or after class" or
+"whenever you have time" is still required work.
 
 IMPORTANT RULES:
 
@@ -218,15 +221,16 @@ unless students are also told to read, prepare, complete something, etc.
 
 Only extract work that is explicitly assigned or strongly implied.
 
-Do not assume students should:
+Do not assume students should study, review, or practice unless the
+announcement says so.
 
-- study
-- review
-- read
-- prepare
-- practice
+But a list of titles under a heading like "Readings", "Videos",
+"Asynchronous Readings/Videos", "Read before class", "Watch", or
+"Assignments" IS assigned work, even when each item has no verb.
+Create ONE task per listed item, e.g. "Read: <title>" or "Watch: <title>".
 
-unless the announcement actually indicates this.
+Preparation the teacher asks for ("complete before class",
+"make a copy of the document before class") is a task too.
 
 3. Keep task names concise and actionable.
 
@@ -264,6 +268,9 @@ Examples:
 Do NOT convert dates to YYYY-MM-DD.
 
 Do NOT calculate dates.
+
+For work due before a class or live session with no day given,
+use that wording, e.g. "before class".
 
 If there is no identifiable due date:
 
@@ -494,6 +501,9 @@ Call the ${EXTRACT_TOOL_NAME} tool exactly once with one entry per announcement 
             {
                 model: ANTHROPIC_MODEL,
                 max_tokens: ANTHROPIC_MAX_TOKENS,
+                // Same as the Ollama path: a re-run of unchanged text should
+                // find the same tasks.
+                temperature: 0,
                 system: RULES,
                 tools: [EXTRACT_TOOL],
                 tool_choice: { type: "tool", name: EXTRACT_TOOL_NAME },
