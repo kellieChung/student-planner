@@ -900,11 +900,16 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
   --rdp-nav-height: 2.25rem;
 }
 
-.lodestar-day-picker .rdp-month_caption {
-  font-family: var(--font-spectral), Georgia, serif;
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: var(--heading);
+/* Pinned (with the label inside it) for the same reason as the table
+   layout above: an extension in one profile enlarged and bolded it. */
+.lodestar-day-picker .rdp-month_caption,
+.lodestar-day-picker .rdp-caption_label {
+  font-family: var(--font-spectral), Georgia, serif !important;
+  font-size: 1.1rem !important;
+  font-weight: 500 !important;
+  line-height: 1.2 !important;
+  color: var(--heading) !important;
+  letter-spacing: normal !important;
 }
 
 .lodestar-day-picker .rdp-weekday {
