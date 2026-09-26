@@ -553,6 +553,8 @@ model PlannerSettings {
   // for high-confidence AI-detected candidates (see lib/rundownAutoAccept.ts)
   // — never affects the "Added from Canvas" section.
   autoAcceptAiTasks   Boolean   @default(false)
+  // Plays public/sounds/completion-ding.mp3 on a fresh task completion.
+  completionSound     Boolean   @default(true)
   // Null = never viewed — everything currently pending/added counts as
   // "new," which is also the correct behavior for a first-ever login.
   lastRundownViewedAt DateTime?

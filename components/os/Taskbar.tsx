@@ -43,6 +43,8 @@ type Props = {
     stillDecidingCount: number;
     autoAcceptAiTasks: boolean;
     onSetAutoAcceptAiTasks: (value: boolean) => void;
+    completionSound: boolean;
+    onSetCompletionSound: (value: boolean) => void;
 };
 
 function useClock(): string {
@@ -84,6 +86,8 @@ export default function Taskbar({
     stillDecidingCount,
     autoAcceptAiTasks,
     onSetAutoAcceptAiTasks,
+    completionSound,
+    onSetCompletionSound,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const { replayOnboarding } = useLodestarFrame();
@@ -240,6 +244,14 @@ export default function Taskbar({
                                     <SunIcon size={13} /> Day
                                 </button>
                             </div>
+
+                            <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                                Sound
+                            </p>
+                            <label className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
+                                <span>Task completion sound</span>
+                                <Switch checked={completionSound} onChange={onSetCompletionSound} ariaLabel="Task completion sound" />
+                            </label>
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
                                 AI Detection

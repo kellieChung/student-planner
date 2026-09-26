@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 
 const SELECT = {
     autoAcceptAiTasks: true,
+    completionSound: true,
     lastRundownViewedAt: true,
 } as const;
 
@@ -37,6 +38,7 @@ export async function GET() {
         return NextResponse.json({
             success: true,
             autoAcceptAiTasks: settings?.autoAcceptAiTasks ?? false,
+            completionSound: settings?.completionSound ?? true,
             lastRundownViewedAt: settings?.lastRundownViewedAt?.toISOString() ?? null,
         });
     } catch (error) {
@@ -87,7 +89,7 @@ export async function PATCH(request: Request) {
         // — an absent key means "leave this field alone," so the Taskbar
         // toggle and the Rundown's dismiss action can never clobber each
         // other's field with a stale value.
-        const data: { autoAcceptAiTasks?: boolean; lastRundownViewedAt?: Date | null } = {};
+        const data: { autoAcceptAiTasks?: boolean; completionSound?: boolean; lastRundownViewedAt?: Date | null } = {};
 
         if ("autoAcceptAiTasks" in input) {
             if (typeof input.autoAcceptAiTasks !== "boolean") {
@@ -97,6 +99,16 @@ export async function PATCH(request: Request) {
                 );
             }
             data.autoAcceptAiTasks = input.autoAcceptAiTasks;
+        }
+
+        if ("completionSound" in input) {
+            if (typeof input.completionSound !== "boolean") {
+                return NextResponse.json(
+                    { success: false, error: "'completionSound' must be a boolean." },
+                    { status: 400 }
+                );
+            }
+            data.completionSound = input.completionSound;
         }
 
         if ("lastRundownViewedAt" in input) {
@@ -122,6 +134,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({
             success: true,
             autoAcceptAiTasks: settings.autoAcceptAiTasks,
+            completionSound: settings.completionSound,
             lastRundownViewedAt: settings.lastRundownViewedAt?.toISOString() ?? null,
         });
     } catch (error) {

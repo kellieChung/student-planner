@@ -33,6 +33,7 @@ import { useCoursesRemote } from "./os/CoursesRemoteContext";
 import { ProposedTask } from "@/types/proposedTask";
 import { PersistedCandidate, AddedFromCanvasItem } from "@/types/rundown";
 import { savePlannerSettings } from "@/lib/plannerSettings";
+import { playCompletionSound } from "@/lib/completionSound";
 import RundownWindow from "./rundown/RundownWindow";
 import { useWindowManager } from "./os/WindowManagerContext";
 import StillDecidingPanel from "./rundown/StillDecidingPanel";
@@ -73,6 +74,7 @@ type InitialRundown = {
     shouldAutoShow: boolean;
     maybeCount: number;
     autoAcceptAiTasks: boolean;
+    completionSound: boolean;
 };
 
 type WeeklyPlannerProps = {
@@ -212,6 +214,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [maybeCandidates, setMaybeCandidates] = useState<PersistedCandidate[]>([]);
     const [addedFromCanvas, setAddedFromCanvas] = useState<AddedFromCanvasItem[]>([]);
     const [autoAcceptAiTasks, setAutoAcceptAiTasks] = useState(initialRundown?.autoAcceptAiTasks ?? false);
+    const [completionSound, setCompletionSound] = useState(initialRundown?.completionSound ?? true);
     const [showRundown, setShowRundown] = useState(() => initialRundown?.shouldAutoShow ?? false);
     const [showStillDeciding, setShowStillDeciding] = useState(false);
     const [awardingXp, setAwardingXp] = useState(false);
@@ -1486,6 +1489,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // Extracted so both the card's status control and EditTaskModal's Status
     // dropdown trigger the same side effects instead of risking drift.
     const awardCompletionSideEffects = (task: Assignment, estimatedMinutes?: number) => {
+        if (completionSound) playCompletionSound();
+
         const assignmentType = taskPlanning[task.id]?.assignmentType;
         const addedAt = deriveAddedAt(task);
 
@@ -1877,6 +1882,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     function handleSetAutoAcceptAiTasks(value: boolean) {
         setAutoAcceptAiTasks(value);
         savePlannerSettings({ autoAcceptAiTasks: value });
+    }
+
+    function handleSetCompletionSound(value: boolean) {
+        setCompletionSound(value);
+        savePlannerSettings({ completionSound: value });
     }
 
     const handleSaveTask = (
@@ -2454,6 +2464,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             stillDecidingCount={maybeCandidates.length}
             autoAcceptAiTasks={autoAcceptAiTasks}
             onSetAutoAcceptAiTasks={handleSetAutoAcceptAiTasks}
+            completionSound={completionSound}
+            onSetCompletionSound={handleSetCompletionSound}
         />
 
         {showRundown && (

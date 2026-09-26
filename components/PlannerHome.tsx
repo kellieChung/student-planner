@@ -66,6 +66,7 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
         shouldAutoShow: !tourWillShow && (pendingCandidateCount > 0 || newCanvasAssignmentCount > 0),
         maybeCount: maybeCandidateCount,
         autoAcceptAiTasks: plannerSettingsRow?.autoAcceptAiTasks ?? false,
+        completionSound: plannerSettingsRow?.completionSound ?? true,
     };
 
     return (
