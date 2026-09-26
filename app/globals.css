@@ -944,7 +944,6 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
 
 .lodestar-day-picker-footer {
   display: flex;
-  gap: 4px;
   justify-content: flex-end;
   margin-top: 8px;
   padding-top: 8px;
@@ -1391,28 +1390,4 @@ textarea {
 
 .lodestar-time-input[aria-invalid="true"] {
   border-color: var(--status-overdue-text);
-}
-
-/* Inline variant: sits in the form itself, so no floating shadow, and a
-   slightly smaller grid so it fits a narrow modal column. */
-.lodestar-day-picker--inline {
-  width: fit-content;
-  max-width: 100%;
-  padding: 8px 10px;
-  border-color: var(--field-border);
-  box-shadow: none;
-}
-
-.lodestar-day-picker--inline .rdp-root {
-  --rdp-day-height: 34px;
-  --rdp-day-width: 34px;
-  --rdp-day_button-height: 32px;
-  --rdp-day_button-width: 32px;
-}
-
-.lodestar-day-picker-value {
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--foreground);
 }

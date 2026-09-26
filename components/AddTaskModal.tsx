@@ -125,12 +125,10 @@ return (
                 </label>
 
                 <DatePicker
-                    inline
-                    clearable
                     value={due}
                     onChange={setDue}
                     ariaLabel="Due date"
-                    placeholder="No due date"
+                    className="w-full rounded bg-slate-800 px-3 py-2"
                 />
             </div>
 

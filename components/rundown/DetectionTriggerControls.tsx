@@ -556,28 +556,22 @@ export default function DetectionTriggerControls({
                     </div>
 
                     {preset === "custom" && (
-                        <div className="mb-3 flex flex-wrap items-start gap-3">
-                            <div>
-                                <p className="mb-1 text-xs font-semibold text-[var(--muted)]">From</p>
-                                <DatePicker
-                                    inline
-                                    value={customFrom}
-                                    onChange={setCustomFrom}
-                                    max={customTo || undefined}
-                                    ariaLabel="From date"
-                                />
-                            </div>
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                            <DatePicker
+                                value={customFrom}
+                                onChange={setCustomFrom}
+                                ariaLabel="From date"
+                                className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)]"
+                            />
 
-                            <div>
-                                <p className="mb-1 text-xs font-semibold text-[var(--muted)]">To</p>
-                                <DatePicker
-                                    inline
-                                    value={customTo}
-                                    onChange={setCustomTo}
-                                    min={customFrom || undefined}
-                                    ariaLabel="To date"
-                                />
-                            </div>
+                            <span className="text-xs text-[var(--muted)]">to</span>
+
+                            <DatePicker
+                                value={customTo}
+                                onChange={setCustomTo}
+                                ariaLabel="To date"
+                                className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)]"
+                            />
 
                             {rangeIsInvalid && (
                                 <span className="text-xs text-red-400">

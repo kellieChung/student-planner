@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { DayPicker, type Matcher } from "react-day-picker";
 import { CalendarIcon } from "@/components/brand/Icons";
@@ -21,11 +21,6 @@ type Props = {
     // For inline editors that mount the picker already open, and need to know when it closes.
     defaultOpen?: boolean;
     onClose?: () => void;
-    // Always-visible month grid in the form instead of a button that pops one
-    // open. Used by every form field; the popover is kept for click-to-edit spots.
-    inline?: boolean;
-    // Inline only: offers "Clear" for an optional date.
-    clearable?: boolean;
 };
 
 const COARSE_POINTER = "(pointer: coarse)";
@@ -40,14 +35,25 @@ function subscribeToPointerType(callback: () => void) {
 
 const isCoarsePointer = () => window.matchMedia(COARSE_POINTER).matches;
 
-// Fixed locale: the app is English-only, and a locale-dependent string could
-// differ between server and client render.
-const DISPLAY_FORMAT = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
+// What the closed field shows (and accepts when typed), like the browser's own
+// date field. Fixed locale: the app is English-only, and a locale-dependent
+// string could differ between server and client render.
+const TYPED_FORMAT = new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
     year: "numeric",
 });
+
+// "9/5/2026", "09/05/2026" or "9-5-2026" → "2026-09-05"; null if not a real day.
+function parseTypedDate(text: string): string | null {
+    const match = text.trim().match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+
+    if (!match) return null;
+
+    const key = `${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+
+    return toDateKey(parseLocalDate(key)) === key ? key : null;
+}
 
 // Touch devices keep the OS date picker (large targets, familiar wheel/sheet
 // UI). Everything else gets the branded calendar. Dates stay "YYYY-MM-DD"
@@ -60,30 +66,17 @@ export default function DatePicker({
     max,
     id,
     ariaLabel,
-    placeholder = "Pick a date",
+    placeholder = "mm/dd/yyyy",
     className = "",
     defaultOpen = false,
     onClose,
-    inline = false,
-    clearable = false,
 }: Props) {
     const [open, setOpen] = useState(defaultOpen);
+    const [draft, setDraft] = useState<string | null>(null);
+    // Opened by clicking the text: keep the cursor there so typing still works.
+    const [openedFromText, setOpenedFromText] = useState(false);
+    const fieldRef = useRef<HTMLDivElement>(null);
     const useNativePicker = useSyncExternalStore(subscribeToPointerType, isCoarsePointer, () => false);
-
-    if (inline) {
-        return (
-            <InlineCalendar
-                id={id}
-                value={value}
-                onChange={onChange}
-                min={min}
-                max={max}
-                ariaLabel={ariaLabel}
-                placeholder={placeholder}
-                clearable={clearable}
-            />
-        );
-    }
 
     if (useNativePicker) {
         return (
@@ -122,24 +115,73 @@ export default function DatePicker({
 
     const choose = (dateKey: string) => {
         onChange(dateKey);
+        setDraft(null);
         changeOpen(false);
+    };
+
+    // Typed "mm/dd/yyyy" is applied on Enter or blur; anything unparseable or
+    // out of range snaps back to the current value.
+    const commitDraft = () => {
+        if (draft === null) return;
+
+        const typed = parseTypedDate(draft);
+
+        if (draft.trim() === "") {
+            onChange("");
+        } else if (typed && !(min && typed < min) && !(max && typed > max)) {
+            onChange(typed);
+        }
+
+        setDraft(null);
     };
 
     return (
         <Popover.Root open={open} onOpenChange={changeOpen}>
-            <Popover.Trigger asChild>
-                <button
-                    id={id}
-                    type="button"
-                    aria-label={`${ariaLabel}: ${selected ? DISPLAY_FORMAT.format(selected) : "no date chosen"}`}
-                    className={`flex items-center justify-between gap-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${className}`}
+            <Popover.Anchor asChild>
+                <div
+                    ref={fieldRef}
+                    className={`flex items-center gap-2 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--accent)] ${className}`}
                 >
-                    <span className={selected ? undefined : "text-[var(--muted)]"}>
-                        {selected ? DISPLAY_FORMAT.format(selected) : placeholder}
-                    </span>
-                    <CalendarIcon size={16} className="shrink-0 text-[var(--accent)]" />
-                </button>
-            </Popover.Trigger>
+                    <input
+                        id={id}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        placeholder={placeholder}
+                        aria-label={ariaLabel}
+                        value={draft ?? (selected ? TYPED_FORMAT.format(selected) : "")}
+                        onChange={(event) => setDraft(event.target.value)}
+                        onClick={() => {
+                            if (!open) {
+                                setOpenedFromText(true);
+                                setOpen(true);
+                            }
+                        }}
+                        onBlur={commitDraft}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                                event.preventDefault();
+                                commitDraft();
+                                changeOpen(false);
+                            } else if (event.key === "ArrowDown" && !open) {
+                                setOpenedFromText(false);
+                                setOpen(true);
+                            }
+                        }}
+                        className="min-w-0 flex-1 bg-transparent placeholder:text-[var(--muted)] [outline:none]"
+                    />
+                    <Popover.Trigger asChild>
+                        <button
+                            type="button"
+                            aria-label={`Choose ${ariaLabel.toLowerCase()} from a calendar`}
+                            onClick={() => setOpenedFromText(false)}
+                            className="shrink-0 rounded text-[var(--accent)] hover:opacity-80"
+                        >
+                            <CalendarIcon size={16} />
+                        </button>
+                    </Popover.Trigger>
+                </div>
+            </Popover.Anchor>
 
             <Popover.Portal>
                 <Popover.Content
@@ -148,6 +190,13 @@ export default function DatePicker({
                     collisionPadding={12}
                     aria-label="Choose a date"
                     className="lodestar-day-picker z-[100]"
+                    onOpenAutoFocus={(event) => {
+                        if (openedFromText) event.preventDefault();
+                    }}
+                    onInteractOutside={(event) => {
+                        // Clicking back into the field shouldn't count as "outside".
+                        if (fieldRef.current?.contains(event.target as Node)) event.preventDefault();
+                    }}
                 >
                     <DayPicker
                         mode="single"
@@ -158,7 +207,7 @@ export default function DatePicker({
                         disabled={disabled}
                         weekStartsOn={0}
                         showOutsideDays
-                        autoFocus
+                        autoFocus={!openedFromText}
                     />
 
                     <div className="lodestar-day-picker-footer">
@@ -169,78 +218,5 @@ export default function DatePicker({
                 </Popover.Content>
             </Popover.Portal>
         </Popover.Root>
-    );
-}
-
-type InlineCalendarProps = {
-    id?: string;
-    value: string;
-    onChange: (value: string) => void;
-    min?: string;
-    max?: string;
-    ariaLabel: string;
-    placeholder: string;
-    clearable: boolean;
-};
-
-// Shown on every pointer type: the grid's 34px day buttons are fine touch
-// targets, and it's what the forms are meant to look like everywhere.
-function InlineCalendar({ id, value, onChange, min, max, ariaLabel, placeholder, clearable }: InlineCalendarProps) {
-    const selected = value ? parseLocalDate(value) : undefined;
-    const today = getTodayString();
-    const disabled: Matcher[] = [];
-
-    if (min) disabled.push({ before: parseLocalDate(min) });
-    if (max) disabled.push({ after: parseLocalDate(max) });
-
-    const todayOutOfRange = Boolean((min && today < min) || (max && today > max));
-
-    // Follows the selection when it changes from outside (e.g. the modal
-    // reopening on another task), while still letting the user page months.
-    const [month, setMonth] = useState<Date>(selected ?? new Date());
-    const [shownValue, setShownValue] = useState(value);
-
-    if (value !== shownValue) {
-        setShownValue(value);
-        if (selected) setMonth(selected);
-    }
-
-    return (
-        <div id={id} role="group" aria-label={ariaLabel} className="lodestar-day-picker lodestar-day-picker--inline">
-            <p className="lodestar-day-picker-value" aria-live="polite">
-                {selected ? DISPLAY_FORMAT.format(selected) : placeholder}
-            </p>
-
-            <DayPicker
-                mode="single"
-                selected={selected}
-                month={month}
-                onMonthChange={setMonth}
-                onSelect={(date) => {
-                    if (date) onChange(toDateKey(date));
-                }}
-                disabled={disabled}
-                weekStartsOn={0}
-                showOutsideDays
-            />
-
-            <div className="lodestar-day-picker-footer">
-                {clearable && value && (
-                    <button type="button" onClick={() => onChange("")}>
-                        Clear
-                    </button>
-                )}
-                <button
-                    type="button"
-                    disabled={todayOutOfRange}
-                    onClick={() => {
-                        onChange(today);
-                        setMonth(parseLocalDate(today));
-                    }}
-                >
-                    Today
-                </button>
-            </div>
-        </div>
     );
 }
