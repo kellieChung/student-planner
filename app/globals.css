@@ -125,6 +125,15 @@ html[data-theme="light"] .app-header h1 {
   background-color: var(--panel-raised) !important;
 }
 
+/* A themed root's own bg-slate-900 too: the rule above only reaches
+   descendants, so panels rendered outside the planner shell (the Courses
+   window, Still Deciding) stayed Night navy in Day. */
+.theme-surface[class*="bg-slate-900"],
+.planner-shell[class*="bg-slate-900"] {
+  background-color: var(--panel-raised) !important;
+  border-color: var(--border) !important;
+}
+
 .theme-surface [class*="bg-slate-800"],
 .planner-shell [class*="bg-slate-800"] {
   background-color: var(--panel-muted) !important;
@@ -133,6 +142,11 @@ html[data-theme="light"] .app-header h1 {
 .theme-surface [class*="bg-slate-700"],
 .planner-shell [class*="bg-slate-700"] {
   background-color: var(--border) !important;
+}
+
+.theme-surface [class*="hover:bg-slate-600"]:hover,
+.planner-shell [class*="hover:bg-slate-600"]:hover {
+  background-color: color-mix(in srgb, var(--border) 80%, var(--foreground)) !important;
 }
 
 .theme-surface [class*="border-slate-"],
@@ -315,11 +329,32 @@ html[data-theme="dark"] .planner-shell [class*="bg-rose-950/"] {
 
 /* Generic danger/error accents (delete buttons, error banners) used
    outside the rose-based status-badge system above. */
+.theme-surface [class*="text-red-3"],
+.theme-surface [class*="text-red-4"],
 .theme-surface [class*="text-red-500"],
 .theme-surface [class*="text-red-700"],
+.planner-shell [class*="text-red-3"],
+.planner-shell [class*="text-red-4"],
 .planner-shell [class*="text-red-500"],
 .planner-shell [class*="text-red-700"] {
   color: var(--status-overdue-text) !important;
+}
+
+/* Solid red (delete) buttons keep white text; the text-white → --foreground
+   remap would make it navy on red in Day. */
+.theme-surface [class*="bg-red-600"],
+.planner-shell [class*="bg-red-600"] {
+  color: #fff !important;
+}
+
+.theme-surface [class*="text-emerald-3"],
+.planner-shell [class*="text-emerald-3"] {
+  color: var(--status-done-text) !important;
+}
+
+.theme-surface [class*="border-emerald-"],
+.planner-shell [class*="border-emerald-"] {
+  border-color: color-mix(in srgb, var(--status-done-text) 45%, transparent) !important;
 }
 
 .theme-surface [class*="border-red-"],
@@ -375,6 +410,25 @@ html[data-theme="dark"] .planner-shell [class*="text-yellow-4"] {
 html[data-theme="dark"] .theme-surface [class*="text-amber-2"],
 html[data-theme="dark"] .planner-shell [class*="text-amber-2"] {
   color: var(--accent-hover) !important;
+}
+
+/* Pale amber/yellow text (written for navy) washes out on Day's cream. */
+html[data-theme="light"] .theme-surface [class*="text-amber-4"],
+html[data-theme="light"] .theme-surface [class*="text-yellow-4"],
+html[data-theme="light"] .planner-shell [class*="text-amber-4"],
+html[data-theme="light"] .planner-shell [class*="text-yellow-4"] {
+  color: var(--accent) !important;
+}
+
+html[data-theme="light"] .theme-surface [class*="text-amber-2"],
+html[data-theme="light"] .planner-shell [class*="text-amber-2"] {
+  color: var(--accent-hover) !important;
+}
+
+/* A translucent near-black amber muddies cream into grey (Polaris card). */
+html[data-theme="light"] .theme-surface [class*="bg-amber-950"],
+html[data-theme="light"] .planner-shell [class*="bg-amber-950"] {
+  background-color: var(--accent-soft) !important;
 }
 
 /* Completion pulse: transform/opacity/background only, so it stays
