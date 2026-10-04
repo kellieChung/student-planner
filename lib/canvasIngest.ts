@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
 import { hashExtensionToken, readBearerToken } from "@/lib/extensionAuth";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
+import { CanvasCompletionItem, readCanvasCompletionItem } from "@/lib/canvasCompletions";
 
 // Shared by app/api/canvas/sync/route.ts (full snapshot, prunes anything
 // missing) and app/api/canvas/restore-course/route.ts (single-course
@@ -103,6 +104,9 @@ export async function upsertCanvasCourses(
     let assignmentCount = 0;
     let discussionCount = 0;
     let announcementCount = 0;
+    // Applied by the caller once every assignment row exists, so a new
+    // assignment that's already submitted completes too.
+    const completionItems: CanvasCompletionItem[] = [];
 
     const syncedCourseCanvasIds = new Set<string>();
 
@@ -187,6 +191,9 @@ export async function upsertCanvasCourses(
             });
 
             assignmentCount++;
+
+            const completionItem = readCanvasCompletionItem(String(canvasCourse.id), assignment);
+            if (completionItem) completionItems.push(completionItem);
         }
 
         const discussions = Array.isArray(courseData.discussions)
@@ -270,5 +277,6 @@ export async function upsertCanvasCourses(
         discussionCount,
         announcementCount,
         syncedCourseCanvasIds,
+        completionItems,
     };
 }

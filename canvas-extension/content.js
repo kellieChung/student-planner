@@ -11,3 +11,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         origin: window.location.origin,
     });
 });
+
+// Canvas reloads the page after a submission, so any Canvas page load asks
+// background.js for a completion check (it ignores hosts other than the
+// connected Canvas, and throttles).
+if (document.querySelector(CANVAS_PAGE_SELECTOR) !== null) {
+    chrome.runtime.sendMessage({ type: "CANVAS_PAGE_VISITED" }).catch(() => {
+        // Extension reloaded since this page loaded.
+    });
+}

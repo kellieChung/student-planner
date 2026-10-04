@@ -6,6 +6,7 @@ import {
     upsertCanvasCourses,
     RawCourseSyncPayload,
 } from "@/lib/canvasIngest";
+import { applyCanvasCompletions } from "@/lib/canvasCompletions";
 
 export async function POST(request: Request) {
     try {
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
             discussionCount,
             announcementCount,
             syncedCourseCanvasIds,
+            completionItems,
         } = await upsertCanvasCourses(
             userId,
             canvasOrigin,
@@ -104,6 +106,8 @@ export async function POST(request: Request) {
             removedCourseCount = removedCourses.count;
         }
 
+        const { completedTaskIds } = await applyCanvasCompletions(userId, canvasOrigin, completionItems);
+
         return NextResponse.json({
             success: true,
             message: "Canvas data synced successfully.",
@@ -112,6 +116,7 @@ export async function POST(request: Request) {
             discussionCount,
             announcementCount,
             removedCourseCount,
+            completedCount: completedTaskIds.length,
         });
     } catch (error) {
         console.error("Canvas sync failed:", error);

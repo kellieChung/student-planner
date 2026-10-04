@@ -110,6 +110,38 @@ function pickCourse(course) {
     return { id: course.id, name: course.name };
 }
 
+// The student's own calendar day for a Canvas instant. Lodestar's server
+// can't know the student's timezone, so day keys are computed here.
+function localDayKey(date) {
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function localDayKeyOf(iso) {
+    if (typeof iso !== "string" || !iso) return null;
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? null : localDayKey(date);
+}
+
+// Submission state from `include[]=submission`, read by
+// lib/canvasCompletions.ts. A grade with no submission (e.g. a zero for
+// missing work) doesn't count as done.
+function pickSubmission(assignment) {
+    const submission = assignment.submission ?? {};
+    const submitted =
+        Boolean(submission.submitted_at) ||
+        submission.workflow_state === "submitted" ||
+        submission.workflow_state === "pending_review" ||
+        submission.excused === true;
+
+    return {
+        submitted,
+        completed_day: submitted ? localDayKeyOf(submission.submitted_at) ?? localDayKey(new Date()) : null,
+        due_day: localDayKeyOf(assignment.due_at),
+    };
+}
+
 function pickAssignment(assignment) {
     return {
         id: assignment.id,
@@ -117,6 +149,7 @@ function pickAssignment(assignment) {
         description: capHtml(assignment.description),
         due_at: assignment.due_at ?? null,
         html_url: assignment.html_url ?? null,
+        ...pickSubmission(assignment),
     };
 }
 
@@ -141,6 +174,10 @@ function pickAnnouncement(announcement) {
     };
 }
 
+function assignmentsUrl(canvasOrigin, courseId) {
+    return `${canvasOrigin}/api/v1/courses/${courseId}/assignments?include[]=submission&per_page=100`;
+}
+
 // Shared by SYNC_CANVAS and RESTORE_COURSE — both need the identical
 // assignments/discussions/announcements fetch for one course.
 function dayKeyFromNow(days) {
@@ -154,9 +191,7 @@ async function fetchCourseData(canvasOrigin, course) {
     const announcementStart = dayKeyFromNow(-ANNOUNCEMENT_LOOKBACK_DAYS);
     const announcementEnd = dayKeyFromNow(1);
 
-    const assignments = await getCanvasData(
-        `${canvasOrigin}/api/v1/courses/${course.id}/assignments?per_page=100`
-    );
+    const assignments = await getCanvasData(assignmentsUrl(canvasOrigin, course.id));
 
     const discussions = await getCanvasData(
         `${canvasOrigin}/api/v1/courses/${course.id}/discussion_topics?per_page=100`
@@ -275,6 +310,30 @@ async function authorizedFetch(url, token, init = {}) {
     return response;
 }
 
+// Courses the user deleted in Lodestar (the server would drop them anyway).
+// Fails open except on 401.
+async function getExcludedCourseIds(appOrigin, canvasOrigin, extensionToken) {
+    try {
+        const excludedResponse = await authorizedFetch(
+            `${appOrigin}/api/canvas/excluded-courses?canvasOrigin=${encodeURIComponent(canvasOrigin)}`,
+            extensionToken
+        );
+
+        if (excludedResponse.ok) {
+            const excludedData = await excludedResponse.json().catch(() => null);
+
+            if (Array.isArray(excludedData?.canvasIds)) {
+                return new Set(excludedData.canvasIds.map(String));
+            }
+        }
+    } catch (error) {
+        if (error.message.startsWith("Your session expired")) throw error;
+        console.warn("Excluded-courses lookup failed; syncing everything.", error);
+    }
+
+    return new Set();
+}
+
 async function runCanvasSync(canvasOrigin) {
     syncCancelled = false;
 
@@ -298,27 +357,7 @@ async function runCanvasSync(canvasOrigin) {
         `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
     );
 
-    // Skip courses the user deleted in Lodestar (the server would drop them
-    // anyway). Fails open except on 401.
-    let excludedIds = new Set();
-
-    try {
-        const excludedResponse = await authorizedFetch(
-            `${appOrigin}/api/canvas/excluded-courses?canvasOrigin=${encodeURIComponent(canvasOrigin)}`,
-            extensionToken
-        );
-
-        if (excludedResponse.ok) {
-            const excludedData = await excludedResponse.json().catch(() => null);
-
-            if (Array.isArray(excludedData?.canvasIds)) {
-                excludedIds = new Set(excludedData.canvasIds.map(String));
-            }
-        }
-    } catch (error) {
-        if (error.message.startsWith("Your session expired")) throw error;
-        console.warn("Excluded-courses lookup failed; syncing everything.", error);
-    }
+    const excludedIds = await getExcludedCourseIds(appOrigin, canvasOrigin, extensionToken);
 
     const coursesToSync = courses.filter((course) => !excludedIds.has(String(course.id)));
 
@@ -386,6 +425,9 @@ async function runCanvasSync(canvasOrigin) {
         throw new Error(errorData?.error || `Lodestar returned ${backendResponse.status}`);
     }
 
+    const syncResult = await backendResponse.json().catch(() => null);
+    if (syncResult?.completedCount > 0) await notifyPlannerTabs(syncResult.completedCount);
+
     return {
         status: "success",
         totalCourses: coursesToSync.length,
@@ -417,6 +459,124 @@ async function restoreCourse(canvasOrigin, course) {
         throw new Error(errorData?.error || `Lodestar returned ${backendResponse.status}`);
     }
 }
+
+// Lightweight check that only reads submission state, so a task submitted
+// in Canvas completes in Lodestar without a full sync. Triggered by a
+// Canvas page load, the Lodestar tab regaining focus, and a 15-minute
+// alarm; throttled to one run per COMPLETION_CHECK_MIN_GAP_MS, with a
+// trailing alarm so a trigger that lands inside the gap (e.g. the page load
+// right after submitting) still gets checked. The last-run time lives in
+// storage because the service worker's memory doesn't survive restarts.
+const COMPLETION_CHECK_ALARM = "completion-check";
+const COMPLETION_CHECK_TRAILING_ALARM = "completion-check-trailing";
+const COMPLETION_CHECK_PERIOD_MINUTES = 15;
+const COMPLETION_CHECK_MIN_GAP_MS = 30 * 1000;
+
+let completionCheckInFlight = null;
+
+async function runCompletionCheck() {
+    const { extensionToken, canvasOrigin } = await chrome.storage.local.get(["extensionToken", "canvasOrigin"]);
+
+    if (!extensionToken || !canvasOrigin || syncInProgress) return { completedCount: 0 };
+
+    await chrome.storage.local.set({ lastCompletionCheckAt: Date.now() });
+
+    const appOrigin = await getAppOrigin();
+
+    const courses = await getCanvasData(
+        `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
+    );
+    const excludedIds = await getExcludedCourseIds(appOrigin, canvasOrigin, extensionToken);
+    const payload = [];
+
+    for (const course of courses) {
+        if (excludedIds.has(String(course.id))) continue;
+
+        try {
+            const assignments = await getCanvasData(assignmentsUrl(canvasOrigin, course.id));
+
+            payload.push({
+                courseId: String(course.id),
+                assignments: assignments.map((assignment) => ({ id: assignment.id, ...pickSubmission(assignment) })),
+            });
+        } catch (error) {
+            console.warn(`Could not check submissions for ${course.name ?? course.id}:`, error);
+        }
+    }
+
+    if (payload.length === 0) return { completedCount: 0 };
+
+    const response = await authorizedFetch(`${appOrigin}/api/canvas/completions`, extensionToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ canvasOrigin, courses: payload }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Lodestar returned ${response.status}`);
+    }
+
+    const data = await response.json().catch(() => null);
+    const completedCount = typeof data?.completedCount === "number" ? data.completedCount : 0;
+
+    if (completedCount > 0) await notifyPlannerTabs(completedCount);
+
+    return { completedCount };
+}
+
+async function requestCompletionCheck() {
+    // A trigger mid-check may reflect a submission that check already missed.
+    if (completionCheckInFlight) {
+        await chrome.alarms.create(COMPLETION_CHECK_TRAILING_ALARM, { when: Date.now() + COMPLETION_CHECK_MIN_GAP_MS });
+        return completionCheckInFlight;
+    }
+
+    const { lastCompletionCheckAt = 0 } = await chrome.storage.local.get("lastCompletionCheckAt");
+    const nextAllowedAt = lastCompletionCheckAt + COMPLETION_CHECK_MIN_GAP_MS;
+
+    if (Date.now() < nextAllowedAt) {
+        await chrome.alarms.create(COMPLETION_CHECK_TRAILING_ALARM, { when: nextAllowedAt });
+        return { completedCount: 0 };
+    }
+
+    completionCheckInFlight = runCompletionCheck()
+        .catch((error) => {
+            console.warn("Canvas completion check failed:", error);
+            return { completedCount: 0 };
+        })
+        .finally(() => {
+            completionCheckInFlight = null;
+        });
+
+    return completionCheckInFlight;
+}
+
+// Tells open Lodestar tabs (via site-bridge.js) to reload task state.
+async function notifyPlannerTabs(completedCount) {
+    const appOrigin = await getAppOrigin();
+    const tabs = await chrome.tabs.query({
+        url: [`${appOrigin}/*`, "http://localhost:3000/*", "http://127.0.0.1:3000/*"],
+    });
+
+    for (const tab of tabs) {
+        chrome.tabs.sendMessage(tab.id, { type: "CANVAS_COMPLETIONS_APPLIED", completedCount }).catch(() => {
+            // Tab without site-bridge.js (opened before the extension loaded).
+        });
+    }
+}
+
+function ensureCompletionAlarm() {
+    chrome.alarms.create(COMPLETION_CHECK_ALARM, { periodInMinutes: COMPLETION_CHECK_PERIOD_MINUTES });
+}
+
+chrome.runtime.onInstalled.addListener(ensureCompletionAlarm);
+chrome.runtime.onStartup.addListener(ensureCompletionAlarm);
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === COMPLETION_CHECK_ALARM || alarm.name === COMPLETION_CHECK_TRAILING_ALARM) {
+        void requestCompletionCheck();
+    }
+});
 
 function reply(promise, sendResponse) {
     promise
@@ -469,6 +629,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             return false;
         }
+
+        case "CANVAS_PAGE_VISITED":
+            // content.js runs on every https page; only the connected Canvas counts.
+            chrome.storage.local.get("canvasOrigin").then(({ canvasOrigin }) => {
+                if (canvasOrigin && sender.origin === canvasOrigin) void requestCompletionCheck();
+            });
+            return false;
+
+        case "CHECK_CANVAS_COMPLETIONS":
+            return reply(requestCompletionCheck(), sendResponse);
 
         case "CANCEL_SYNC":
             syncCancelled = true;

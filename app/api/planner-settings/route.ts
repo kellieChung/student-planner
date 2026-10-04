@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { backfillCanvasCompletions } from "@/lib/canvasCompletions";
 
 const SELECT = {
     autoAcceptAiTasks: true,
     completionSound: true,
+    completeFromCanvas: true,
     lastRundownViewedAt: true,
 } as const;
 
@@ -39,6 +41,7 @@ export async function GET() {
             success: true,
             autoAcceptAiTasks: settings?.autoAcceptAiTasks ?? false,
             completionSound: settings?.completionSound ?? true,
+            completeFromCanvas: settings?.completeFromCanvas ?? true,
             lastRundownViewedAt: settings?.lastRundownViewedAt?.toISOString() ?? null,
         });
     } catch (error) {
@@ -89,7 +92,12 @@ export async function PATCH(request: Request) {
         // — an absent key means "leave this field alone," so the Taskbar
         // toggle and the Rundown's dismiss action can never clobber each
         // other's field with a stale value.
-        const data: { autoAcceptAiTasks?: boolean; completionSound?: boolean; lastRundownViewedAt?: Date | null } = {};
+        const data: {
+            autoAcceptAiTasks?: boolean;
+            completionSound?: boolean;
+            completeFromCanvas?: boolean;
+            lastRundownViewedAt?: Date | null;
+        } = {};
 
         if ("autoAcceptAiTasks" in input) {
             if (typeof input.autoAcceptAiTasks !== "boolean") {
@@ -111,6 +119,16 @@ export async function PATCH(request: Request) {
             data.completionSound = input.completionSound;
         }
 
+        if ("completeFromCanvas" in input) {
+            if (typeof input.completeFromCanvas !== "boolean") {
+                return NextResponse.json(
+                    { success: false, error: "'completeFromCanvas' must be a boolean." },
+                    { status: 400 }
+                );
+            }
+            data.completeFromCanvas = input.completeFromCanvas;
+        }
+
         if ("lastRundownViewedAt" in input) {
             if (typeof input.lastRundownViewedAt === "string") {
                 data.lastRundownViewedAt = new Date(input.lastRundownViewedAt);
@@ -124,6 +142,13 @@ export async function PATCH(request: Request) {
             }
         }
 
+        const previous = data.completeFromCanvas
+            ? await prisma.plannerSettings.findUnique({
+                where: { userId: user.id },
+                select: { completeFromCanvas: true },
+            })
+            : null;
+
         const settings = await prisma.plannerSettings.upsert({
             where: { userId: user.id },
             create: { userId: user.id, ...data },
@@ -131,10 +156,20 @@ export async function PATCH(request: Request) {
             select: SELECT,
         });
 
+        // Turning it back on catches up on what Canvas reported submitted
+        // while it was off (lib/canvasCompletions.ts).
+        let completedCount = 0;
+
+        if (previous?.completeFromCanvas === false && settings.completeFromCanvas) {
+            completedCount = (await backfillCanvasCompletions(user.id)).completedTaskIds.length;
+        }
+
         return NextResponse.json({
             success: true,
             autoAcceptAiTasks: settings.autoAcceptAiTasks,
             completionSound: settings.completionSound,
+            completeFromCanvas: settings.completeFromCanvas,
+            completedCount,
             lastRundownViewedAt: settings.lastRundownViewedAt?.toISOString() ?? null,
         });
     } catch (error) {

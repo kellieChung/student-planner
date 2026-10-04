@@ -178,6 +178,9 @@ export async function PATCH(request: Request, { params }: Params) {
             notes,
             completed,
             completedAt: completedAtDate,
+            // Server-owned (lib/canvasCompletions.ts sets it); a client write
+            // can only clear it, by un-completing the task.
+            ...(completed ? {} : { completedFromCanvas: false }),
             inProgress,
             deleted,
         };
@@ -196,6 +199,7 @@ export async function PATCH(request: Request, { params }: Params) {
                 notes: true,
                 completed: true,
                 completedAt: true,
+                completedFromCanvas: true,
                 inProgress: true,
                 deleted: true,
             },
@@ -221,6 +225,7 @@ export async function PATCH(request: Request, { params }: Params) {
                 completedAt: customization.completedAt
                     ? customization.completedAt.toISOString().slice(0, 10)
                     : null,
+                completedFromCanvas: customization.completedFromCanvas,
                 inProgress: customization.inProgress,
                 deleted: customization.deleted,
             },

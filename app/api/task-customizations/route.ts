@@ -36,6 +36,7 @@ export async function GET() {
                 notes: true,
                 completed: true,
                 completedAt: true,
+                completedFromCanvas: true,
                 inProgress: true,
                 deleted: true,
             },
@@ -65,6 +66,7 @@ export async function GET() {
                 completedAt: customization.completedAt
                     ? customization.completedAt.toISOString().slice(0, 10)
                     : null,
+                completedFromCanvas: customization.completedFromCanvas,
                 inProgress: customization.inProgress,
                 deleted: customization.deleted,
             })),

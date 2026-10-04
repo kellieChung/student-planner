@@ -144,6 +144,10 @@ model Assignment {
   description String?
   dueAt       DateTime?
   htmlUrl     String?
+  // Last submission state Canvas reported (lib/canvasCompletions.ts). Null =
+  // never reported (old extension build or never checked); only a flip to
+  // true auto-completes the task, so a student's manual un-check sticks.
+  canvasSubmitted Boolean?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -271,6 +275,10 @@ model TaskCustomization {
   // delete instead, no tombstone needed.
   completed     Boolean   @default(false)
   completedAt   DateTime?
+  // True when lib/canvasCompletions.ts completed the task because Canvas
+  // reported it submitted (shown as a badge on the card). Cleared whenever
+  // the task is un-completed, so a later manual check-off isn't mislabelled.
+  completedFromCanvas Boolean @default(false)
   // Set while a task has been started but not finished — cleared whenever
   // `completed` becomes true. No timestamp: nothing downstream needs
   // "when did I start it," and adding one to the startAt/completedAt
@@ -555,6 +563,8 @@ model PlannerSettings {
   autoAcceptAiTasks   Boolean   @default(false)
   // Plays public/sounds/completion-ding.mp3 on a fresh task completion.
   completionSound     Boolean   @default(true)
+  // Marks a Canvas task completed (with XP) once Canvas reports it submitted.
+  completeFromCanvas  Boolean   @default(true)
   // Null = never viewed — everything currently pending/added counts as
   // "new," which is also the correct behavior for a first-ever login.
   lastRundownViewedAt DateTime?

@@ -45,6 +45,8 @@ type Props = {
     onSetAutoAcceptAiTasks: (value: boolean) => void;
     completionSound: boolean;
     onSetCompletionSound: (value: boolean) => void;
+    completeFromCanvas: boolean;
+    onSetCompleteFromCanvas: (value: boolean) => void;
 };
 
 function useClock(): string {
@@ -88,6 +90,8 @@ export default function Taskbar({
     onSetAutoAcceptAiTasks,
     completionSound,
     onSetCompletionSound,
+    completeFromCanvas,
+    onSetCompleteFromCanvas,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const { replayOnboarding } = useLodestarFrame();
@@ -251,6 +255,14 @@ export default function Taskbar({
                             <label className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
                                 <span>Task completion sound</span>
                                 <Switch checked={completionSound} onChange={onSetCompletionSound} ariaLabel="Task completion sound" />
+                            </label>
+
+                            <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                                Canvas
+                            </p>
+                            <label className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
+                                <span>Complete tasks when submitted in Canvas</span>
+                                <Switch checked={completeFromCanvas} onChange={onSetCompleteFromCanvas} ariaLabel="Complete tasks when submitted in Canvas" />
                             </label>
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>

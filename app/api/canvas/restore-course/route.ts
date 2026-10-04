@@ -6,6 +6,7 @@ import {
     upsertCanvasCourses,
     RawCourseSyncPayload,
 } from "@/lib/canvasIngest";
+import { applyCanvasCompletions } from "@/lib/canvasCompletions";
 
 // Re-pulls one (or a few) specific course(s) from Canvas without touching
 // anything else — unlike /api/canvas/sync, this never prunes, so it's safe
@@ -76,11 +77,14 @@ export async function POST(request: Request) {
             assignmentCount,
             discussionCount,
             announcementCount,
+            completionItems,
         } = await upsertCanvasCourses(
             userId,
             canvasOrigin,
             courses as RawCourseSyncPayload[]
         );
+
+        const { completedTaskIds } = await applyCanvasCompletions(userId, canvasOrigin, completionItems);
 
         return NextResponse.json({
             success: true,
@@ -89,6 +93,7 @@ export async function POST(request: Request) {
             assignmentCount,
             discussionCount,
             announcementCount,
+            completedCount: completedTaskIds.length,
         });
     } catch (error) {
         console.error("Canvas course restore failed:", error);

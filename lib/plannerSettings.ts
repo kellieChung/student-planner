@@ -1,12 +1,14 @@
 export type PlannerSettings = {
     autoAcceptAiTasks: boolean;
     completionSound: boolean;
+    completeFromCanvas: boolean;
     lastRundownViewedAt: string | null;
 };
 
 const defaultSettings: PlannerSettings = {
     autoAcceptAiTasks: false,
     completionSound: true,
+    completeFromCanvas: true,
     lastRundownViewedAt: null,
 };
 
@@ -14,6 +16,7 @@ function coerceSettings(data: Partial<PlannerSettings>): PlannerSettings {
     return {
         autoAcceptAiTasks: typeof data.autoAcceptAiTasks === "boolean" ? data.autoAcceptAiTasks : false,
         completionSound: typeof data.completionSound === "boolean" ? data.completionSound : true,
+        completeFromCanvas: typeof data.completeFromCanvas === "boolean" ? data.completeFromCanvas : true,
         lastRundownViewedAt: typeof data.lastRundownViewedAt === "string" ? data.lastRundownViewedAt : null,
     };
 }

@@ -5,6 +5,8 @@
 // 2. Relays the extension token that /extension-callback hands over after the
 //    user clicks Connect. background.js only accepts it for the sign-in state
 //    it generated itself.
+// 3. Lets the planner ask for a Canvas completion check, and tells it when a
+//    check or sync completed tasks so it can reload them.
 function currentPlannerTheme() {
     return document.documentElement.dataset.theme === "light" ? "light" : "dark";
 }
@@ -43,4 +45,29 @@ window.addEventListener("message", (event) => {
             window.location.origin
         );
     });
+});
+
+function requestCanvasCompletionCheck() {
+    chrome.runtime.sendMessage({ type: "CHECK_CANVAS_COMPLETIONS" }).catch(() => {
+        // Extension reloaded since this page loaded.
+    });
+}
+
+// The planner's own mount-time request can fire before this script loads.
+requestCanvasCompletionCheck();
+
+window.addEventListener("message", (event) => {
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    if (event.data?.type !== "LODESTAR_CHECK_CANVAS_COMPLETIONS") return;
+
+    requestCanvasCompletionCheck();
+});
+
+chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type !== "CANVAS_COMPLETIONS_APPLIED") return;
+
+    window.postMessage(
+        { type: "LODESTAR_CANVAS_COMPLETIONS_APPLIED", completedCount: message.completedCount },
+        window.location.origin
+    );
 });

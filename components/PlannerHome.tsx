@@ -67,6 +67,7 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
         maybeCount: maybeCandidateCount,
         autoAcceptAiTasks: plannerSettingsRow?.autoAcceptAiTasks ?? false,
         completionSound: plannerSettingsRow?.completionSound ?? true,
+        completeFromCanvas: plannerSettingsRow?.completeFromCanvas ?? true,
     };
 
     return (

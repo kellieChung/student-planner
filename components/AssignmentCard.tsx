@@ -43,6 +43,8 @@ type AssignmentCardProps = {
     dueEndInsetPercent?: number;
     status: TaskStatus;
     completedAt: string | null;
+    // Completed automatically because Canvas reported it submitted.
+    completedFromCanvas?: boolean;
     // True while the green completion pulse plays (~550ms) — see
     // WeeklyPlannerView.tsx's pulsingIds. Purely visual; the card never
     // moves on completion.
@@ -79,6 +81,7 @@ export default function AssignmentCard({
     dueEndInsetPercent,
     status,
     completedAt,
+    completedFromCanvas = false,
     isCompleting,
     estimatedMinutes,
     isFocused,
@@ -209,6 +212,19 @@ export default function AssignmentCard({
             </div>
 
             <div className="absolute top-1 right-1 flex items-center gap-1">
+                {completed && completedFromCanvas && (
+                    <Tooltip label="Auto-completed: submitted in Canvas">
+                        <span
+                            tabIndex={0}
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded border border-emerald-400/50 px-1 py-px text-[9px] font-bold leading-none text-emerald-300"
+                            aria-label="Auto-completed: submitted in Canvas"
+                        >
+                            Canvas
+                        </span>
+                    </Tooltip>
+                )}
+
                 {isAiDetected && !completed && onDismissAiTag && (
                     <Tooltip label="AI-detected — click to dismiss this tag">
                         <button

@@ -33,6 +33,7 @@ import { useCoursesRemote } from "./os/CoursesRemoteContext";
 import { ProposedTask } from "@/types/proposedTask";
 import { PersistedCandidate, AddedFromCanvasItem } from "@/types/rundown";
 import { savePlannerSettings } from "@/lib/plannerSettings";
+import { getStarChart } from "@/lib/starChart";
 import { playCompletionSound } from "@/lib/completionSound";
 import RundownWindow from "./rundown/RundownWindow";
 import { useWindowManager } from "./os/WindowManagerContext";
@@ -75,6 +76,7 @@ type InitialRundown = {
     maybeCount: number;
     autoAcceptAiTasks: boolean;
     completionSound: boolean;
+    completeFromCanvas: boolean;
 };
 
 type WeeklyPlannerProps = {
@@ -106,6 +108,9 @@ type TaskCustomizationState = {
     notes: string;
     completed: boolean;
     completedAt: string;
+    // Read-only here: set server-side when Canvas reported the task
+    // submitted (lib/canvasCompletions.ts); never sent in a PATCH.
+    completedFromCanvas: boolean;
     inProgress: boolean;
     deleted: boolean;
 };
@@ -119,6 +124,7 @@ const EMPTY_CUSTOMIZATION: TaskCustomizationState = {
     notes: "",
     completed: false,
     completedAt: "",
+    completedFromCanvas: false,
     inProgress: false,
     deleted: false,
 };
@@ -215,6 +221,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [addedFromCanvas, setAddedFromCanvas] = useState<AddedFromCanvasItem[]>([]);
     const [autoAcceptAiTasks, setAutoAcceptAiTasks] = useState(initialRundown?.autoAcceptAiTasks ?? false);
     const [completionSound, setCompletionSound] = useState(initialRundown?.completionSound ?? true);
+    const [completeFromCanvas, setCompleteFromCanvas] = useState(initialRundown?.completeFromCanvas ?? true);
     const [showRundown, setShowRundown] = useState(() => initialRundown?.shouldAutoShow ?? false);
     const [showStillDeciding, setShowStillDeciding] = useState(false);
     const [awardingXp, setAwardingXp] = useState(false);
@@ -522,9 +529,12 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // (unless a newer edit already replaced it) and tells the user.
     const persistCustomization = (
         taskId: string,
-        updates: TaskCustomizationState
+        changes: TaskCustomizationState
     ) => {
         if (!canWriteCustomizations()) return;
+
+        // Mirrors the server: un-completing clears the Canvas marker.
+        const updates = changes.completed ? changes : { ...changes, completedFromCanvas: false };
 
         const previous = taskCustomizationsRef.current[taskId];
         const pending = pendingCustomizationWritesRef.current;
@@ -705,6 +715,55 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         };
     }, []);
 
+    // The extension can complete tasks (and award XP) server-side when
+    // Canvas reports them submitted (lib/canvasCompletions.ts). Re-pulling
+    // on return to the tab also keeps a stale tab from writing
+    // `completed: false` back over that, since persistCustomization saves
+    // the whole row.
+    async function reloadServerCompletionState() {
+        const [, savedGamification, savedChart] = await Promise.all([
+            loadTaskCustomizations(),
+            getGamificationState(),
+            getStarChart(),
+        ]);
+
+        if (savedGamification) {
+            latestGamificationRef.current = savedGamification;
+            setGamification(savedGamification);
+        }
+
+        if (savedChart) starChart.applyBalance(savedChart);
+    }
+
+    useEffect(() => {
+        // Handled by canvas-extension/site-bridge.js; a no-op without the extension.
+        const requestCanvasCompletionCheck = () => {
+            window.postMessage({ type: "LODESTAR_CHECK_CANVAS_COMPLETIONS" }, window.location.origin);
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== "visible") return;
+            requestCanvasCompletionCheck();
+            void reloadServerCompletionState();
+        };
+
+        const handleMessage = (event: MessageEvent) => {
+            if (event.source !== window || event.origin !== window.location.origin) return;
+            if (event.data?.type === "LODESTAR_CANVAS_COMPLETIONS_APPLIED") void reloadServerCompletionState();
+        };
+
+        requestCanvasCompletionCheck();
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        window.addEventListener("message", handleMessage);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            window.removeEventListener("message", handleMessage);
+        };
+        // Mount-only; the reload reads current state through refs/setters.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         // Resolve each Canvas-synced task's real due date/time from its
         // raw UTC instant using the browser's own local timezone (plain
@@ -810,6 +869,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     notes: string | null;
                     completed: boolean;
                     completedAt: string | null;
+                    completedFromCanvas?: boolean;
                     inProgress: boolean;
                     deleted: boolean;
                 }>;
@@ -826,6 +886,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     notes: customization.notes ?? "",
                     completed: customization.completed,
                     completedAt: customization.completedAt ?? "",
+                    completedFromCanvas: customization.completedFromCanvas ?? false,
                     inProgress: customization.inProgress,
                     deleted: customization.deleted,
                 };
@@ -1889,6 +1950,14 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         savePlannerSettings({ completionSound: value });
     }
 
+    async function handleSetCompleteFromCanvas(value: boolean) {
+        setCompleteFromCanvas(value);
+        await savePlannerSettings({ completeFromCanvas: value });
+
+        // Turning it on completes what Canvas already reported submitted.
+        if (value) void reloadServerCompletionState();
+    }
+
     const handleSaveTask = (
         updatedTask: Assignment,
         startDate: string,
@@ -2054,6 +2123,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 completedAt: status === "completed"
                     ? (current?.completed ? (current?.completedAt ?? "") : getTodayString())
                     : "",
+                completedFromCanvas: current?.completedFromCanvas ?? false,
                 inProgress: status === "in_progress",
                 deleted: current?.deleted ?? false,
             });
@@ -2310,6 +2380,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         dueEndInsetPercent = {endInsetPercent}
                                         status = {getTaskStatus(taskCustomization?.completed ?? false, taskCustomization?.inProgress ?? false)}
                                         completedAt = {taskCustomization?.completedAt || null}
+                                        completedFromCanvas = {taskCustomization?.completedFromCanvas ?? false}
                                         isCompleting = {pulsingIds.has(task.id)}
                                         estimatedMinutes = {estimate?.estimatedMinutes}
                                         isFocused={task.id === focusTaskId}
@@ -2466,6 +2537,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             onSetAutoAcceptAiTasks={handleSetAutoAcceptAiTasks}
             completionSound={completionSound}
             onSetCompletionSound={handleSetCompletionSound}
+            completeFromCanvas={completeFromCanvas}
+            onSetCompleteFromCanvas={handleSetCompleteFromCanvas}
         />
 
         {showRundown && (
