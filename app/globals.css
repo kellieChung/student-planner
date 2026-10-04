@@ -505,6 +505,58 @@ html[data-theme="light"] .planner-shell [class*="bg-amber-950"] {
   --ls-cream: #f7f3ec;
   --ls-ink: #1b2140;
   --ls-ink-muted: #4a5070;
+  --ls-tile: rgb(22 27 51 / 0.6);
+  --ls-scrim: rgb(10 12 28 / 0.72);
+  --ls-error: #fca5a5;
+}
+
+/* Star Chart's optional Day look (switch on the chart; ThemeScript sets
+   data-star-chart before paint): a paper chart with ink stars. Scoped to
+   .star-chart so the login sky and tour cards stay Night. */
+html[data-theme="light"][data-star-chart="day"] .star-chart {
+  --ls-night: #f7f3ec;
+  --ls-navy: #fffdf8;
+  --ls-navy-raised: #fffdf8;
+  --ls-tile: rgb(255 253 248 / 0.75);
+  --ls-line: rgb(27 33 64 / 0.18);
+  --ls-gold: #8a6418;
+  --ls-gold-hover: #6f4f10;
+  --ls-ivory: #1b2140;
+  --ls-muted: #4a5070;
+  --ls-scrim: rgb(27 33 64 / 0.35);
+  --ls-error: #991b1b;
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-star-lit {
+  fill: var(--ls-ink);
+  filter: none;
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-star-dim {
+  fill: var(--ls-ink);
+  opacity: 0.35;
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-map-halo {
+  fill: rgb(27 33 64 / 0.08);
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:hover .ls-map-halo,
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:focus-visible .ls-map-halo {
+  fill: rgb(138 100 24 / 0.18);
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:hover .ls-star-lit,
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:focus-visible .ls-star-lit {
+  filter: drop-shadow(0 0 2px rgb(27 33 64 / 0.45));
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart .ls-edge-lit {
+  opacity: 0.8;
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart :is(.ls-map-unlit, .ls-edge-dim) {
+  stroke: var(--ls-ink-muted);
 }
 
 .landing {

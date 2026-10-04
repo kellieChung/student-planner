@@ -7,6 +7,9 @@ import ConstellationFigure from "@/components/starchart/ConstellationFigure";
 import ConstellationDetail from "@/components/starchart/ConstellationDetail";
 import StarField from "@/components/brand/StarField";
 import { StarIcon } from "@/components/brand/Icons";
+import Switch from "@/components/ui/Switch";
+
+const STAR_CHART_THEME_KEY = "planner_star_chart_theme";
 
 type Props = {
     onBack: () => void;
@@ -15,6 +18,23 @@ type Props = {
 export default function StarChartView({ onBack }: Props) {
     const { state } = useStarChart();
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    // The planner (and its theme switch) is covered while the chart is open,
+    // so the app theme read at mount stays current.
+    const [isDayTheme] = useState(() => typeof document !== "undefined" && document.documentElement.dataset.theme === "light");
+    const [lightChart, setLightChart] = useState(
+        () => typeof document !== "undefined" && document.documentElement.dataset.starChart === "day"
+    );
+
+    const updateLightChart = (next: boolean) => {
+        setLightChart(next);
+        if (next) document.documentElement.dataset.starChart = "day";
+        else delete document.documentElement.dataset.starChart;
+        try {
+            localStorage.setItem(STAR_CHART_THEME_KEY, next ? "day" : "night");
+        } catch {
+            // Storage unavailable: the choice just lasts for this page load.
+        }
+    };
 
     const unlocked = CONSTELLATIONS.filter((constellation) => isUnlocked(constellation, state.lifetimeStarlight));
     const upcoming = nextUnlock(state.lifetimeStarlight);
@@ -25,7 +45,7 @@ export default function StarChartView({ onBack }: Props) {
     ).length;
 
     return (
-        <div className="sky relative min-h-full overflow-hidden bg-[var(--ls-night)] text-[var(--ls-ivory)]">
+        <div className="sky star-chart relative min-h-full overflow-hidden bg-[var(--ls-night)] text-[var(--ls-ivory)]">
             <StarField count={160} seed={11} />
 
             <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -38,13 +58,21 @@ export default function StarChartView({ onBack }: Props) {
                             your lifetime Starlight grows.
                         </p>
                     </div>
-                    <button
-                        type="button"
-                        onClick={onBack}
-                        className="rounded-full border border-[var(--ls-line)] px-4 py-2 text-sm font-semibold text-[var(--ls-ivory)] transition-colors hover:border-[var(--ls-gold)]"
-                    >
-                        Back to Ship&apos;s Log
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                        {isDayTheme && (
+                            <label className="flex items-center gap-2 text-sm font-semibold text-[var(--ls-muted)]">
+                                Light chart
+                                <Switch checked={lightChart} onChange={updateLightChart} ariaLabel="Light chart" />
+                            </label>
+                        )}
+                        <button
+                            type="button"
+                            onClick={onBack}
+                            className="rounded-full border border-[var(--ls-line)] px-4 py-2 text-sm font-semibold text-[var(--ls-ivory)] transition-colors hover:border-[var(--ls-gold)]"
+                        >
+                            Back to Ship&apos;s Log
+                        </button>
+                    </div>
                 </div>
 
                 <dl data-tour="chart-balance" className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -116,7 +144,7 @@ function ConstellationTile({ constellation, onOpen }: { constellation: Constella
         <button
             type="button"
             onClick={onOpen}
-            className="ls-constellation group flex h-full w-full flex-col items-center rounded-2xl border border-[var(--ls-line)] bg-[rgb(22_27_51/0.6)] p-4 text-center transition-colors hover:border-[var(--ls-gold)]"
+            className="ls-constellation group flex h-full w-full flex-col items-center rounded-2xl border border-[var(--ls-line)] bg-[var(--ls-tile)] p-4 text-center transition-colors hover:border-[var(--ls-gold)]"
         >
             <ConstellationFigure constellation={constellation} charted={charted} className="w-full max-w-[170px]" />
             <span className="mt-2 font-[family-name:var(--font-spectral)] text-lg">{constellation.name}</span>

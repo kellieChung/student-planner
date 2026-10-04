@@ -53,7 +53,7 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
             role="dialog"
             aria-modal="true"
             aria-label={`${constellation.name} star chart`}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-[rgb(10_12_28/0.72)] p-4"
+            className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--ls-scrim)] p-4"
             onClick={(event) => {
                 if (event.target === event.currentTarget) onClose();
             }}
@@ -154,7 +154,7 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
                         </p>
                     )}
 
-                    {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
+                    {error && <p className="mt-2 text-xs text-[var(--ls-error)]">{error}</p>}
                 </div>
             </div>
         </div>
