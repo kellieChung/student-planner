@@ -4,6 +4,7 @@ import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
 import { hashExtensionToken, readBearerToken } from "@/lib/extensionAuth";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import { CanvasCompletionItem, readCanvasCompletionItem } from "@/lib/canvasCompletions";
+import { isDateKey, toDateKey } from "@/lib/utils";
 
 // Shared by app/api/canvas/sync/route.ts (full snapshot, prunes anything
 // missing) and app/api/canvas/restore-course/route.ts (single-course
@@ -95,10 +96,18 @@ function instant(value: unknown): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// The student's local due day the extension computes; older builds don't
+// send it, so fall back to the server's timezone.
+function dueDay(assignment: Record<string, unknown>, dueAt: Date | null): string | null {
+    if (isDateKey(assignment.due_day)) return assignment.due_day;
+    return dueAt ? toDateKey(dueAt) : null;
+}
+
 export async function upsertCanvasCourses(
     userId: string,
     canvasOrigin: string,
-    courses: RawCourseSyncPayload[]
+    courses: RawCourseSyncPayload[],
+    today: string
 ) {
     let courseCount = 0;
     let assignmentCount = 0;
@@ -152,6 +161,7 @@ export async function upsertCanvasCourses(
                 canvasOrigin,
                 canvasId: String(canvasCourse.id),
                 name: text(canvasCourse.name, "Unnamed Course"),
+                syncStartDay: today,
             },
         });
 
@@ -166,29 +176,43 @@ export async function upsertCanvasCourses(
                 continue;
             }
 
-            await prisma.assignment.upsert({
-                where: {
-                    courseId_canvasId: {
+            const fields = {
+                name: text(assignment.name, "Unnamed Assignment"),
+                description: html(assignment.description),
+                dueAt: instant(assignment.due_at),
+                htmlUrl: httpUrl(assignment.html_url),
+            };
+            const day = dueDay(assignment, fields.dueAt);
+
+            // Work already due when the course was first synced is never
+            // imported: otherwise a new account starts with a term of past
+            // assignments to check off for unearned XP. A row that already
+            // exists (e.g. its due date moved back later) is still kept
+            // current.
+            if (savedCourse.syncStartDay && day && day < savedCourse.syncStartDay) {
+                const updated = await prisma.assignment.updateMany({
+                    where: { userId, courseId: savedCourse.id, canvasId: String(assignment.id) },
+                    data: fields,
+                });
+
+                if (updated.count === 0) continue;
+            } else {
+                await prisma.assignment.upsert({
+                    where: {
+                        courseId_canvasId: {
+                            courseId: savedCourse.id,
+                            canvasId: String(assignment.id),
+                        },
+                    },
+                    update: fields,
+                    create: {
+                        userId,
                         courseId: savedCourse.id,
                         canvasId: String(assignment.id),
+                        ...fields,
                     },
-                },
-                update: {
-                    name: text(assignment.name, "Unnamed Assignment"),
-                    description: html(assignment.description),
-                    dueAt: instant(assignment.due_at),
-                    htmlUrl: httpUrl(assignment.html_url),
-                },
-                create: {
-                    userId,
-                    courseId: savedCourse.id,
-                    canvasId: String(assignment.id),
-                    name: text(assignment.name, "Unnamed Assignment"),
-                    description: html(assignment.description),
-                    dueAt: instant(assignment.due_at),
-                    htmlUrl: httpUrl(assignment.html_url),
-                },
-            });
+                });
+            }
 
             assignmentCount++;
 

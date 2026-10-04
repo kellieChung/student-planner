@@ -7,6 +7,7 @@ import {
     RawCourseSyncPayload,
 } from "@/lib/canvasIngest";
 import { applyCanvasCompletions } from "@/lib/canvasCompletions";
+import { resolveClientToday } from "@/lib/utils";
 
 export async function POST(request: Request) {
     try {
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
             );
         }
 
-        let body: { canvasOrigin?: unknown; courses?: unknown; failedCourseIds?: unknown };
+        let body: { canvasOrigin?: unknown; today?: unknown; courses?: unknown; failedCourseIds?: unknown };
 
         try {
             body = await request.json();
@@ -72,7 +73,8 @@ export async function POST(request: Request) {
         } = await upsertCanvasCourses(
             userId,
             canvasOrigin,
-            body.courses as RawCourseSyncPayload[]
+            body.courses as RawCourseSyncPayload[],
+            resolveClientToday(body.today)
         );
 
         /*

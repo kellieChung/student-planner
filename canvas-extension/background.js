@@ -415,6 +415,7 @@ async function runCanvasSync(canvasOrigin) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             canvasOrigin,
+            today: localDayKey(new Date()),
             courses: courseData,
             failedCourseIds: failedCourses.map((course) => String(course.id)),
         }),
@@ -451,7 +452,7 @@ async function restoreCourse(canvasOrigin, course) {
     const backendResponse = await authorizedFetch(`${appOrigin}/api/canvas/restore-course`, extensionToken, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ canvasOrigin, courses: [restoredCourse] }),
+        body: JSON.stringify({ canvasOrigin, today: localDayKey(new Date()), courses: [restoredCourse] }),
     });
 
     if (!backendResponse.ok) {

@@ -7,6 +7,7 @@ import {
     RawCourseSyncPayload,
 } from "@/lib/canvasIngest";
 import { applyCanvasCompletions } from "@/lib/canvasCompletions";
+import { resolveClientToday } from "@/lib/utils";
 
 // Re-pulls one (or a few) specific course(s) from Canvas without touching
 // anything else — unlike /api/canvas/sync, this never prunes, so it's safe
@@ -33,8 +34,9 @@ export async function POST(request: Request) {
             );
         }
 
-        const { canvasOrigin, courses } = body as {
+        const { canvasOrigin, today, courses } = body as {
             canvasOrigin?: unknown;
+            today?: unknown;
             courses?: unknown;
         };
 
@@ -81,7 +83,8 @@ export async function POST(request: Request) {
         } = await upsertCanvasCourses(
             userId,
             canvasOrigin,
-            courses as RawCourseSyncPayload[]
+            courses as RawCourseSyncPayload[],
+            resolveClientToday(today)
         );
 
         const { completedTaskIds } = await applyCanvasCompletions(userId, canvasOrigin, completionItems);

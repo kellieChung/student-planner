@@ -100,6 +100,11 @@ model CanvasCourse {
   // planner cards — unset means "use the auto-derived default"
   // (components/AssignmentCard.tsx's courseColorFor hash).
   color        String?
+  // The student's local "YYYY-MM-DD" when this course was first synced.
+  // Assignments due before it are never created (lib/canvasIngest.ts), so
+  // a new account doesn't import a term of past work to check off for
+  // XP. Null = synced before this existed (no cutoff).
+  syncStartDay String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
