@@ -17,7 +17,7 @@ import {awardTaskXp, getGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {useStarChart} from "@/components/starchart/StarChartContext";
 import {StarIcon} from "@/components/brand/Icons";
-import {useLodestarFrame, useMascot} from "./world/LaptopFrame";
+import {useLodestarFrame} from "./os/LaptopFrame";
 import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
@@ -184,7 +184,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // is the real dedup; this only avoids a pointless request).
     const latestGamificationRef = useRef<GamificationState | null>(null);
     const starChart = useStarChart();
-    const mascot = useMascot();
     const { replayOnboarding } = useLodestarFrame();
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
@@ -1615,7 +1614,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         starChart.applyBalance(result);
 
         if (result.awarded) {
-            setLatestXpAward({ xp: result.xp, source: "fallback" });
+            setLatestXpAward({ xp: result.xp });
         }
     };
 
@@ -1671,7 +1670,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         }
 
         void awardXpForTask(task, getTodayString());
-        mascot.say("taskComplete");
     };
 
     const handleSetStatus = (task: Assignment, newStatus: TaskStatus) => {
@@ -1680,7 +1678,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         const { id } = task;
         const current = taskCustomizations[id] ?? EMPTY_CUSTOMIZATION;
         const wasCompleted = current.completed;
-        const wasInProgress = current.inProgress;
 
         persistCustomization(id, {
             ...current,
@@ -1688,10 +1685,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             completedAt: newStatus === "completed" ? getTodayString() : "",
             inProgress: newStatus === "in_progress",
         });
-
-        if (newStatus === "in_progress" && !wasInProgress) {
-            mascot.say("taskStart");
-        }
 
         if (newStatus === "completed" && !wasCompleted) {
             triggerCompletionPulse(id);

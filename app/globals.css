@@ -26,7 +26,7 @@ html[data-theme="dark"] {
   --accent-secondary: #9fb4ff;
   --xp-bar: #e9c46a;
   --xp-track: #232a4d;
-  --quest-glow: rgb(233 196 106 / 0.1);
+  --accent-glow: rgb(233 196 106 / 0.1);
   --overlay: rgb(10 12 28 / 0.78);
   --shadow: 0 24px 70px rgb(4 6 20 / 0.55);
   --status-overdue-bg: rgb(127 29 29 / 0.5);
@@ -57,7 +57,7 @@ html[data-theme="light"] {
   --accent-secondary: #3a4a8c;
   --xp-bar: #b7892a;
   --xp-track: #ece3d1;
-  --quest-glow: rgb(183 137 42 / 0.1);
+  --accent-glow: rgb(183 137 42 / 0.1);
   --overlay: rgb(27 33 64 / 0.4);
   --shadow: 0 24px 70px rgb(27 33 64 / 0.12);
   --status-overdue-bg: rgb(254 202 202 / 0.85);
@@ -210,7 +210,7 @@ html[data-theme="light"] .planner-shell [class*="bg-indigo-600"] {
 
 .theme-surface [class*="bg-indigo-950"],
 .planner-shell [class*="bg-indigo-950"] {
-  background-color: var(--quest-glow) !important;
+  background-color: var(--accent-glow) !important;
 }
 
 .theme-surface [class*="bg-indigo-600"],
@@ -221,21 +221,6 @@ html[data-theme="light"] .planner-shell [class*="bg-indigo-600"] {
 .theme-surface [class*="bg-indigo-500"],
 .planner-shell [class*="bg-indigo-500"] {
   background-color: var(--xp-bar) !important;
-}
-
-.theme-surface .xp-track,
-.planner-shell .xp-track {
-  background-color: var(--xp-track) !important;
-}
-
-.theme-surface .xp-fill,
-.planner-shell .xp-fill {
-  background: linear-gradient(90deg, var(--accent), var(--xp-bar)) !important;
-}
-
-html[data-theme="dark"] .theme-surface .xp-fill,
-html[data-theme="dark"] .planner-shell .xp-fill {
-  background: linear-gradient(90deg, var(--accent), var(--xp-bar), var(--accent-secondary)) !important;
 }
 
 .theme-surface input,
@@ -368,15 +353,14 @@ html[data-theme="dark"] .planner-shell [class*="bg-rose-950/"] {
 }
 
 /*
- * amber/orange/yellow "urgent" accents are the light theme's ("Cozy
- * Tavern") native identity — they already match --accent there. In dark
- * mode ("Enchanted Forest") they'd otherwise stay static orange/amber
- * instead of picking up the dark palette, so remap them to the dark
- * accent/quest-glow variables, mirroring the indigo/blue treatment above.
+ * amber/orange/yellow "urgent" accents are Day's native identity — they
+ * already match --accent there. At Night they'd otherwise stay static
+ * orange/amber instead of picking up the Night palette, so remap them to
+ * the accent/accent-glow variables, mirroring the indigo/blue treatment above.
  */
 html[data-theme="dark"] .theme-surface [class*="bg-amber-950"],
 html[data-theme="dark"] .planner-shell [class*="bg-amber-950"] {
-  background-color: var(--quest-glow) !important;
+  background-color: var(--accent-glow) !important;
 }
 
 html[data-theme="dark"] .theme-surface [class*="bg-amber-500"],
@@ -467,30 +451,8 @@ html[data-theme="light"] .planner-shell [class*="bg-amber-950"] {
   background-color: var(--accent-soft);
 }
 
-/* Laptop lid close/open transition between the World and OS views
-   (components/world/LaptopFrame.tsx) — the frame rotates shut around its
-   bottom edge, the view swaps while visually closed, then it rotates back
-   open. transform-origin is set inline (bottom center) alongside these. */
-@keyframes lid-close {
-  0% { transform: rotateX(0deg); opacity: 1; }
-  100% { transform: rotateX(-100deg); opacity: 0.15; }
-}
-
-@keyframes lid-open {
-  0% { transform: rotateX(-100deg); opacity: 0.15; }
-  100% { transform: rotateX(0deg); opacity: 1; }
-}
-
-.laptop-lid--closing {
-  animation: lid-close 280ms ease-in forwards;
-}
-
-.laptop-lid--opening {
-  animation: lid-open 280ms ease-out forwards;
-}
-
 /* ── Lodestar landing page (public "/") ──
-   Scoped palette so the app's Forest/Tavern themes never leak in. */
+   Scoped palette so the app's Day/Night theme tokens never leak in. */
 .landing,
 .sky {
   --ls-navy: #161b33;

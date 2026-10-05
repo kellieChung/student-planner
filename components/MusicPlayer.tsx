@@ -1781,7 +1781,7 @@ export default function MusicPlayer() {
     }
 
     // Publishes this instance's live state/actions into MusicRemoteContext
-    // so the OS taskbar and the World's BardPanel can render/control the
+    // so the OS taskbar can render/control the
     // exact same player. Refs (rather than putting togglePlay/playNext/
     // playPrevious/cycleLoopMode/toggleShuffle directly in the effect's
     // deps) keep the published action wrappers permanently stable — those

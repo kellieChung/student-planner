@@ -33,8 +33,6 @@ model User {
   recurringTasks                RecurringTask[]
   taskPlanningEstimates         TaskPlanningEstimate[]
   procrastinationRecords        ProcrastinationRecord[]
-  townState                     TownState?
-  worldLayout                   WorldLayout?
   plannerSettings               PlannerSettings?
   aiTaskEvents                  AiTaskEvent[]
   starChart                     StarChart?
@@ -461,55 +459,10 @@ model GamificationState {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Medieval-kingdom gamification layer (gamificationSystem.md). Deliberately a
-// separate model from GamificationState rather than an extension of it, so
-// GamificationState's existing PATCH validator/full-row-replace never has to
-// change and can't accidentally wipe real XP data.
-model TownState {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  currency Int @default(0)
-
-  // Typed growth counters, one per building. townSquareGrowth is both the
-  // TODO-task bucket and the general-activity anchor (see lib/townGrowth.ts).
-  libraryGrowth         Int @default(0)
-  workshopGrowth        Int @default(0)
-  trainingGroundsGrowth Int @default(0)
-  watchtowerGrowth      Int @default(0)
-  townSquareGrowth      Int @default(0)
-
-  // Village/Town/City/Kingdom, gated by a completion-count milestone
-  // checkpoint rather than derived live from growth (see
-  // maybeAdvanceKingdomStage in lib/townGrowth.ts) — only ever advances
-  // forward.
-  kingdomStage String @default("village")
-
-  onboardingCompletedAt DateTime?
-  updatedAt             DateTime  @updatedAt
-}
-
-// The user-designed World map (ground theme, decorations, building-stage
-// art, growth-gated scatter houses, the wall) — edited via /dev/map-editor,
-// read by TownMap.tsx to render the real World view. A single JSON blob,
-// not relational rows like TaskCustomization: this is one artifact one
-// user designs in one sitting, so a full-row replace on save is the
-// expected behavior here, not the stale-snapshot hazard it would be for
-// concurrently-edited task data.
-model WorldLayout {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  data      Json
-  updatedAt DateTime @updatedAt
-}
-
-// Lodestar's reward layer (gamificationSystem.md), replacing TownState in
-// the live app. Starlight is only ever changed server-side by increment/
-// decrement (app/api/star-chart) — never by a client sending a new total —
-// so a stale client copy can't undo a purchase or double an award.
+// Lodestar's reward layer (gamificationSystem.md). Starlight is only ever
+// changed server-side by increment/decrement (app/api/star-chart) — never by
+// a client sending a new total — so a stale client copy can't undo a
+// purchase or double an award.
 model StarChart {
   id                   String    @id @default(cuid())
   userId               String    @unique
@@ -564,9 +517,9 @@ model MusicTrack {
   @@index([playlistId])
 }
 
-// One row per user (TownState/GamificationState singleton pattern) —
-// deliberately separate from both, since this is neither gamification nor
-// world-layout state. Backs AutoTaskCreation.md's "auto-accept" setting and
+// One row per user (GamificationState/StarChart singleton pattern) —
+// deliberately separate from both, since this is neither XP nor
+// Star Chart state. Backs AutoTaskCreation.md's "auto-accept" setting and
 // the Rundown screen's "anything new since last visit" gate.
 model PlannerSettings {
   id     String @id @default(cuid())

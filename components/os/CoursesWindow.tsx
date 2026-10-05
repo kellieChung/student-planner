@@ -6,9 +6,8 @@ import Window from "./Window";
 import { BookIcon } from "@/components/brand/Icons";
 
 // Wraps the course-management panel in the same draggable/resizable/
-// minimizable/closable chrome as Pomodoro and Music. No World-panel
-// equivalent exists for Courses (unlike Pomodoro's Hourglass or Music's
-// Bard), so this needs no publish/subscribe engine state — just the
+// minimizable/closable chrome as Pomodoro and Music. Nothing else controls
+// Courses remotely, so this needs no publish/subscribe engine state — just the
 // version-bump bridge back to WeeklyPlannerView for refetching courses
 // after an edit (see CoursesRemoteContext.tsx).
 export default function CoursesWindow() {

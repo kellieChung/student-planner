@@ -3,7 +3,7 @@ import WeeklyPlannerView from "@/components/WeeklyPlannerView";
 import { Assignment } from "@/types/assignment";
 import { prisma } from "@/lib/prisma";
 import { isDevAccountEmail } from "@/lib/devAccounts";
-import LaptopFrame, { type TourMode } from "@/components/world/LaptopFrame";
+import LaptopFrame, { type TourMode } from "@/components/os/LaptopFrame";
 import { StarChartState } from "@/lib/starChart";
 import { normalizeTaskLabelParts } from "@/lib/taskLabel";
 

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CONSTELLATIONS } from "@/lib/constellations";
 import ConstellationFigure from "@/components/starchart/ConstellationFigure";
 import TourSpotlight, { type TourStep } from "@/components/starchart/TourSpotlight";
-import { useLodestarFrame } from "@/components/world/LaptopFrame";
+import { useLodestarFrame } from "@/components/os/LaptopFrame";
 import { CompassIcon, StarIcon } from "@/components/brand/Icons";
 import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 

@@ -8,7 +8,6 @@ import { DetectionQuota } from "@/types/aiQuota";
 import { MAX_ANNOUNCEMENTS_PER_CHECK } from "@/lib/analysisLimits";
 import Spinner from "@/components/Spinner";
 import { getStartOfWeek, getTodayString, parseLocalDate } from "@/lib/utils";
-import { useMascot } from "@/components/world/LaptopFrame";
 import { ChevronDownIcon } from "@/components/brand/Icons";
 
 // Pause is only checked between extraction batches, and a check is capped at
@@ -180,7 +179,6 @@ export default function DetectionTriggerControls({
     const runIdRef = useRef<string | null>(null);
     const lastBodyRef = useRef<Record<string, unknown>>({});
     const abortRef = useRef<AbortController | null>(null);
-    const { say } = useMascot();
 
     useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -370,7 +368,6 @@ export default function DetectionTriggerControls({
             setProgress(null);
         }
 
-        let mascotFired = false;
         let receivedDone = false;
         let receivedPaused = false;
 
@@ -463,11 +460,6 @@ export default function DetectionTriggerControls({
                                 total: base + frame.totalAnnouncements,
                             };
                         });
-
-                        if (!mascotFired && newTasks.length > 0) {
-                            mascotFired = true;
-                            say("announcementFound");
-                        }
                     } else if (frame.type === "paused") {
                         receivedPaused = true;
                     } else if (frame.type === "done") {

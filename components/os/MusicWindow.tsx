@@ -10,8 +10,8 @@ import { MusicIcon } from "@/components/brand/Icons";
 // on Close is exactly its own existing cleanup — genuinely stops playback,
 // not just hides it. Minimizing must NOT unmount this (audio needs to keep
 // playing) — Window.tsx only hides it visually (`invisible`) while
-// minimized, same "invisible, not display:none" treatment already used for
-// the OS/World toggle elsewhere in this app.
+// minimized, same "invisible, not display:none" treatment LaptopFrame uses
+// for the Ship's Log while the Star Chart is showing.
 export default function MusicWindow() {
     return (
         <Window app="music" title="Comms" icon={<MusicIcon size={14} />}>

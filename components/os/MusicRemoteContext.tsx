@@ -16,8 +16,8 @@ export type MusicEngineState = {
 // Deliberately only the plain-data playback controls — playlist
 // create/import/add-track all read from MusicPlayer's own internal form
 // state rather than taking parameters, so they aren't cleanly
-// remote-controllable without a deeper rewrite; scoped out of the World's
-// BardPanel on purpose (playlist management stays laptop-only).
+// remote-controllable without a deeper rewrite (playlist management stays
+// in the Comms window).
 export type MusicEngineActions = {
     togglePlay: () => void;
     playNext: () => void;
@@ -45,8 +45,8 @@ export function useMusicRemote(): MusicRemoteContextValue {
 
 // A channel for the real MusicPlayer instance (wherever it's currently
 // mounted — components/os/MusicWindow.tsx) to publish its live playback
-// state and register remote-controllable actions, so both the OS window
-// and the World's BardPanel reflect/control the exact same live player.
+// state and register remote-controllable actions, so the OS window and the
+// taskbar reflect/control the exact same live player.
 export function MusicRemoteProvider({ children }: { children: ReactNode }) {
     const [engineState, setEngineState] = useState<MusicEngineState | null>(null);
     const [engineActions, setEngineActions] = useState<MusicEngineActions | null>(null);

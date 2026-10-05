@@ -3,19 +3,11 @@
 import NumberField from "@/components/ui/NumberField";
 import { useEffect, useRef, useState } from "react";
 import { GamificationState } from "@/types/gamification";
-import { TownState, KingdomStage, MascotTrigger } from "@/types/townState";
 import { getGamificationState, saveGamificationState } from "@/lib/gamification";
-import { getTownState, saveTownGrowth } from "@/lib/townState";
 import { getTodayString } from "@/lib/utils";
-import { pickLine } from "@/lib/mascotDialogue";
-import { DEFAULT_WORLD_LAYOUT } from "@/lib/worldLayout";
-import WorldView from "@/components/world/WorldView";
-import Mascot from "@/components/world/Mascot";
-import OnboardingOverlay from "@/components/world/OnboardingOverlay";
 
 type Props = {
     initialGamification: GamificationState;
-    initialTownState: TownState;
 };
 
 const CONFIRM_WINDOW_MS = 3000;
@@ -98,9 +90,8 @@ const FAKE_TASK_TEMPLATES: Array<{ name: string; course: string }> = [
     { name: "Organize desk", course: "Personal" },
 ];
 
-export default function GamificationDevPanel({ initialGamification, initialTownState }: Props) {
+export default function GamificationDevPanel({ initialGamification }: Props) {
     const [gamification, setGamification] = useState<GamificationState>(initialGamification);
-    const [townState, setTownState] = useState<TownState>(initialTownState);
     const [busy, setBusy] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -133,26 +124,10 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
         }
     }, [generatedTaskIds, generatedIdsLoaded]);
 
-    const [previewCurrency, setPreviewCurrency] = useState(0);
-    const [previewLibrary, setPreviewLibrary] = useState(0);
-    const [previewWorkshop, setPreviewWorkshop] = useState(0);
-    const [previewTrainingGrounds, setPreviewTrainingGrounds] = useState(0);
-    const [previewWatchtower, setPreviewWatchtower] = useState(0);
-    const [previewTownSquare, setPreviewTownSquare] = useState(0);
-    const [previewKingdomStage, setPreviewKingdomStage] = useState<KingdomStage>("village");
-    const [previewDialogue, setPreviewDialogue] = useState("");
-
-    const [showIntroPreview, setShowIntroPreview] = useState(false);
-    const [showTourPreview, setShowTourPreview] = useState(false);
-
     const refreshAll = async () => {
-        const [nextGamification, nextTownState] = await Promise.all([
-            getGamificationState(),
-            getTownState(),
-        ]);
+        const nextGamification = await getGamificationState();
 
         if (nextGamification) setGamification(nextGamification);
-        setTownState(nextTownState);
     };
 
     const runAction = async (message: string, action: () => Promise<void>) => {
@@ -172,53 +147,6 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
 
     const resetXp = () =>
         runAction("XP reset to 0.", () => saveGamificationState({ totalXp: 0, awardedTaskIds: [] }));
-
-    const resetTownGrowth = () =>
-        runAction("Town growth/currency/kingdom stage reset to 0.", () =>
-            saveTownGrowth({
-                ...townState,
-                currency: 0,
-                libraryGrowth: 0,
-                workshopGrowth: 0,
-                trainingGroundsGrowth: 0,
-                watchtowerGrowth: 0,
-                townSquareGrowth: 0,
-                kingdomStage: "village",
-            })
-        );
-
-    // No lib/townState.ts helper sets onboardingCompletedAt back to null —
-    // the only existing writer (saveOnboardingCompletion) only ever sets a
-    // real timestamp — so this is a direct, narrow PATCH matching the same
-    // "send only the field you own" contract the route already enforces.
-    const resetOnboarding = () =>
-        runAction("Onboarding reset — reload the main app to see the intro again.", async () => {
-            await fetch("/api/town-state", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ onboardingCompletedAt: null }),
-            });
-        });
-
-    const resetEverything = () =>
-        runAction("Everything reset: XP, town growth, and onboarding.", async () => {
-            await saveGamificationState({ totalXp: 0, awardedTaskIds: [] });
-            await saveTownGrowth({
-                ...townState,
-                currency: 0,
-                libraryGrowth: 0,
-                workshopGrowth: 0,
-                trainingGroundsGrowth: 0,
-                watchtowerGrowth: 0,
-                townSquareGrowth: 0,
-                kingdomStage: "village",
-            });
-            await fetch("/api/town-state", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ onboardingCompletedAt: null }),
-            });
-        });
 
     const generateFakeTasks = async () => {
         setBusy(true);
@@ -273,17 +201,6 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
         }
     };
 
-    const previewTownState: TownState = {
-        currency: previewCurrency,
-        libraryGrowth: previewLibrary,
-        workshopGrowth: previewWorkshop,
-        trainingGroundsGrowth: previewTrainingGrounds,
-        watchtowerGrowth: previewWatchtower,
-        townSquareGrowth: previewTownSquare,
-        kingdomStage: previewKingdomStage,
-        onboardingCompletedAt: new Date().toISOString(),
-    };
-
     return (
         <div className="flex flex-col gap-6 pb-16">
             <div>
@@ -294,7 +211,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                     Dev tool — not linked from the main app
                 </p>
                 <h1 className="text-2xl font-bold" style={{ color: "var(--heading)" }}>
-                    Gamification test panel
+                    XP & test tasks
                 </h1>
             </div>
 
@@ -311,17 +228,13 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                 className="rounded-lg border px-3 py-2 text-xs"
                 style={{ borderColor: "#f59e0b", background: "rgb(245 158 11 / 0.1)", color: "#f59e0b" }}
             >
-                ⚠️ The buttons in &quot;Real-account controls&quot; below mutate your real account&apos;s
-                data (XP, town growth, onboarding). Task generation/deletion and the live preview
-                sandbox further down are safe — the preview never persists anything.
+                ⚠️ &quot;Reset XP&quot; mutates your real account&apos;s XP. Fake tasks are real custom tasks
+                on your account until you delete them here. To replay onboarding, use the Onboarding tour tab.
             </div>
 
             <Card title="Real-account controls">
                 <div className="flex flex-wrap gap-2">
                     <ConfirmButton label="Reset XP to 0" onConfirm={resetXp} disabled={busy} />
-                    <ConfirmButton label="Reset town growth" onConfirm={resetTownGrowth} disabled={busy} />
-                    <ConfirmButton label="Reset onboarding" onConfirm={resetOnboarding} disabled={busy} />
-                    <ConfirmButton label="Reset everything" onConfirm={resetEverything} disabled={busy} />
                 </div>
             </Card>
 
@@ -329,7 +242,7 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                 <p className="mb-2 text-xs" style={{ color: "var(--muted)" }}>
                     Creates tasks due today across Biology/Calculus/History/Personal so they classify
                     as different label types — go to <code>/</code> and complete them to exercise the
-                    real mascot/XP/growth/streak flow.
+                    real XP and Starlight flow.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                     <NumberField ariaLabel="Number of fake tasks" min={1} max={20} value={fakeTaskCount} onChange={setFakeTaskCount} />
@@ -354,107 +267,12 @@ export default function GamificationDevPanel({ initialGamification, initialTownS
                 </div>
             </Card>
 
-            <Card title="Live map/mascot preview (not persisted)">
-                <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {([
-                        ["Currency", previewCurrency, setPreviewCurrency],
-                        ["Library", previewLibrary, setPreviewLibrary],
-                        ["Workshop", previewWorkshop, setPreviewWorkshop],
-                        ["Training Grounds", previewTrainingGrounds, setPreviewTrainingGrounds],
-                        ["Watchtower", previewWatchtower, setPreviewWatchtower],
-                        ["Town Square", previewTownSquare, setPreviewTownSquare],
-                    ] as Array<[string, number, (value: number) => void]>).map(([label, value, setValue]) => (
-                        <label key={label} className="flex flex-col gap-1 text-[10px]" style={{ color: "var(--muted)" }}>
-                            {label}
-                            <input
-                                type="number"
-                                value={value}
-                                onChange={(event) => setValue(Number(event.target.value) || 0)}
-                                className="rounded-md border px-2 py-1 text-xs"
-                                style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
-                            />
-                        </label>
-                    ))}
-                    <label className="flex flex-col gap-1 text-[10px]" style={{ color: "var(--muted)" }}>
-                        Kingdom stage
-                        <select
-                            value={previewKingdomStage}
-                            onChange={(event) => setPreviewKingdomStage(event.target.value as KingdomStage)}
-                            className="rounded-md border px-2 py-1 text-xs"
-                            style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
-                        >
-                            {(["village", "town", "city", "kingdom"] as KingdomStage[]).map((stage) => (
-                                <option key={stage} value={stage}>{stage}</option>
-                            ))}
-                        </select>
-                    </label>
-                </div>
-
-                <div className="overflow-hidden rounded-lg border" style={{ borderColor: "var(--border)" }}>
-                    <WorldView townState={previewTownState} layout={DEFAULT_WORLD_LAYOUT} onOpenLaptop={() => {}} dialogue={null} />
-                </div>
-
-                <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border p-4" style={{ borderColor: "var(--border)" }}>
-                    <Mascot dialogue={previewDialogue || null} />
-                    <input
-                        type="text"
-                        value={previewDialogue}
-                        onChange={(event) => setPreviewDialogue(event.target.value)}
-                        placeholder="Custom dialogue text..."
-                        className="w-full max-w-sm rounded-md border px-2 py-1 text-xs"
-                        style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--foreground)" }}
-                    />
-                    <div className="flex flex-wrap justify-center gap-2">
-                        {(["taskStart", "taskComplete", "announcementFound"] as MascotTrigger[]).map((trigger) => (
-                            <button
-                                key={trigger}
-                                type="button"
-                                onClick={() => setPreviewDialogue(pickLine(trigger))}
-                                className="rounded-lg border px-3 py-1.5 text-xs font-bold transition-transform hover:scale-105"
-                                style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--heading)" }}
-                            >
-                                Sample: {trigger}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setShowIntroPreview((current) => !current)}
-                        className="rounded-lg border px-3 py-2 text-xs font-bold transition-transform hover:scale-105"
-                        style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--heading)" }}
-                    >
-                        {showIntroPreview ? "Hide" : "Show"} onboarding intro preview
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setShowTourPreview((current) => !current)}
-                        className="rounded-lg border px-3 py-2 text-xs font-bold transition-transform hover:scale-105"
-                        style={{ borderColor: "var(--border)", background: "var(--panel-muted)", color: "var(--heading)" }}
-                    >
-                        {showTourPreview ? "Hide" : "Show"} onboarding tour preview
-                    </button>
-                </div>
-
-                {showIntroPreview && (
-                    <div className="mt-3 overflow-hidden rounded-lg border" style={{ borderColor: "var(--border)" }}>
-                        <OnboardingOverlay phase="intro" onOpenLaptop={() => setShowIntroPreview(false)} />
-                    </div>
-                )}
-
-                {showTourPreview && (
-                    <OnboardingOverlay phase="tour" onComplete={() => setShowTourPreview(false)} />
-                )}
-            </Card>
-
             <Card title="Raw state">
                 <pre
                     className="overflow-auto rounded-lg p-3 text-[11px]"
                     style={{ background: "var(--panel-muted)", color: "var(--foreground)" }}
                 >
-                    {JSON.stringify({ gamification, townState, generatedTaskIds }, null, 2)}
+                    {JSON.stringify({ gamification, generatedTaskIds }, null, 2)}
                 </pre>
             </Card>
         </div>

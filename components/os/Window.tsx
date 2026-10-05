@@ -22,8 +22,7 @@ type Props = {
 // Generic draggable, resizable OS window chrome: a title bar (drag handle +
 // minimize/close buttons) plus a bottom-right resize grip around arbitrary
 // content. Dragging/resizing/position/size/z-order all live in
-// WindowManagerContext, shared with the taskbar and the World's themed
-// panels.
+// WindowManagerContext, shared with the taskbar.
 export default function Window({ app, title, icon, children, onBeforeClose, interceptClose }: Props) {
     const { windows, moveWindow, resizeWindow, minimizeWindow, closeWindow, focusWindow } = useWindowManager();
     const meta = windows[app];

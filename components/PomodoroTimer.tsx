@@ -461,7 +461,7 @@ export default function PomodoroTimer({ focusTask, onClearFocusTask }: PomodoroT
     };
 
     // Publishes this instance's live state/actions into PomodoroRemoteContext
-    // so the OS taskbar and the World's HourglassPanel can render/control the
+    // so the OS taskbar can render/control the
     // exact same timer. Refs (rather than putting toggleTimer/resetTimer/
     // changeMode directly in the effect's deps) keep the published action
     // wrappers permanently stable — those three functions are recreated every

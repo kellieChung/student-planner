@@ -3,33 +3,29 @@
 import { useState } from "react";
 import Link from "next/link";
 import { GamificationState } from "@/types/gamification";
-import { TownState } from "@/types/townState";
 import DevCreditsPanel from "@/components/dev/DevCreditsPanel";
 import DevAnalyzerTools from "@/components/dev/DevAnalyzerTools";
 import GamificationDevPanel from "@/components/dev/GamificationDevPanel";
 
-export type DevTabId = "credits" | "analyzer" | "onboarding" | "gamification" | "map";
+export type DevTabId = "credits" | "analyzer" | "onboarding" | "gamification";
 
 type Props = {
     initialTab: DevTabId;
     currentEmail: string;
     initialGamification: GamificationState;
-    initialTownState: TownState;
 };
 
 const TABS: { id: DevTabId; label: string }[] = [
     { id: "credits", label: "Accounts & credits" },
     { id: "analyzer", label: "Analyzer tools" },
     { id: "onboarding", label: "Onboarding tour" },
-    { id: "gamification", label: "Gamification (retired town)" },
-    { id: "map", label: "Map editor (retired)" },
+    { id: "gamification", label: "XP & test tasks" },
 ];
 
 export default function DevDashboard({
     initialTab,
     currentEmail,
     initialGamification,
-    initialTownState,
 }: Props) {
     const [tab, setTab] = useState<DevTabId>(initialTab);
 
@@ -83,20 +79,9 @@ export default function DevDashboard({
             )}
 
             {tab === "gamification" && (
-                <GamificationDevPanel
-                    initialGamification={initialGamification}
-                    initialTownState={initialTownState}
-                />
+                <GamificationDevPanel initialGamification={initialGamification} />
             )}
 
-            {tab === "map" && (
-                <LaunchCard
-                    title="Map editor"
-                    body="The World map editor for the retired town. It needs the full viewport, so it opens on its own page."
-                    href="/dev/map-editor"
-                    label="Open map editor"
-                />
-            )}
         </div>
     );
 }

@@ -55,8 +55,8 @@ export function usePomodoroRemote(): PomodoroRemoteContextValue {
 // which now reads/writes it here instead of local state) plus a channel
 // for the real PomodoroTimer instance (wherever it's currently mounted —
 // components/os/PomodoroWindow.tsx) to publish its live countdown state
-// and register remote-controllable actions, so both the OS window and the
-// World's HourglassPanel render the exact same live timer.
+// and register remote-controllable actions, so the OS window and the
+// taskbar render the exact same live timer.
 export function PomodoroRemoteProvider({ children }: { children: ReactNode }) {
     const [focusTaskId, setFocusTaskIdState] = useState<string | null>(null);
     const [focusTaskSummary, setFocusTaskSummary] = useState<PomodoroFocusTaskSummary | null>(null);

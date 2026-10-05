@@ -10,7 +10,7 @@ import TaskLabelSettings from "@/components/TaskLabelSettings";
 import type { TaskLabelPart } from "@/lib/taskLabel";
 import { XpAward } from "@/types/gamification";
 import { useWindowManager } from "./WindowManagerContext";
-import { useLodestarFrame } from "@/components/world/LaptopFrame";
+import { useLodestarFrame } from "@/components/os/LaptopFrame";
 import {
     BookIcon,
     CompassIcon,

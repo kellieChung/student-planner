@@ -87,7 +87,7 @@ export async function PATCH(request: Request) {
 
         const input = body as Record<string, unknown>;
 
-        // Present-key-only partial update (lib/townState.ts's convention)
+        // Present-key-only partial update
         // — an absent key means "leave this field alone," so the Taskbar
         // toggle and the Rundown's dismiss action can never clobber each
         // other's field with a stale value.

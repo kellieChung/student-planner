@@ -1,6 +1,6 @@
 # Lodestar — gamification spec (Star Chart)
 
-Replaces the retired medieval-kingdom system (town, buildings, pixel sprites, isekai mascot Nano). Nothing here depends on those assets; the old code stays in the repo, marked RETIRED.
+Replaces an earlier medieval-town concept (buildings, pixel sprites, a mascot), whose code, art and tables were removed on 2026-10-05.
 
 ## Concept
 The player is a lone navigator charting an unmapped sky: exploration, not ownership. Finished schoolwork earns **Starlight**, spent to chart stars in **real IAU constellations** (not tied to classes). The sky becomes a visual record of real effort: "how much have I mapped", never "how much do I own".

@@ -39,9 +39,8 @@ export async function getPlannerSettings(): Promise<PlannerSettings> {
     }
 }
 
-// The PATCH route treats an absent key as "leave this field alone" (same
-// convention as lib/townState.ts) — callers send only the field(s) they
-// actually own.
+// The PATCH route treats an absent key as "leave this field alone" —
+// callers send only the field(s) they actually own.
 export async function savePlannerSettings(partial: Partial<PlannerSettings>): Promise<void> {
     try {
         await fetch("/api/planner-settings", {

@@ -31,22 +31,6 @@ export default function CreditsPage() {
                     </p>
                 </section>
 
-                <section className="mt-6">
-                    <h2 className="text-sm font-bold uppercase tracking-wider text-[var(--muted)]">Retired town art</h2>
-                    <p className="mt-2 text-sm text-[var(--foreground)]">
-                        An earlier version of Lodestar used town art by André Mari Coppola (toen) — Toen&apos;s
-                        Medieval Strategy Sprite Pack, from{" "}
-                        <Link href="https://toen.itch.io/toens-medieval-strategy" className="underline" style={linkStyle}>
-                            toen.itch.io/toens-medieval-strategy
-                        </Link>
-                        , licensed under{" "}
-                        <Link href="https://creativecommons.org/licenses/by/4.0/" className="underline" style={linkStyle}>
-                            CC BY 4.0
-                        </Link>
-                        . Tiles were sliced from the original sheet and scaled 2x; no pixel data was altered.
-                    </p>
-                </section>
-
                 <p className="mt-8 text-xs text-[var(--muted)]">
                     <Link href="/" className="underline" style={linkStyle}>Back to Lodestar</Link>
                 </p>
