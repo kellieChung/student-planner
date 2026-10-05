@@ -6,7 +6,7 @@ Replaces the retired medieval-kingdom system (town, buildings, pixel sprites, is
 The player is a lone navigator charting an unmapped sky: exploration, not ownership. Finished schoolwork earns **Starlight**, spent to chart stars in **real IAU constellations** (not tied to classes). The sky becomes a visual record of real effort: "how much have I mapped", never "how much do I own".
 
 ## Economy
-- **Earn:** every completed task earns Starlight equal to its XP award (`app/api/task-xp`: estimated minutes → 10–100, with a late penalty), so XP and Starlight rise together.
+- **Earn:** every completed task earns Starlight equal to its XP award (`lib/xp.ts`, server-side by the AI's stored task type: 15 small / 25 standard / 40 big, with a late penalty; never from the editable time estimate), so XP and Starlight rise together.
 - **Spend:** a deliberate player choice to chart individual stars, with room for future upgrades or spendable categories.
 - **Unlocks:** constellations appear in a fixed order gated by **lifetime Starlight** (never reduced by spending). Orion, the Big Dipper and Cassiopeia are open from 0, then more obscure ones as it grows. 15 of 88 ship (`lib/constellations.ts`, thresholds 0, 0, 0, 150, 350, 600 … 5100); the rest are planned. Star price = 25 + 5 × index.
 - Reserve the big payoffs (a fully lit constellation, a new region of sky) for real milestones; routine spending should feel good but small.

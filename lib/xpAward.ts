@@ -56,15 +56,15 @@ async function awardTask(
 
 // Shared by app/api/gamification/route.ts (a student checking a task off)
 // and lib/canvasCompletions.ts (Canvas reporting it submitted). Name/course
-// always come from the stored row. `due`/`completedAt` are the user's local
+// and the AI type always come from stored rows. `due`/`completedAt` are the user's local
 // calendar days, which only the browser knows; they only affect the late
 // penalty. Returns null when the task isn't the user's.
 export async function grantTaskXp(
     userId: string,
     taskId: string,
-    options: { due?: string; completedAt?: string; estimatedMinutes?: number }
+    options: { due?: string; completedAt?: string }
 ): Promise<TaskXpAward | null> {
-    const [assignment, customTask] = await Promise.all([
+    const [assignment, customTask, estimate] = await Promise.all([
         prisma.assignment.findFirst({
             where: { id: taskId, userId },
             select: { name: true, course: { select: { name: true, displayName: true } } },
@@ -72,6 +72,10 @@ export async function grantTaskXp(
         prisma.customTask.findFirst({
             where: { id: taskId, userId },
             select: { name: true, course: true },
+        }),
+        prisma.taskPlanningEstimate.findUnique({
+            where: { userId_taskId: { userId, taskId } },
+            select: { assignmentType: true },
         }),
     ]);
 
@@ -83,7 +87,7 @@ export async function grantTaskXp(
 
     if (!task) return null;
 
-    const xp = computeTaskXp({ ...task, ...options });
+    const xp = computeTaskXp({ ...task, ...options, assignmentType: estimate?.assignmentType });
 
     let result;
 

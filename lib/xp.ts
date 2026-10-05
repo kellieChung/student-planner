@@ -1,18 +1,24 @@
-import { classifyAssignmentType, estimateMinutesByType } from "@/lib/assignmentType";
+import { classifyAssignmentType, normalizeAssignmentType, type AssignmentType } from "@/lib/assignmentType";
 import { daysBetween, isDateKey, parseLocalDate } from "@/lib/utils";
 
-// Purely time-based (no model call): a task without a planning estimate gets
-// the same deterministic type→minutes estimate task-planning uses.
-function xpFromEstimatedMinutes(estimatedMinutes: unknown): number | null {
-    const minutes = typeof estimatedMinutes === "number" ? estimatedMinutes : Number(estimatedMinutes);
-
-    if (!Number.isFinite(minutes) || minutes <= 0) return null;
-    if (minutes <= 15) return 10;
-    if (minutes <= 30) return 20;
-    if (minutes <= 60) return 35;
-    if (minutes <= 120) return 50;
-    if (minutes <= 240) return 75;
-    return 100;
+// By task type, not estimated minutes: students can edit their estimates, so
+// minutes would let anyone inflate XP. Tiers are narrow so a misclassified
+// task costs or gains little.
+function xpForAssignmentType(type: AssignmentType): number {
+    switch (type) {
+        case "essay":
+        case "project":
+        case "presentation":
+        case "test":
+        case "exam":
+            return 40;
+        case "homework":
+        case "problem_set":
+        case "lab":
+            return 25;
+        default:
+            return 15;
+    }
 }
 
 function latePenalty(daysLate: number): number {
@@ -34,14 +40,16 @@ export type XpInput = {
     course: string;
     due?: unknown;
     completedAt?: unknown;
-    estimatedMinutes?: unknown;
+    // The AI's stored classification; the student's typeOverride is
+    // deliberately not used, so XP can't be raised by relabelling.
+    assignmentType?: string | null;
 };
 
 export function computeTaskXp(task: XpInput): number {
-    const baseXp =
-        xpFromEstimatedMinutes(task.estimatedMinutes) ??
-        xpFromEstimatedMinutes(estimateMinutesByType(classifyAssignmentType({ name: task.name, course: task.course }))) ??
-        20;
+    const type = task.assignmentType
+        ? normalizeAssignmentType(task.assignmentType)
+        : classifyAssignmentType({ name: task.name, course: task.course });
+    const baseXp = xpForAssignmentType(type);
 
     return Math.max(5, Math.floor((baseXp * latePenalty(calculateDaysLate(task.due, task.completedAt))) / 5) * 5);
 }

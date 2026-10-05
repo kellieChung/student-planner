@@ -106,6 +106,8 @@ type TaskCustomizationState = {
     nameOverride: string;
     typeOverride: string;
     dueAtOverride: string;
+    // Student-edited minutes; null follows the AI/type estimate.
+    estimatedMinutesOverride: number | null;
     notes: string;
     completed: boolean;
     completedAt: string;
@@ -122,6 +124,7 @@ const EMPTY_CUSTOMIZATION: TaskCustomizationState = {
     nameOverride: "",
     typeOverride: "",
     dueAtOverride: "",
+    estimatedMinutesOverride: null,
     notes: "",
     completed: false,
     completedAt: "",
@@ -137,6 +140,7 @@ function toCustomizationPatchBody(updates: TaskCustomizationState) {
         nameOverride: updates.nameOverride || null,
         typeOverride: updates.typeOverride || null,
         dueAtOverride: updates.dueAtOverride || null,
+        estimatedMinutesOverride: updates.estimatedMinutesOverride,
         notes: updates.notes || null,
         completed: updates.completed,
         completedAt: updates.completedAt || null,
@@ -443,6 +447,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         [effectiveTasks, taskCustomizations]
     );
 
+    // The student's own estimate wins over the AI/type one.
+    const getEstimatedMinutes = (taskId: string): number | undefined =>
+        taskCustomizations[taskId]?.estimatedMinutesOverride ?? taskPlanning[taskId]?.estimatedMinutes;
+
     /*
      * Shared with the "focus task" lookup below, so both use the exact
      * same AI-informed scoring as the API (lib/prioritization.ts) plus
@@ -453,6 +461,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
      */
     const computeTaskPriority = (task: Assignment): PriorityResult => {
         const estimate = taskPlanning[task.id];
+        const estimatedMinutes = getEstimatedMinutes(task.id);
 
         return calculatePriority({
             name: task.name,
@@ -462,7 +471,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             importance: estimate?.importance ?? 5,
             difficulty: estimate?.difficulty ?? 5,
             consequence: estimate?.consequence ?? 5,
-            estimatedMinutes: estimate?.estimatedMinutes ?? 30,
+            estimatedMinutes: estimatedMinutes ?? 30,
             procrastinationIndexHours: estimate?.assignmentType
                 ? procrastinationIndexByType[estimate.assignmentType] ?? null
                 : null,
@@ -876,6 +885,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     nameOverride: string | null;
                     typeOverride: string | null;
                     dueAtOverride: string | null;
+                    estimatedMinutesOverride?: number | null;
                     notes: string | null;
                     completed: boolean;
                     completedAt: string | null;
@@ -893,6 +903,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     nameOverride: customization.nameOverride ?? "",
                     typeOverride: customization.typeOverride ?? "",
                     dueAtOverride: customization.dueAtOverride ?? "",
+                    estimatedMinutesOverride: customization.estimatedMinutesOverride ?? null,
                     notes: customization.notes ?? "",
                     completed: customization.completed,
                     completedAt: customization.completedAt ?? "",
@@ -1507,7 +1518,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         }
     };
 
-    const awardXpForTask = async (task: Assignment, completedAt: string, estimatedMinutes?: number) => {
+    const awardXpForTask = async (task: Assignment, completedAt: string) => {
         if (latestGamificationRef.current?.awardedTaskIds.includes(task.id)) return;
 
         setAwardingXp(true);
@@ -1516,7 +1527,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             taskId: task.id,
             due: task.due || null,
             completedAt,
-            estimatedMinutes,
         });
 
         setAwardingXp(false);
@@ -1559,7 +1569,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // XP award + procrastination-history recording for a fresh completion.
     // Extracted so both the card's status control and EditTaskModal's Status
     // dropdown trigger the same side effects instead of risking drift.
-    const awardCompletionSideEffects = (task: Assignment, estimatedMinutes?: number) => {
+    const awardCompletionSideEffects = (task: Assignment) => {
         if (completionSound) playCompletionSound();
 
         const assignmentType = taskPlanning[task.id]?.assignmentType;
@@ -1589,11 +1599,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             });
         }
 
-        void awardXpForTask(task, getTodayString(), estimatedMinutes);
+        void awardXpForTask(task, getTodayString());
         mascot.say("taskComplete");
     };
 
-    const handleSetStatus = (task: Assignment, newStatus: TaskStatus, estimatedMinutes?: number) => {
+    const handleSetStatus = (task: Assignment, newStatus: TaskStatus) => {
         if (!canWriteCustomizations()) return;
 
         const { id } = task;
@@ -1614,7 +1624,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
         if (newStatus === "completed" && !wasCompleted) {
             triggerCompletionPulse(id);
-            awardCompletionSideEffects(task, estimatedMinutes);
+            awardCompletionSideEffects(task);
         }
     }
     const handleAddTask = async (newTask: Assignment, startDate: string, notes: string) => {
@@ -1708,14 +1718,15 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         recurrence: RecurrenceFieldValue,
         startDate: string,
         notes: string,
-        status: TaskStatus
+        status: TaskStatus,
+        estimatedMinutesOverride: number | null
     ) => {
         if (!task.due) return;
 
         // The occurrence's own name/course/due/type edits (if any were made
         // in the same save) still go through the normal per-task path —
         // only the "start repeating" side is special-cased here.
-        handleSaveTask(task, startDate, notes, status, "this");
+        handleSaveTask(task, startDate, notes, status, estimatedMinutesOverride, "this");
         void createRecurringTask(task.name, task.course, task.due, formatTimeInputValue(task.dueAt), recurrence, "", task.id);
     };
 
@@ -1973,6 +1984,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         startDate: string,
         notes: string,
         status: TaskStatus,
+        estimatedMinutesOverride: number | null,
         recurrenceScope: RecurrenceScope = "this"
     ) => {
         if (!canWriteCustomizations()) return;
@@ -2116,6 +2128,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             (current?.nameOverride ?? "") !== nameOverride ||
             (current?.dueAtOverride ?? "") !== dueAtOverride ||
             (current?.typeOverride ?? "") !== typeOverride ||
+            (current?.estimatedMinutesOverride ?? null) !== estimatedMinutesOverride ||
             statusChanged;
 
         if (changed) {
@@ -2125,6 +2138,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 nameOverride,
                 typeOverride,
                 dueAtOverride,
+                estimatedMinutesOverride,
                 notes,
                 // Carry forward — persistCustomization replaces the whole
                 // row, so omitting these would silently un-complete/
@@ -2140,7 +2154,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
             if (statusChanged && status === "completed") {
                 triggerCompletionPulse(updatedTask.id);
-                awardCompletionSideEffects(updatedTask, taskPlanning[updatedTask.id]?.estimatedMinutes);
+                awardCompletionSideEffects(updatedTask);
             }
         }
 
@@ -2211,7 +2225,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     taskCustomizations[upNext.task.id]?.completed ?? false,
                                     taskCustomizations[upNext.task.id]?.inProgress ?? false
                                 )}
-                                onChange={(next) => handleSetStatus(upNext.task, next, taskPlanning[upNext.task.id]?.estimatedMinutes)}
+                                onChange={(next) => handleSetStatus(upNext.task, next)}
                             />
                             <button
                                 type="button"
@@ -2223,7 +2237,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             </button>
                             <button
                                 type="button"
-                                onClick={() => handleSetStatus(upNext.task, "completed", taskPlanning[upNext.task.id]?.estimatedMinutes)}
+                                onClick={() => handleSetStatus(upNext.task, "completed")}
                                 className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400"
                             >
                                 Mark done
@@ -2252,7 +2266,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     taskCustomizations[selectedTask?.id ?? ""]?.completed ?? false,
                     taskCustomizations[selectedTask?.id ?? ""]?.inProgress ?? false
                 )}
-                estimatedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
+                estimatedMinutesOverride = {taskCustomizations[selectedTask?.id ?? ""]?.estimatedMinutesOverride ?? null}
+                suggestedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
                 recurringTaskRule = {recurringTasks.find((rule) => rule.id === selectedTask?.recurrenceId) ?? null}
                 courses = {courses}
                 onCourseCreated = {handleCourseCreated}
@@ -2359,7 +2374,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                         <div className="relative z-10 py-2" style={{ height: weekTaskLayerHeight }}>
                             {weekTaskLayouts.map(({ task, span }, layoutIndex) => {
                                 const taskCustomization = taskCustomizations[task.id];
-                                const estimate = taskPlanning[task.id];
                                 const { columnStart, columnEnd, endInsetPercent } = span;
 
                                 const taskCourse = courses.find((c) => c.name === task.course);
@@ -2392,11 +2406,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         completedAt = {taskCustomization?.completedAt || null}
                                         completedFromCanvas = {taskCustomization?.completedFromCanvas ?? false}
                                         isCompleting = {pulsingIds.has(task.id)}
-                                        estimatedMinutes = {estimate?.estimatedMinutes}
+                                        estimatedMinutes = {getEstimatedMinutes(task.id)}
                                         isFocused={task.id === focusTaskId}
                                         isAiDetected={Boolean(task.sourceAnnouncementId) && !task.aiTagDismissedAt}
                                         onDismissAiTag={handleDismissAiTag}
-                                        onSetStatus = {(newStatus) => handleSetStatus(task, newStatus, estimate?.estimatedMinutes)}
+                                        onSetStatus = {(newStatus) => handleSetStatus(task, newStatus)}
                                         onDelete = {requestDelete}
                                         onFocus={(id) => setFocusTask(id === focusTaskId ? null : id)}
                                         onOpen={() => setSelectedTask(task)}
@@ -2439,7 +2453,6 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         {dayTasks.slice(0, 3).map((task) => {
                                             const completed = taskCustomizations[task.id]?.completed ?? false;
                                             const status = getTaskStatus(completed, taskCustomizations[task.id]?.inProgress ?? false);
-                                            const estimate = taskPlanning[task.id];
                                             const isOverdue = task.due < getTodayString() && !completed;
 
                                             return (
@@ -2451,7 +2464,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                                     <TaskStatusToggle
                                                         size="sm"
                                                         status={status}
-                                                        onChange={(next) => handleSetStatus(task, next, estimate?.estimatedMinutes)}
+                                                        onChange={(next) => handleSetStatus(task, next)}
                                                     />
                                                     <span className={`min-w-0 truncate ${completed ? "line-through" : ""}`}>{task.name}</span>
                                                 </div>
@@ -2494,12 +2507,12 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                 >
                                     <TaskStatusToggle
                                         status={status}
-                                        onChange={(next) => handleSetStatus(task, next, estimate?.estimatedMinutes)}
+                                        onChange={(next) => handleSetStatus(task, next)}
                                     />
                                     <div className="min-w-0 flex-1">
                                         <p className={`truncate font-medium ${completed ? "line-through" : "text-slate-100"}`}>{task.name}</p>
                                         <p className="text-xs text-slate-400">
-                                            {task.course || "General"}{estimate ? ` · Est. ${estimate.estimatedMinutes} min · ${priority.label}` : ""}
+                                            {task.course || "General"}{estimate ? ` · Est. ${getEstimatedMinutes(task.id)} min · ${priority.label}` : ""}
                                         </p>
                                     </div>
                                     <button

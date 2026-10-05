@@ -271,6 +271,10 @@ model TaskCustomization {
   // Overrides the resolved due instant (UTC) — Canvas sync would
   // otherwise overwrite Assignment.dueAt on every resync.
   dueAtOverride DateTime?
+  // The student's own time estimate. Lives here rather than on
+  // TaskPlanningEstimate, which is overwritten whenever the task is
+  // re-estimated. Planning only — XP is type-based (lib/xp.ts).
+  estimatedMinutesOverride Int?
   notes         String?
   // Completion + deletion state, for ANY task (Canvas-synced or custom) —
   // was localStorage-only (task_states/deleted_task_ids), which is why it

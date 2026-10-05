@@ -37,7 +37,6 @@ export async function awardTaskXp(input: {
     taskId: string;
     due: string | null;
     completedAt: string;
-    estimatedMinutes?: number;
 }): Promise<XpAwardResult | null> {
     try {
         const response = await fetch("/api/gamification", {

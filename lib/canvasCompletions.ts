@@ -64,23 +64,16 @@ async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmit
     const deferredCount = tasks.length - batch.length;
     const taskIds = batch.map((task) => task.taskId);
 
-    const [customizations, estimates] = await Promise.all([
-        prisma.taskCustomization.findMany({
-            where: { userId, taskId: { in: taskIds } },
-            select: { taskId: true, completed: true, deleted: true },
-        }),
-        prisma.taskPlanningEstimate.findMany({
-            where: { userId, taskId: { in: taskIds } },
-            select: { taskId: true, estimatedMinutes: true },
-        }),
-    ]);
+    const customizations = await prisma.taskCustomization.findMany({
+        where: { userId, taskId: { in: taskIds } },
+        select: { taskId: true, completed: true, deleted: true },
+    });
 
     const skip = new Set(
         customizations
             .filter((customization) => customization.completed || customization.deleted)
             .map((customization) => customization.taskId)
     );
-    const minutesByTask = new Map(estimates.map((estimate) => [estimate.taskId, estimate.estimatedMinutes]));
 
     if (flagSubmitted && skip.size > 0) {
         await prisma.assignment.updateMany({
@@ -106,7 +99,6 @@ async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmit
         const award = await grantTaskXp(userId, task.taskId, {
             due: task.dueDay ?? undefined,
             completedAt: task.completedDay ?? undefined,
-            estimatedMinutes: minutesByTask.get(task.taskId),
         });
 
         if (flagSubmitted) {

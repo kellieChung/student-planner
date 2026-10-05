@@ -8,6 +8,7 @@ import {RecurringTask} from "@/types/recurringTask";
 import StartDateField from "./StartDateField";
 import DatePicker from "./DatePicker";
 import Select from "@/components/ui/Select";
+import NumberField from "@/components/ui/NumberField";
 import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import RecurrenceField, {DEFAULT_RECURRENCE_VALUE, RecurrenceFieldValue} from "./RecurrenceField";
@@ -20,6 +21,9 @@ import {RepeatIcon} from "@/components/brand/Icons";
 
 export type RecurrenceScope = "this" | "following";
 
+// Matches the task-customizations route's limit.
+const MAX_ESTIMATE_MINUTES = 24 * 60;
+
 type EditTaskModalProps = {
     task: Assignment | null;
     isOpen: boolean;
@@ -27,15 +31,19 @@ type EditTaskModalProps = {
     notes: string;
     status: TaskStatus;
     courses: Course[];
-    estimatedMinutes?: number;
+    // The student's own estimate (null = none) and the AI/type one it
+    // replaces; saving the suggested value stores null so the task keeps
+    // following future re-estimates.
+    estimatedMinutesOverride: number | null;
+    suggestedMinutes?: number;
     // The series this task belongs to, if task.recurrenceId is set — used
     // only to render the read-only "Repeats every ..." summary.
     recurringTaskRule?: RecurringTask | null;
     onCourseCreated: (course: Course) => void;
     onClose: () => void;
-    onSaveTask: (updatedTask: Assignment, startDate: string, notes: string, status: TaskStatus, scope?: RecurrenceScope) => void;
+    onSaveTask: (updatedTask: Assignment, startDate: string, notes: string, status: TaskStatus, estimatedMinutesOverride: number | null, scope?: RecurrenceScope) => void;
     onDeleteTask: (id: string, scope?: RecurrenceScope) => void;
-    onConvertToRecurring: (task: Assignment, recurrence: RecurrenceFieldValue, startDate: string, notes: string, status: TaskStatus) => void;
+    onConvertToRecurring: (task: Assignment, recurrence: RecurrenceFieldValue, startDate: string, notes: string, status: TaskStatus, estimatedMinutesOverride: number | null) => void;
     onManageSeries: (recurrenceId: string) => void;
 };
 
@@ -46,7 +54,8 @@ export default function EditTaskModal({
     notes: initialNotes,
     status: initialStatus,
     courses,
-    estimatedMinutes,
+    estimatedMinutesOverride: initialEstimateOverride,
+    suggestedMinutes,
     recurringTaskRule,
     onCourseCreated,
     onClose,
@@ -62,6 +71,7 @@ export default function EditTaskModal({
     const [start, setStart] = useState("");
     const [notes, setNotes] = useState("");
     const [status, setStatus] = useState<TaskStatus>("not_started");
+    const [estimateOverride, setEstimateOverride] = useState<number | null>(null);
     const [typeOverride, setTypeOverride] = useState("");
     const [editingClassification, setEditingClassification] = useState(false);
     const [recurrence, setRecurrence] = useState<RecurrenceFieldValue>(DEFAULT_RECURRENCE_VALUE);
@@ -83,12 +93,13 @@ export default function EditTaskModal({
             setStart(startDate || "");
             setNotes(initialNotes || "");
             setStatus(initialStatus);
+            setEstimateOverride(initialEstimateOverride);
             setTypeOverride(task.typeOverride ?? "");
             setEditingClassification(false);
             setRecurrence(DEFAULT_RECURRENCE_VALUE);
             setPendingAction(null);
         }
-    }, [task, startDate, initialNotes, initialStatus]);
+    }, [task, startDate, initialNotes, initialStatus, initialEstimateOverride]);
 
     useEscapeToClose(isOpen && task !== null, () => {
         if (pendingAction) setPendingAction(null);
@@ -116,6 +127,13 @@ export default function EditTaskModal({
     const effectiveTypeCode = (typeOverride || autoTypeCode) as LabelType;
     const courseAbbreviation =
         courses.find((c) => c.name === course)?.abbreviation || courseAbbreviationDefault(course || "General");
+    const shownMinutes = estimateOverride ?? suggestedMinutes ?? 0;
+    const setEstimate = (hours: number, minutes: number) => {
+        const total = Math.min(hours * 60 + minutes, MAX_ESTIMATE_MINUTES);
+        setEstimateOverride(total > 0 ? total : null);
+    };
+    const savedEstimateOverride = estimateOverride === suggestedMinutes ? null : estimateOverride;
+
     const cardLabel = formatTaskLabel({
         courseAbbreviation,
         typeCode: effectiveTypeCode,
@@ -139,7 +157,7 @@ export default function EditTaskModal({
                 due,
                 typeOverride: (typeOverride || null) as Assignment["typeOverride"],
                 ...resolveDueTime(due, dueTime),
-            }, recurrence, start, notes, status);
+            }, recurrence, start, notes, status, savedEstimateOverride);
 
             onClose();
             return;
@@ -159,7 +177,7 @@ export default function EditTaskModal({
             return;
         }
 
-        onSaveTask(updatedTask, start, notes, status, "this");
+        onSaveTask(updatedTask, start, notes, status, savedEstimateOverride, "this");
         onClose();
     };
 
@@ -167,7 +185,7 @@ export default function EditTaskModal({
         if (!pendingAction) return;
 
         if (pendingAction.kind === "save") {
-            onSaveTask(pendingAction.updatedTask, start, notes, status, scope);
+            onSaveTask(pendingAction.updatedTask, start, notes, status, savedEstimateOverride, scope);
         } else {
             onDeleteTask(task.id, scope);
         }
@@ -351,12 +369,48 @@ export default function EditTaskModal({
             <RecurrenceField value={recurrence} onChange={setRecurrence} anchorDue={due} />
           )}
 
-          {typeof estimatedMinutes === "number" && (
-            <p className="text-xs text-slate-400">
-              <span className="font-semibold text-slate-300">Estimated time:</span>{" "}
-              {formatEstimatedMinutes(estimatedMinutes)}
-            </p>
-          )}
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <span id="edit-task-estimate-label" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Time estimate
+              </span>
+              {estimateOverride !== null && estimateOverride !== suggestedMinutes && (
+                <button
+                  type="button"
+                  onClick={() => setEstimateOverride(null)}
+                  className="text-xs font-semibold text-indigo-400 hover:text-indigo-300"
+                >
+                  {typeof suggestedMinutes === "number"
+                    ? `Reset to suggested (${formatEstimatedMinutes(suggestedMinutes)})`
+                    : "Clear"}
+                </button>
+              )}
+            </div>
+            <div role="group" aria-labelledby="edit-task-estimate-label" className="flex items-center gap-2 text-sm text-slate-300">
+              <NumberField
+                ariaLabel="Estimated hours"
+                min={0}
+                max={24}
+                value={Math.floor(shownMinutes / 60)}
+                onChange={(hours) => setEstimate(hours, shownMinutes % 60)}
+                className="bg-slate-800"
+              />
+              <span>h</span>
+              <NumberField
+                ariaLabel="Estimated minutes"
+                min={0}
+                max={59}
+                step={5}
+                value={shownMinutes % 60}
+                onChange={(minutes) => setEstimate(Math.floor(shownMinutes / 60), minutes)}
+                className="bg-slate-800"
+              />
+              <span>m</span>
+            </div>
+            {estimateOverride === null && typeof suggestedMinutes !== "number" && (
+              <p className="mt-1 text-xs text-slate-500">Not estimated yet.</p>
+            )}
+          </div>
 
           {startAfterDue && (
             <p className="text-xs font-medium text-rose-400">

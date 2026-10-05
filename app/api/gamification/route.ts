@@ -69,17 +69,11 @@ export async function POST(request: Request) {
             );
         }
 
-        const estimatedMinutes =
-            typeof body.estimatedMinutes === "number" && Number.isFinite(body.estimatedMinutes)
-                ? Math.min(Math.max(body.estimatedMinutes, 0), 600)
-                : undefined;
-
-        // Only the user's own tasks earn anything; name/course come from the
-        // stored row, not the request.
+        // Only the user's own tasks earn anything; name/course/type come from
+        // stored rows, not the request.
         const result = await grantTaskXp(user.id, body.taskId, {
             due: isDateKey(body.due) ? body.due : undefined,
             completedAt: isDateKey(body.completedAt) ? body.completedAt : undefined,
-            estimatedMinutes,
         });
 
         if (!result) {

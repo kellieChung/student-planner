@@ -33,6 +33,7 @@ export async function GET() {
                 nameOverride: true,
                 typeOverride: true,
                 dueAtOverride: true,
+                estimatedMinutesOverride: true,
                 notes: true,
                 completed: true,
                 completedAt: true,
@@ -55,6 +56,7 @@ export async function GET() {
                 dueAtOverride: customization.dueAtOverride
                     ? customization.dueAtOverride.toISOString()
                     : null,
+                estimatedMinutesOverride: customization.estimatedMinutesOverride,
                 notes: customization.notes,
                 completed: customization.completed,
                 // Date-only, matching startAt above — WeeklyPlannerView.tsx

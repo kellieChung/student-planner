@@ -11,6 +11,7 @@ type Params = {
 
 const MAX_NOTES_LENGTH = 10_000;
 const LABEL_TYPES = new Set(["HW", "R", "EXAM", "TODO"]);
+const MAX_ESTIMATED_MINUTES = 24 * 60;
 
 export async function PATCH(request: Request, { params }: Params) {
     try {
@@ -59,6 +60,7 @@ export async function PATCH(request: Request, { params }: Params) {
             nameOverride = null,
             typeOverride = null,
             dueAtOverride = null,
+            estimatedMinutesOverride = null,
             notes = null,
             completed = false,
             completedAt = null,
@@ -70,6 +72,7 @@ export async function PATCH(request: Request, { params }: Params) {
             nameOverride?: unknown;
             typeOverride?: unknown;
             dueAtOverride?: unknown;
+            estimatedMinutesOverride?: unknown;
             notes?: unknown;
             completed?: unknown;
             completedAt?: unknown;
@@ -114,6 +117,19 @@ export async function PATCH(request: Request, { params }: Params) {
         if (dueAtOverrideDate === undefined) {
             return NextResponse.json(
                 { success: false, error: "'dueAtOverride' must be null or a valid ISO datetime string." },
+                { status: 400 }
+            );
+        }
+
+        if (
+            estimatedMinutesOverride !== null &&
+            (typeof estimatedMinutesOverride !== "number" ||
+                !Number.isInteger(estimatedMinutesOverride) ||
+                estimatedMinutesOverride < 1 ||
+                estimatedMinutesOverride > MAX_ESTIMATED_MINUTES)
+        ) {
+            return NextResponse.json(
+                { success: false, error: `'estimatedMinutesOverride' must be null or a whole number from 1 to ${MAX_ESTIMATED_MINUTES}.` },
                 { status: 400 }
             );
         }
@@ -175,6 +191,7 @@ export async function PATCH(request: Request, { params }: Params) {
             nameOverride,
             typeOverride,
             dueAtOverride: dueAtOverrideDate,
+            estimatedMinutesOverride,
             notes,
             completed,
             completedAt: completedAtDate,
@@ -196,6 +213,7 @@ export async function PATCH(request: Request, { params }: Params) {
                 nameOverride: true,
                 typeOverride: true,
                 dueAtOverride: true,
+                estimatedMinutesOverride: true,
                 notes: true,
                 completed: true,
                 completedAt: true,
@@ -218,6 +236,7 @@ export async function PATCH(request: Request, { params }: Params) {
                 dueAtOverride: customization.dueAtOverride
                     ? customization.dueAtOverride.toISOString()
                     : null,
+                estimatedMinutesOverride: customization.estimatedMinutesOverride,
                 notes: customization.notes,
                 completed: customization.completed,
                 // Date-only, matching startAt above — see the GET route's
