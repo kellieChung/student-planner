@@ -51,6 +51,7 @@ function toDateKey(date: Date): string {
 // this in one sitting shows empty weeks for a series until the next reload
 // pushes the window forward again.
 const RECURRENCE_HORIZON_WEEKS = 8;
+const REFOCUS_RELOAD_MIN_GAP_MS = 5 * 60 * 1000;
 
 /*
  * Canvas-synced tasks carry a real createdAt. Manually/AI-added tasks don't
@@ -206,6 +207,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // Custom tasks whose create POST hasn't finished; the estimator skips
     // them (the server only estimates tasks it already has).
     const pendingCreateIdsRef = useRef<Set<string>>(new Set());
+    const lastServerReloadAtRef = useRef(0);
     const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
     const [isRecurringPanelOpen, setIsRecurringPanelOpen] = useState(false);
     const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
@@ -719,8 +721,12 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // Canvas reports them submitted (lib/canvasCompletions.ts). Re-pulling
     // on return to the tab also keeps a stale tab from writing
     // `completed: false` back over that, since persistCustomization saves
-    // the whole row.
+    // the whole row. That refocus pull is throttled (each one is three
+    // billed DB round trips); this browser's own completions still reload
+    // right away via LODESTAR_CANVAS_COMPLETIONS_APPLIED.
     async function reloadServerCompletionState() {
+        lastServerReloadAtRef.current = Date.now();
+
         const [, savedGamification, savedChart] = await Promise.all([
             loadTaskCustomizations(),
             getGamificationState(),
@@ -744,7 +750,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         const handleVisibilityChange = () => {
             if (document.visibilityState !== "visible") return;
             requestCanvasCompletionCheck();
-            void reloadServerCompletionState();
+            if (Date.now() - lastServerReloadAtRef.current >= REFOCUS_RELOAD_MIN_GAP_MS) {
+                void reloadServerCompletionState();
+            }
         };
 
         const handleMessage = (event: MessageEvent) => {
@@ -752,6 +760,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             if (event.data?.type === "LODESTAR_CANVAS_COMPLETIONS_APPLIED") void reloadServerCompletionState();
         };
 
+        // Mount already loads this state, so the first refocus doesn't need to.
+        lastServerReloadAtRef.current = Date.now();
         requestCanvasCompletionCheck();
         document.addEventListener("visibilitychange", handleVisibilityChange);
         window.addEventListener("message", handleMessage);

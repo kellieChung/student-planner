@@ -58,9 +58,10 @@ const MAX_COMPLETIONS_PER_CALL = 40;
 // canvasSubmitted only once it's handled, so a failure partway leaves the
 // rest as transitions for the next check instead of losing them.
 async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmitted: boolean) {
-    if (tasks.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0 };
+    if (tasks.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
 
     const batch = flagSubmitted ? tasks.slice(0, MAX_COMPLETIONS_PER_CALL) : tasks;
+    const deferredCount = tasks.length - batch.length;
     const taskIds = batch.map((task) => task.taskId);
 
     const [customizations, estimates] = await Promise.all([
@@ -119,20 +120,22 @@ async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmit
         xpAwarded += award?.xp ?? 0;
     }
 
-    return { completedTaskIds, xpAwarded };
+    return { completedTaskIds, xpAwarded, deferredCount };
 }
 
 // Records Canvas's submission state on each already-synced Assignment and,
 // when the setting is on, completes the ones that just became submitted.
 // Only that flip completes a task, so a task the student un-checks in
 // Lodestar stays un-checked on later checks. Assignments Lodestar hasn't
-// synced yet are ignored; the next full sync creates them.
+// synced yet are ignored; the next full sync creates them. `deferredCount`
+// > 0 means some flips were left for the next call (the per-call cap), so
+// the extension must resend instead of treating this state as delivered.
 export async function applyCanvasCompletions(
     userId: string,
     canvasOrigin: string,
     items: CanvasCompletionItem[]
 ) {
-    if (items.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0 };
+    if (items.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
 
     const courses = await prisma.canvasCourse.findMany({
         where: {
@@ -190,7 +193,7 @@ export async function applyCanvasCompletions(
             });
         }
 
-        return { completedTaskIds: [] as string[], xpAwarded: 0 };
+        return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
     }
 
     return completeTasks(userId, nowSubmitted, true);

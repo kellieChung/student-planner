@@ -209,11 +209,15 @@ async function fetchCourseData(canvasOrigin, course) {
     };
 }
 
+// Per-account state that must not carry over to another sign-in.
+const ACCOUNT_CACHE_KEYS = ["submittedCache", "excludedCourseSnapshot"];
+
 async function clearExtensionAuth() {
     await chrome.storage.local.remove([
         "extensionToken",
         "extensionAuthState",
         "extensionAuthStartedAt",
+        ...ACCOUNT_CACHE_KEYS,
     ]);
 }
 
@@ -288,7 +292,8 @@ async function acceptSiteToken(message, sender) {
     }
 
     await chrome.storage.local.set({ extensionToken: message.token });
-    await chrome.storage.local.remove(["extensionAuthState", "extensionAuthStartedAt"]);
+    // Could be a different Lodestar account: its server state is unknown.
+    await chrome.storage.local.remove(["extensionAuthState", "extensionAuthStartedAt", ...ACCOUNT_CACHE_KEYS]);
 
     return { ok: true };
 }
@@ -323,7 +328,9 @@ async function getExcludedCourseIds(appOrigin, canvasOrigin, extensionToken) {
             const excludedData = await excludedResponse.json().catch(() => null);
 
             if (Array.isArray(excludedData?.canvasIds)) {
-                return new Set(excludedData.canvasIds.map(String));
+                const canvasIds = excludedData.canvasIds.map(String);
+                await chrome.storage.local.set({ excludedCourseSnapshot: { canvasOrigin, canvasIds } });
+                return new Set(canvasIds);
             }
         }
     } catch (error) {
@@ -428,6 +435,7 @@ async function runCanvasSync(canvasOrigin) {
 
     const syncResult = await backendResponse.json().catch(() => null);
     if (syncResult?.completedCount > 0) await notifyPlannerTabs(syncResult.completedCount);
+    await rememberSubmitted(canvasOrigin, courseData.map(toSubmissionCourse), syncResult);
 
     return {
         status: "success",
@@ -459,6 +467,16 @@ async function restoreCourse(canvasOrigin, course) {
         const errorData = await backendResponse.json().catch(() => null);
         throw new Error(errorData?.error || `Lodestar returned ${backendResponse.status}`);
     }
+
+    const restoreResult = await backendResponse.json().catch(() => null);
+    await rememberSubmitted(canvasOrigin, [toSubmissionCourse(restoredCourse)], restoreResult);
+
+    // Otherwise the light check keeps skipping it until the next full sync.
+    const { excludedCourseSnapshot } = await chrome.storage.local.get("excludedCourseSnapshot");
+    if (excludedCourseSnapshot?.canvasOrigin === canvasOrigin) {
+        excludedCourseSnapshot.canvasIds = excludedCourseSnapshot.canvasIds.filter((id) => id !== String(course.id));
+        await chrome.storage.local.set({ excludedCourseSnapshot });
+    }
 }
 
 // Lightweight check that only reads submission state, so a task submitted
@@ -472,6 +490,51 @@ const COMPLETION_CHECK_ALARM = "completion-check";
 const COMPLETION_CHECK_TRAILING_ALARM = "completion-check-trailing";
 const COMPLETION_CHECK_PERIOD_MINUTES = 15;
 const COMPLETION_CHECK_MIN_GAP_MS = 30 * 1000;
+
+// The submission state Lodestar last accepted, so the light check posts only
+// what changed and an unchanged check costs the server (and its per-operation
+// billed database) nothing. The server still decides what a change means
+// (lib/canvasCompletions.ts); this only filters. One Canvas origin at a time:
+// switching schools starts over. Cleared with the account (ACCOUNT_CACHE_KEYS).
+function submissionKey(courseId, assignmentId) {
+    return `${courseId}:${assignmentId}`;
+}
+
+async function getSubmittedCache(canvasOrigin) {
+    const { submittedCache } = await chrome.storage.local.get("submittedCache");
+    return submittedCache?.canvasOrigin === canvasOrigin ? submittedCache.entries : {};
+}
+
+function toSubmissionCourse(courseData) {
+    return { courseId: String(courseData.course.id), assignments: courseData.assignments };
+}
+
+// A positive deferredCount means the server hit its per-call completion cap
+// and left some flips for the next call, so nothing is cached and the next
+// check resends everything (the server ignores repeats). A missing count
+// (server not yet deployed) is treated the same way.
+async function rememberSubmitted(canvasOrigin, courses, result) {
+    if (typeof result?.deferredCount !== "number" || result.deferredCount > 0) return;
+
+    const entries = await getSubmittedCache(canvasOrigin);
+
+    for (const course of courses) {
+        for (const assignment of course.assignments) {
+            if (typeof assignment.submitted !== "boolean") continue;
+            entries[submissionKey(course.courseId, assignment.id)] = assignment.submitted;
+        }
+    }
+
+    await chrome.storage.local.set({ submittedCache: { canvasOrigin, entries } });
+}
+
+// The light check reuses the excluded-course list the last full sync fetched
+// instead of asking the server each time. A stale list is harmless: the
+// server ignores courses it has no row for.
+async function getExcludedCourseSnapshot(canvasOrigin) {
+    const { excludedCourseSnapshot } = await chrome.storage.local.get("excludedCourseSnapshot");
+    return new Set(excludedCourseSnapshot?.canvasOrigin === canvasOrigin ? excludedCourseSnapshot.canvasIds : []);
+}
 
 let completionCheckInFlight = null;
 
@@ -487,19 +550,21 @@ async function runCompletionCheck() {
     const courses = await getCanvasData(
         `${canvasOrigin}/api/v1/courses?enrollment_type=student&enrollment_state=active&per_page=100`
     );
-    const excludedIds = await getExcludedCourseIds(appOrigin, canvasOrigin, extensionToken);
+    const excludedIds = await getExcludedCourseSnapshot(canvasOrigin);
+    const sentState = await getSubmittedCache(canvasOrigin);
     const payload = [];
 
     for (const course of courses) {
         if (excludedIds.has(String(course.id))) continue;
 
         try {
+            const courseId = String(course.id);
             const assignments = await getCanvasData(assignmentsUrl(canvasOrigin, course.id));
+            const changed = assignments
+                .map((assignment) => ({ id: assignment.id, ...pickSubmission(assignment) }))
+                .filter((assignment) => sentState[submissionKey(courseId, assignment.id)] !== assignment.submitted);
 
-            payload.push({
-                courseId: String(course.id),
-                assignments: assignments.map((assignment) => ({ id: assignment.id, ...pickSubmission(assignment) })),
-            });
+            if (changed.length > 0) payload.push({ courseId, assignments: changed });
         } catch (error) {
             console.warn(`Could not check submissions for ${course.name ?? course.id}:`, error);
         }
@@ -519,6 +584,8 @@ async function runCompletionCheck() {
 
     const data = await response.json().catch(() => null);
     const completedCount = typeof data?.completedCount === "number" ? data.completedCount : 0;
+
+    await rememberSubmitted(canvasOrigin, payload, data);
 
     if (completedCount > 0) await notifyPlannerTabs(completedCount);
 

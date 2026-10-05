@@ -87,7 +87,7 @@ export async function POST(request: Request) {
             resolveClientToday(today)
         );
 
-        const { completedTaskIds } = await applyCanvasCompletions(userId, canvasOrigin, completionItems);
+        const { completedTaskIds, deferredCount } = await applyCanvasCompletions(userId, canvasOrigin, completionItems);
 
         return NextResponse.json({
             success: true,
@@ -97,6 +97,7 @@ export async function POST(request: Request) {
             discussionCount,
             announcementCount,
             completedCount: completedTaskIds.length,
+            deferredCount,
         });
     } catch (error) {
         console.error("Canvas course restore failed:", error);

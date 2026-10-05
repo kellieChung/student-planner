@@ -62,12 +62,13 @@ export async function POST(request: Request) {
             }
         }
 
-        const { completedTaskIds, xpAwarded } = await applyCanvasCompletions(userId, canvasOrigin, items);
+        const { completedTaskIds, xpAwarded, deferredCount } = await applyCanvasCompletions(userId, canvasOrigin, items);
 
         return NextResponse.json({
             success: true,
             completedCount: completedTaskIds.length,
             xpAwarded,
+            deferredCount,
         });
     } catch (error) {
         console.error("Canvas completion check failed:", error);
