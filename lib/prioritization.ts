@@ -1,4 +1,4 @@
-import { parseLocalDate } from "@/lib/utils";
+import { daysBetween, parseLocalDate } from "@/lib/utils";
 
 export type PriorityInput = {
     name: string;
@@ -89,6 +89,12 @@ const MIN_SPLIT_MINUTES = 60;
 // procrastination shift): today plus at least one more to spread it over.
 const MIN_SPLIT_DAYS = 2;
 
+// Score = act-by day first, then slack within that day. DAY_WEIGHT is
+// larger than the whole within-day range (slack span + tie-break), so no
+// within-day factor can cross a day.
+const MAX_ACT_BY_DAYS = MAX_SLACK_HOURS / 24;
+const DAY_WEIGHT = 10_000;
+
 function calculateUrgencyShiftHours(procrastinationIndexHours: number): number {
     return Math.min(
         MAX_URGENCY_SHIFT_HOURS,
@@ -149,10 +155,9 @@ function urgencyBucket(slackHours: number): number {
 }
 
 /*
- * Mode is a label, not a weight: ranking stays slack-based (a big task
- * due later may still be Polaris), this only decides whether the ask is
- * "finish it" or "put a chunk in today". Pacing uses the shifted deadline,
- * so a type the student leaves late is paced to finish earlier.
+ * Mode decides whether the ask is "finish it" or "put a chunk in today",
+ * and which day the task acts by (actByDayOffset). Pacing uses the shifted
+ * deadline, so a type the student leaves late is paced to finish earlier.
  */
 function calculateMode(
     task: PriorityInput,
@@ -187,6 +192,32 @@ function calculateMode(
         mode: "start",
         todayMinutes: Math.min(task.estimatedMinutes, Math.max(POMODORO_MINUTES, paced)),
     };
+}
+
+/*
+ * The calendar day (offset from today) by which the student has to act.
+ * A "finish" task acts by its real due day, with no procrastination shift,
+ * so a later-due task is never ranked to be finished ahead of an earlier
+ * one (2026-10-05 report: a Thursday task outranked Wednesday's). A
+ * "start" task acts by the day its latest start falls on, shift included,
+ * so a big later task comes first only as a chunk and only once it's
+ * actually needed.
+ */
+function actByDayOffset(
+    task: PriorityInput,
+    mode: PriorityMode,
+    slackHours: number,
+    now: Date
+): number {
+    if (!task.due) {
+        return MAX_ACT_BY_DAYS;
+    }
+
+    const offset = mode === "finish"
+        ? daysBetween(parseLocalDate(task.due), now)
+        : Math.max(0, daysBetween(new Date(now.getTime() + slackHours * 60 * 60 * 1000), now));
+
+    return Math.min(MAX_ACT_BY_DAYS, Math.max(-1, offset));
 }
 
 function formatHours(minutes: number): string {
@@ -238,17 +269,21 @@ export function calculatePriority(
         !(task.due && task.due < task.today)
     );
 
-    // Always > 0 for a startable task (slack ≤ MAX_SLACK_HOURS, tie-break
-    // > 0), so 0 stays reserved for the start-date gate.
-    const score = notYetStartable
-        ? 0
-        : MAX_SLACK_HOURS - slackHours + tieBreakHours;
-
-    const isOverdue = Boolean(task.due) && hoursUntilDue(task.due as string, task.dueFraction, now) <= 0;
-
     const { mode, todayMinutes } = notYetStartable
         ? { mode: "finish" as const, todayMinutes: task.estimatedMinutes }
         : calculateMode(task, now);
+
+    // Always > 0 for a startable task (act-by day ≤ MAX_ACT_BY_DAYS,
+    // within-day part > 0), so 0 stays reserved for the start-date gate.
+    const withinDay = Math.min(
+        DAY_WEIGHT - 1,
+        Math.max(0, MAX_SLACK_HOURS - slackHours + tieBreakHours)
+    );
+    const score = notYetStartable
+        ? 0
+        : (MAX_ACT_BY_DAYS - actByDayOffset(task, mode, slackHours, now)) * DAY_WEIGHT + withinDay;
+
+    const isOverdue = Boolean(task.due) && hoursUntilDue(task.due as string, task.dueFraction, now) <= 0;
 
     let reason = "";
 

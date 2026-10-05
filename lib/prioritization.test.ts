@@ -102,6 +102,22 @@ function checkRankingRules() {
         Math.abs(bigLater.score - calculatePriority({ ...base, due: dateKeyFromToday(6), estimatedMinutes: 360, inProgress: true }).score) < 1e-3
     );
 
+    check(
+        "reported case: a 30-min task due in 3 days with a 48h history shift ranks below one due in 2 days",
+        score({ due: dateKeyFromToday(2) }) >
+            score({ due: dateKeyFromToday(3), procrastinationIndexHours: 0, importance: 9, difficulty: 9, consequence: 9 })
+    );
+    check(
+        "a frog due 8am in 3 days ranks below a low-importance task due end of day in 2 days",
+        score({ due: dateKeyFromToday(2), importance: 2, difficulty: 2, consequence: 2 }) >
+            score({ due: dateKeyFromToday(3), dueFraction: 8 / 24, importance: 9, difficulty: 9, consequence: 9 })
+    );
+    const pacedPaper = result({ due: dateKeyFromToday(5), estimatedMinutes: 360, procrastinationIndexHours: 0 });
+    check(
+        "a 6h paper due in 5 days (48h history shift) ranks above a 20-min task due in 4 days, as 'start'",
+        pacedPaper.mode === "start" && pacedPaper.score > score({ due: dateKeyFromToday(4), estimatedMinutes: 20 })
+    );
+
     const undated = score({ due: null });
     check(
         "an undated task has a finite score and ranks below a task due in 60 days",
