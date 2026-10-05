@@ -342,16 +342,29 @@ export async function POST(request: Request) {
             },
         });
         const remaining = Math.max(0, DAILY_ANALYSIS_LIMIT - analyzedToday);
-        const tasksForModel = tasks.slice(0, remaining);
+
+        // Tasks the model would see identically (e.g. every occurrence of a
+        // recurring series) are analyzed once and the answer is shared.
+        const groups = new Map<string, PlanningTask[]>();
+        for (const task of tasks) {
+            const key = JSON.stringify([
+                getTaskSignature(task), task.canvasType ?? null, task.pointsPossible ?? null,
+                task.description ?? null, task.due ?? null,
+            ]);
+            groups.set(key, [...(groups.get(key) ?? []), task]);
+        }
+        const taskGroups = [...groups.values()];
+        const groupsForModel = taskGroups.slice(0, remaining);
 
         // Over the daily cap: deterministic estimates for this response only
         // (not stored, so they're analyzed properly another day).
-        const overflowEstimates = tasks
+        const overflowEstimates = taskGroups
             .slice(remaining)
+            .flat()
             .map((task) => toEstimate(task, normalizeAnalysis(fallbackAssignmentAnalysis(task))));
 
         const batches = chunk(
-            tasksForModel,
+            groupsForModel,
             isAnthropicEnabled() ? ANTHROPIC_ANALYSIS_BATCH_SIZE : OLLAMA_ANALYSIS_BATCH_SIZE
         );
 
@@ -362,7 +375,7 @@ export async function POST(request: Request) {
                 // analyzeAssignments never throws — it degrades to its own
                 // deterministic fallback internally on any failure.
                 const analyses = await analyzeAssignments(
-                    batch.map((task) => ({
+                    batch.map(([task]) => ({
                         name: task.name,
                         course: task.course,
                         description: task.description,
@@ -371,7 +384,7 @@ export async function POST(request: Request) {
                     }))
                 );
 
-                return batch.map((task, i) => toEstimate(task, normalizeAnalysis(analyses[i])));
+                return batch.flatMap((group, i) => group.map((task) => toEstimate(task, normalizeAnalysis(analyses[i]))));
             }
         );
 
