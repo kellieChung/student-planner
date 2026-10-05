@@ -686,11 +686,16 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         }
     };
 
+    // Waits for tasks to load: the saved focus id is restored from
+    // localStorage before then, and clearing it on an empty task list would
+    // lose the focus on every reload.
     useEffect(() => {
+        if (!customTasksLoaded || !customizationsLoaded) return;
+
         if (focusTaskId && !activeFocusTask) {
             setFocusTask(null);
         }
-    }, [focusTaskId, activeFocusTask, setFocusTask]);
+    }, [focusTaskId, activeFocusTask, setFocusTask, customTasksLoaded, customizationsLoaded]);
 
     // Cheap string comparison, not a write — deliberately never persists an
     // expired custom start date (see the plan's "derive at read time"
@@ -1650,8 +1655,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
         const assignmentType = taskTypeFor(task);
         const addedAt = deriveAddedAt(task);
+        // A task that already earned XP was completed before; recording it
+        // again on every re-check would skew the procrastination index.
+        const completedBefore = latestGamificationRef.current?.awardedTaskIds.includes(task.id) ?? false;
 
-        if (task.due && addedAt && assignmentType) {
+        if (task.due && addedAt && assignmentType && !completedBefore) {
             const record = {
                 taskType: assignmentType,
                 addedAt,
