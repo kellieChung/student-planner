@@ -21,7 +21,7 @@ import {useLodestarFrame} from "./os/LaptopFrame";
 import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
-import {calculatePriority, PriorityResult} from "@/lib/prioritization";
+import {calculatePriority, POMODORO_MINUTES, PriorityResult} from "@/lib/prioritization";
 import {deterministicType, estimateMinutesByType, resolveAssignmentType} from "@/lib/assignmentType";
 import {classifyLabelType, courseAbbreviationDefault, DEFAULT_TASK_LABEL_PARTS, formatTaskLabel, isDefaultTaskLabelParts, type TaskLabelPart} from "@/lib/taskLabel";
 import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
@@ -162,6 +162,17 @@ function customTaskPostBody(task: Assignment) {
         dueFraction: task.dueFraction ?? null,
         sourceAnnouncementId: task.sourceAnnouncementId ?? null,
     };
+}
+
+// Today's ask for Polaris/Then: finish the whole task, or (big task due
+// later) put a paced chunk in. See prioritizationModule.md.
+function describeTodayAsk(priority: PriorityResult, inProgress: boolean): string {
+    if (priority.mode === "finish") {
+        return `Finish it · ~${priority.todayMinutes} min`;
+    }
+
+    const pomodoros = Math.round(priority.todayMinutes / POMODORO_MINUTES);
+    return `${inProgress ? "Keep going" : "Start"} · ~${priority.todayMinutes} min today (${pomodoros} Pomodoro${pomodoros === 1 ? "" : "s"})`;
 }
 
 const SAVE_ERROR = "Couldn't save your change, so it was undone. Check your connection and try again.";
@@ -557,6 +568,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             procrastinationIndexHours: taskType
                 ? procrastinationIndexByType[taskType] ?? null
                 : null,
+            inProgress: taskCustomizations[task.id]?.inProgress ?? false,
         });
     };
 
@@ -2343,7 +2355,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     ? ` · Due ${parseLocalDate(upNext.task.due).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
                                     : ""}
                             </p>
-                            <p className="mt-1 text-sm text-amber-200">{upNext.priority.reason}</p>
+                            <p className="mt-1 text-sm font-semibold text-amber-400">
+                                {describeTodayAsk(upNext.priority, taskCustomizations[upNext.task.id]?.inProgress ?? false)}
+                            </p>
+                            <p className="text-sm text-amber-200">{upNext.priority.reason}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                             <TaskStatusToggle
@@ -2361,42 +2376,40 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             >
                                 {focusTaskId === upNext.task.id ? "Focused" : "Focus on the Watch"}
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => handleSetStatus(upNext.task, "completed")}
-                                className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400"
-                            >
-                                Mark done
-                            </button>
+                            {upNext.priority.mode === "finish" && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleSetStatus(upNext.task, "completed")}
+                                    className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-400"
+                                >
+                                    Mark done
+                                </button>
+                            )}
                         </div>
                     </div>
                     {rankedOpenTasks.length > 1 && (
                         <div className="mt-3 border-t border-amber-500/20 pt-3">
                             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Then</p>
                             <ol className="mt-1.5 space-y-1">
-                                {rankedOpenTasks.slice(1, 5).map(({ task, priority }) => {
-                                    const minutes = getEstimatedMinutes(task);
-
-                                    return (
-                                        <li key={task.id}>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSelectedTask(task)}
-                                                className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-[var(--accent-soft)]"
-                                            >
-                                                <span className="block truncate text-sm font-medium text-slate-100">{task.name}</span>
-                                                <span className="block truncate text-xs text-slate-400">
-                                                    {task.course || "General"}
-                                                    {task.due
-                                                        ? ` · Due ${parseLocalDate(task.due).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
-                                                        : ""}
-                                                    {minutes ? ` · ~${minutes} min` : ""}
-                                                    {` · ${priority.reason}`}
-                                                </span>
-                                            </button>
-                                        </li>
-                                    );
-                                })}
+                                {rankedOpenTasks.slice(1, 5).map(({ task, priority }) => (
+                                    <li key={task.id}>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedTask(task)}
+                                            className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-[var(--accent-soft)]"
+                                        >
+                                            <span className="block truncate text-sm font-medium text-slate-100">{task.name}</span>
+                                            <span className="block truncate text-xs text-slate-400">
+                                                {task.course || "General"}
+                                                {task.due
+                                                    ? ` · Due ${parseLocalDate(task.due).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
+                                                    : ""}
+                                                {` · ${describeTodayAsk(priority, taskCustomizations[task.id]?.inProgress ?? false)}`}
+                                                {` · ${priority.reason}`}
+                                            </span>
+                                        </button>
+                                    </li>
+                                ))}
                             </ol>
                         </div>
                     )}

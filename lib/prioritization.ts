@@ -30,7 +30,14 @@ export type PriorityInput = {
     // this task's type (see lib/procrastinationHistory.ts). Omit/null when
     // there's no history yet for the type.
     procrastinationIndexHours?: number | null;
+
+    // Task status, for the reason text only (never the score).
+    inProgress?: boolean;
 };
+
+// "finish": do the whole thing now (small, or too close to split).
+// "start": a big task with room left, so today's ask is a chunk of it.
+export type PriorityMode = "finish" | "start";
 
 export type PriorityResult = {
     score: number;
@@ -39,6 +46,10 @@ export type PriorityResult = {
     reason: string;
     historyAdjusted: boolean;
     notYetStartable: boolean;
+    mode: PriorityMode;
+    // What to put in today: the whole estimate for "finish", a paced chunk
+    // for "start".
+    todayMinutes: number;
 };
 
 // A "healthy" lead time to treat as not needing any personalized nudge.
@@ -66,6 +77,17 @@ const MAX_SLACK_HOURS = 90 * 24;
 // need starting at about the same time, never against a day's difference
 // in deadline — see prioritizationModule.md's "Scoring rules".
 const MAX_TIE_BREAK_HOURS = 6;
+
+// Matches the Watch's focus length (components/PomodoroTimer.tsx), so a
+// "start" chunk is a whole number of Pomodoros.
+export const POMODORO_MINUTES = 25;
+
+// A task this short is done in one sitting, so it's never split.
+const MIN_SPLIT_MINUTES = 60;
+
+// "start" needs at least this many whole days left (after the
+// procrastination shift): today plus at least one more to spread it over.
+const MIN_SPLIT_DAYS = 2;
 
 function calculateUrgencyShiftHours(procrastinationIndexHours: number): number {
     return Math.min(
@@ -126,6 +148,47 @@ function urgencyBucket(slackHours: number): number {
     return 0;
 }
 
+/*
+ * Mode is a label, not a weight: ranking stays slack-based (a big task
+ * due later may still be Polaris), this only decides whether the ask is
+ * "finish it" or "put a chunk in today". Pacing uses the shifted deadline,
+ * so a type the student leaves late is paced to finish earlier.
+ */
+function calculateMode(
+    task: PriorityInput,
+    now: Date
+): { mode: PriorityMode; todayMinutes: number } {
+    const finish = { mode: "finish" as const, todayMinutes: task.estimatedMinutes };
+
+    if (task.estimatedMinutes <= MIN_SPLIT_MINUTES) {
+        return finish;
+    }
+
+    if (!task.due) {
+        return { mode: "start", todayMinutes: POMODORO_MINUTES };
+    }
+
+    let shiftedHours = hoursUntilDue(task.due, task.dueFraction, now);
+    if (
+        typeof task.procrastinationIndexHours === "number" &&
+        Number.isFinite(task.procrastinationIndexHours)
+    ) {
+        shiftedHours -= calculateUrgencyShiftHours(task.procrastinationIndexHours);
+    }
+
+    const daysLeft = Math.floor(shiftedHours / 24);
+    if (daysLeft < MIN_SPLIT_DAYS) {
+        return finish;
+    }
+
+    const paced = Math.ceil(task.estimatedMinutes / daysLeft / POMODORO_MINUTES) * POMODORO_MINUTES;
+
+    return {
+        mode: "start",
+        todayMinutes: Math.min(task.estimatedMinutes, Math.max(POMODORO_MINUTES, paced)),
+    };
+}
+
 function formatHours(minutes: number): string {
     const hours = Math.round((minutes / 60) * 2) / 2;
     return hours >= 1 ? `${hours}h` : `${Math.round(minutes)} min`;
@@ -183,6 +246,10 @@ export function calculatePriority(
 
     const isOverdue = Boolean(task.due) && hoursUntilDue(task.due as string, task.dueFraction, now) <= 0;
 
+    const { mode, todayMinutes } = notYetStartable
+        ? { mode: "finish" as const, todayMinutes: task.estimatedMinutes }
+        : calculateMode(task, now);
+
     let reason = "";
 
     if (notYetStartable) {
@@ -191,16 +258,24 @@ export function calculatePriority(
     } else if (isOverdue) {
         reason =
             "This is overdue, so it needs attention now.";
+    } else if (mode === "start") {
+        const chunk = `${todayMinutes} min`;
+        reason = task.inProgress
+            ? `Keep going: ~${chunk} today keeps you on pace for the deadline.`
+            : `It needs about ${formatHours(task.estimatedMinutes)} in total; ~${chunk} today keeps you on pace for the deadline.`;
+        if (historyAdjusted) {
+            reason += " You usually finish tasks like this close to the deadline, so it's paced to finish early.";
+        }
     } else if (rawSlackHours <= 24) {
         reason = task.estimatedMinutes >= 60
-            ? `It needs about ${formatHours(task.estimatedMinutes)} and is due soon, so start it now.`
+            ? `It needs about ${formatHours(task.estimatedMinutes)} and is due soon, so finish it today.`
             : "This is due very soon, so it needs immediate attention.";
     } else if (historyAdjusted) {
         reason =
             "You've historically finished tasks like this close to the deadline, so it's prioritized earlier than the due date alone would suggest.";
     } else if (task.estimatedMinutes >= 90 && rawSlackHours <= 72) {
         reason =
-            `It needs about ${formatHours(task.estimatedMinutes)}, so start it well before the deadline.`;
+            `It needs about ${formatHours(task.estimatedMinutes)} and there's no room to split it, so finish it before the deadline.`;
     } else if (isFrog) {
         reason =
             "This is a high-value, difficult task, making it a strong candidate for your Frog.";
@@ -225,5 +300,7 @@ export function calculatePriority(
         reason,
         historyAdjusted,
         notYetStartable,
+        mode,
+        todayMinutes,
     };
 }

@@ -67,6 +67,41 @@ function checkRankingRules() {
         "a future start date gates the score to 0",
         score({ due: dateKeyFromToday(1), startAt: dateKeyFromToday(3), today: dateKeyFromToday(0) }) === 0
     );
+    const result = (task: Partial<PriorityInput>) => calculatePriority({ ...base, ...task });
+    const bigLater = result({ due: dateKeyFromToday(6), estimatedMinutes: 360 });
+    check(
+        "6h task due in 6 days is 'start' with a Pomodoro-sized chunk under the estimate",
+        bigLater.mode === "start" && bigLater.todayMinutes % 25 === 0 && bigLater.todayMinutes < 360
+    );
+    const smallLater = result({ due: dateKeyFromToday(6), estimatedMinutes: 20 });
+    check(
+        "20-min task due in 6 days is 'finish' (one sitting)",
+        smallLater.mode === "finish" && smallLater.todayMinutes === 20
+    );
+    check(
+        "3h task due tomorrow is 'finish' (no room to split)",
+        result({ due: dateKeyFromToday(1), estimatedMinutes: 180 }).mode === "finish"
+    );
+    check(
+        "overdue 3h task is 'finish'",
+        result({ due: dateKeyFromToday(-1), estimatedMinutes: 180 }).mode === "finish"
+    );
+    const undatedBig = result({ due: null, estimatedMinutes: 180 });
+    check(
+        "undated 3h task is 'start' with one Pomodoro",
+        undatedBig.mode === "start" && undatedBig.todayMinutes === 25
+    );
+    check(
+        "3h due in 3 days: 'start' normally, 'finish' when the student usually finishes at the deadline",
+        result({ due: dateKeyFromToday(3), estimatedMinutes: 180 }).mode === "start" &&
+            result({ due: dateKeyFromToday(3), estimatedMinutes: 180, procrastinationIndexHours: 0 }).mode === "finish"
+    );
+    check(
+        "mode doesn't change the score",
+        // Each call reads its own clock, so allow a moment's drift.
+        Math.abs(bigLater.score - calculatePriority({ ...base, due: dateKeyFromToday(6), estimatedMinutes: 360, inProgress: true }).score) < 1e-3
+    );
+
     const undated = score({ due: null });
     check(
         "an undated task has a finite score and ranks below a task due in 60 days",

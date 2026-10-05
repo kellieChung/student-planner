@@ -100,6 +100,7 @@ export default function Onboarding({ onFinish }: Props) {
                     <p>
                         <strong>Polaris</strong> is the single task most worth doing next, weighed by due date,
                         importance, and how long it&apos;ll take. When you&apos;re not sure where to start, start there.
+                        A big task due later asks only for today&apos;s chunk, not the whole thing.
                         The circle on any card moves a task from to-do to in progress to done (or press{" "}
                         <strong>Mark done</strong> here), and <strong>Focus on the Watch</strong> pins it to your timer.
                     </p>
