@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/app/generated/prisma/client";
 import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
 import { hashExtensionToken, readBearerToken } from "@/lib/extensionAuth";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
@@ -123,6 +124,31 @@ function dueDay(assignment: Record<string, unknown>, dueAt: Date | null): string
     return dueAt ? toDateKey(dueAt) : null;
 }
 
+// Prisma Postgres bills every query, and a full sync re-sends the whole
+// term: writing only rows that are new or actually differ turns an
+// unchanged re-sync from one query per item into a handful of reads.
+function sameValue(a: unknown, b: unknown): boolean {
+    if (a instanceof Date || b instanceof Date) {
+        return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+    }
+
+    if (Array.isArray(a) || Array.isArray(b)) {
+        return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => value === b[i]);
+    }
+
+    return a === b;
+}
+
+// Only the keys present in `fields` are compared, so a key an older
+// extension doesn't send never counts as a change (or gets cleared).
+function hasChanges(existing: Record<string, unknown>, fields: Record<string, unknown>): boolean {
+    return Object.entries(fields).some(([key, value]) => !sameValue(existing[key], value));
+}
+
+function rowKey(courseId: string, canvasId: string): string {
+    return `${courseId}:${canvasId}`;
+}
+
 export async function upsertCanvasCourses(
     userId: string,
     canvasOrigin: string,
@@ -143,14 +169,23 @@ export async function upsertCanvasCourses(
     // route.ts's DELETE handler) is tombstoned here so a routine sync
     // doesn't silently recreate it just because Canvas still reports it
     // active — only the explicit restore-course flow removes a tombstone.
-    const deletedCourses = await prisma.deletedCanvasCourse.findMany({
-        where: { userId, canvasOrigin },
-        select: { canvasId: true },
-    });
+    const [deletedCourses, existingCourses] = await Promise.all([
+        prisma.deletedCanvasCourse.findMany({
+            where: { userId, canvasOrigin },
+            select: { canvasId: true },
+        }),
+        prisma.canvasCourse.findMany({
+            where: { userId, canvasOrigin },
+            select: { id: true, canvasId: true, name: true, syncStartDay: true },
+        }),
+    ]);
 
     const deletedCanvasIds = new Set(
         deletedCourses.map((deleted) => deleted.canvasId)
     );
+    const existingCourseByCanvasId = new Map(existingCourses.map((course) => [course.canvasId, course]));
+
+    const syncedCourses: { id: string; syncStartDay: string | null; data: RawCourseSyncPayload }[] = [];
 
     for (const courseData of courses) {
         const canvasCourse = courseData.course;
@@ -159,33 +194,81 @@ export async function upsertCanvasCourses(
             continue;
         }
 
-        if (deletedCanvasIds.has(String(canvasCourse.id))) {
+        const canvasId = String(canvasCourse.id);
+
+        if (deletedCanvasIds.has(canvasId)) {
             continue;
         }
 
-        syncedCourseCanvasIds.add(String(canvasCourse.id));
+        syncedCourseCanvasIds.add(canvasId);
 
-        const savedCourse = await prisma.canvasCourse.upsert({
-            where: {
-                userId_canvasOrigin_canvasId: {
-                    userId,
-                    canvasOrigin,
-                    canvasId: String(canvasCourse.id),
+        const name = text(canvasCourse.name, "Unnamed Course");
+        const existing = existingCourseByCanvasId.get(canvasId);
+        let savedCourse: { id: string; syncStartDay: string | null };
+
+        if (existing) {
+            if (existing.name !== name) {
+                await prisma.canvasCourse.update({ where: { id: existing.id }, data: { name } });
+            }
+
+            savedCourse = existing;
+        } else {
+            // Still an upsert: a concurrent sync may have just created it.
+            savedCourse = await prisma.canvasCourse.upsert({
+                where: {
+                    userId_canvasOrigin_canvasId: { userId, canvasOrigin, canvasId },
                 },
-            },
-            update: {
-                name: text(canvasCourse.name, "Unnamed Course"),
-            },
-            create: {
-                userId,
-                canvasOrigin,
-                canvasId: String(canvasCourse.id),
-                name: text(canvasCourse.name, "Unnamed Course"),
-                syncStartDay: today,
-            },
-        });
+                update: { name },
+                create: { userId, canvasOrigin, canvasId, name, syncStartDay: today },
+                select: { id: true, syncStartDay: true },
+            });
+        }
 
         courseCount++;
+        syncedCourses.push({ ...savedCourse, data: courseData });
+    }
+
+    const courseIds = syncedCourses.map((course) => course.id);
+
+    const [existingAssignments, existingDiscussions, existingAnnouncements] = courseIds.length > 0
+        ? await Promise.all([
+            prisma.assignment.findMany({
+                where: { userId, courseId: { in: courseIds } },
+                select: {
+                    id: true, courseId: true, canvasId: true, name: true, description: true,
+                    dueAt: true, htmlUrl: true, submissionTypes: true, pointsPossible: true,
+                },
+            }),
+            prisma.discussion.findMany({
+                where: { userId, courseId: { in: courseIds } },
+                select: {
+                    id: true, courseId: true, canvasId: true, title: true, message: true,
+                    htmlUrl: true, postedAt: true, dueAt: true,
+                },
+            }),
+            prisma.announcement.findMany({
+                where: { userId, courseId: { in: courseIds } },
+                select: { id: true, courseId: true, canvasId: true, title: true, message: true, htmlUrl: true, postedAt: true },
+            }),
+        ])
+        : [[], [], []];
+
+    const assignmentsByKey = new Map(existingAssignments.map((row) => [rowKey(row.courseId, row.canvasId), row]));
+    const discussionsByKey = new Map(existingDiscussions.map((row) => [rowKey(row.courseId, row.canvasId), row]));
+    const announcementsByKey = new Map(existingAnnouncements.map((row) => [rowKey(row.courseId, row.canvasId), row]));
+
+    // Keyed so a payload listing the same item twice behaves like the old
+    // sequential upserts (last one wins) instead of colliding.
+    const newAssignments = new Map<string, Prisma.AssignmentCreateManyInput>();
+    const newDiscussions = new Map<string, Prisma.DiscussionCreateManyInput>();
+    const newAnnouncements = new Map<string, Prisma.AnnouncementCreateManyInput>();
+    const assignmentUpdates = new Map<string, Prisma.AssignmentUpdateInput>();
+    const discussionUpdates = new Map<string, Prisma.DiscussionUpdateInput>();
+    const announcementUpdates = new Map<string, Prisma.AnnouncementUpdateInput>();
+
+    for (const savedCourse of syncedCourses) {
+        const courseData = savedCourse.data;
+        const canvasCourseId = String(courseData.course?.id);
 
         const assignments = Array.isArray(courseData.assignments)
             ? courseData.assignments
@@ -196,6 +279,8 @@ export async function upsertCanvasCourses(
                 continue;
             }
 
+            const canvasId = String(assignment.id);
+            const key = rowKey(savedCourse.id, canvasId);
             const fields = {
                 name: text(assignment.name, "Unnamed Assignment"),
                 description: html(assignment.description),
@@ -204,40 +289,24 @@ export async function upsertCanvasCourses(
                 ...canvasTypeFields(assignment),
             };
             const day = dueDay(assignment, fields.dueAt);
+            const existing = assignmentsByKey.get(key);
 
-            // Work already due when the course was first synced is never
-            // imported: otherwise a new account starts with a term of past
-            // assignments to check off for unearned XP. A row that already
-            // exists (e.g. its due date moved back later) is still kept
-            // current.
-            if (savedCourse.syncStartDay && day && day < savedCourse.syncStartDay) {
-                const updated = await prisma.assignment.updateMany({
-                    where: { userId, courseId: savedCourse.id, canvasId: String(assignment.id) },
-                    data: fields,
-                });
-
-                if (updated.count === 0) continue;
+            if (existing) {
+                if (hasChanges(existing, fields)) assignmentUpdates.set(existing.id, fields);
+            } else if (savedCourse.syncStartDay && day && day < savedCourse.syncStartDay) {
+                // Work already due when the course was first synced is never
+                // imported: otherwise a new account starts with a term of
+                // past assignments to check off for unearned XP. A row that
+                // already exists (e.g. its due date moved back later) is
+                // still kept current above.
+                continue;
             } else {
-                await prisma.assignment.upsert({
-                    where: {
-                        courseId_canvasId: {
-                            courseId: savedCourse.id,
-                            canvasId: String(assignment.id),
-                        },
-                    },
-                    update: fields,
-                    create: {
-                        userId,
-                        courseId: savedCourse.id,
-                        canvasId: String(assignment.id),
-                        ...fields,
-                    },
-                });
+                newAssignments.set(key, { userId, courseId: savedCourse.id, canvasId, ...fields });
             }
 
             assignmentCount++;
 
-            const completionItem = readCanvasCompletionItem(String(canvasCourse.id), assignment);
+            const completionItem = readCanvasCompletionItem(canvasCourseId, assignment);
             if (completionItem) completionItems.push(completionItem);
         }
 
@@ -250,31 +319,22 @@ export async function upsertCanvasCourses(
                 continue;
             }
 
-            await prisma.discussion.upsert({
-                where: {
-                    courseId_canvasId: {
-                        courseId: savedCourse.id,
-                        canvasId: String(discussion.id),
-                    },
-                },
-                update: {
-                    title: text(discussion.title, "Untitled Discussion"),
-                    message: html(discussion.message),
-                    htmlUrl: httpUrl(discussion.html_url),
-                    postedAt: instant(discussion.posted_at),
-                    dueAt: instant(discussion.due_at),
-                },
-                create: {
-                    userId,
-                    courseId: savedCourse.id,
-                    canvasId: String(discussion.id),
-                    title: text(discussion.title, "Untitled Discussion"),
-                    message: html(discussion.message),
-                    htmlUrl: httpUrl(discussion.html_url),
-                    postedAt: instant(discussion.posted_at),
-                    dueAt: instant(discussion.due_at),
-                },
-            });
+            const canvasId = String(discussion.id);
+            const key = rowKey(savedCourse.id, canvasId);
+            const fields = {
+                title: text(discussion.title, "Untitled Discussion"),
+                message: html(discussion.message),
+                htmlUrl: httpUrl(discussion.html_url),
+                postedAt: instant(discussion.posted_at),
+                dueAt: instant(discussion.due_at),
+            };
+            const existing = discussionsByKey.get(key);
+
+            if (!existing) {
+                newDiscussions.set(key, { userId, courseId: savedCourse.id, canvasId, ...fields });
+            } else if (hasChanges(existing, fields)) {
+                discussionUpdates.set(existing.id, fields);
+            }
 
             discussionCount++;
         }
@@ -288,32 +348,50 @@ export async function upsertCanvasCourses(
                 continue;
             }
 
-            await prisma.announcement.upsert({
-                where: {
-                    courseId_canvasId: {
-                        courseId: savedCourse.id,
-                        canvasId: String(announcement.id),
-                    },
-                },
-                update: {
-                    title: text(announcement.title, "Untitled Announcement"),
-                    message: html(announcement.message),
-                    htmlUrl: httpUrl(announcement.html_url),
-                    postedAt: instant(announcement.posted_at),
-                },
-                create: {
-                    userId,
-                    courseId: savedCourse.id,
-                    canvasId: String(announcement.id),
-                    title: text(announcement.title, "Untitled Announcement"),
-                    message: html(announcement.message),
-                    htmlUrl: httpUrl(announcement.html_url),
-                    postedAt: instant(announcement.posted_at),
-                },
-            });
+            const canvasId = String(announcement.id);
+            const key = rowKey(savedCourse.id, canvasId);
+            const fields = {
+                title: text(announcement.title, "Untitled Announcement"),
+                message: html(announcement.message),
+                htmlUrl: httpUrl(announcement.html_url),
+                postedAt: instant(announcement.posted_at),
+            };
+            const existing = announcementsByKey.get(key);
+
+            if (!existing) {
+                newAnnouncements.set(key, { userId, courseId: savedCourse.id, canvasId, ...fields });
+            } else if (hasChanges(existing, fields)) {
+                announcementUpdates.set(existing.id, fields);
+            }
 
             announcementCount++;
         }
+    }
+
+    // skipDuplicates: a concurrent sync may have created the same row since
+    // the reads above.
+    if (newAssignments.size > 0) {
+        await prisma.assignment.createMany({ data: [...newAssignments.values()], skipDuplicates: true });
+    }
+
+    if (newDiscussions.size > 0) {
+        await prisma.discussion.createMany({ data: [...newDiscussions.values()], skipDuplicates: true });
+    }
+
+    if (newAnnouncements.size > 0) {
+        await prisma.announcement.createMany({ data: [...newAnnouncements.values()], skipDuplicates: true });
+    }
+
+    for (const [id, data] of assignmentUpdates) {
+        await prisma.assignment.update({ where: { id }, data });
+    }
+
+    for (const [id, data] of discussionUpdates) {
+        await prisma.discussion.update({ where: { id }, data });
+    }
+
+    for (const [id, data] of announcementUpdates) {
+        await prisma.announcement.update({ where: { id }, data });
     }
 
     return {
