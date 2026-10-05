@@ -17,7 +17,12 @@ async function getUser() {
     return sessionUserRef(session);
 }
 
+// Read first: an upsert is a billed write on every planner load/refocus,
+// and the row almost always exists already.
 async function getOrCreateChart(userId: string) {
+    const existing = await prisma.starChart.findUnique({ where: { userId } });
+    if (existing) return existing;
+
     return prisma.starChart.upsert({
         where: { userId },
         create: { userId },

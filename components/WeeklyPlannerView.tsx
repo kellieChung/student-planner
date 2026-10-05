@@ -168,6 +168,12 @@ const SAVE_ERROR = "Couldn't save your change, so it was undone. Check your conn
 export default function WeeklyPlannerView({ assignments, userName, userEmail, isDev, initialRundown }: WeeklyPlannerProps) {
     const router = useRouter();
     const [tasks, setTasks] = useState<Assignment[]>([]);
+    // Read by materializeRecurringTasks, which runs from stale closures
+    // (series edits, panel callbacks). Declared before the effects that use it.
+    const tasksRef = useRef<Assignment[]>([]);
+    useEffect(() => {
+        tasksRef.current = tasks;
+    }, [tasks]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [quickAddDueDate, setQuickAddDueDate] = useState<string | undefined>(undefined);
     const [selectedTask, setSelectedTask] = useState<Assignment | null>(null);
@@ -1026,7 +1032,13 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
             const perSeriesResults = await Promise.all(
                 activeSeries.map(async (rule) => {
-                    const dates = expandOccurrences(rule, today, horizonEnd);
+                    // Each POST costs several billed DB queries, so only dates
+                    // with no loaded occurrence (tombstoned ones included) are
+                    // sent; the server still drops any it already has.
+                    const existingDates = new Set(
+                        tasksRef.current.filter((task) => task.recurrenceId === rule.id).map((task) => task.due)
+                    );
+                    const dates = expandOccurrences(rule, today, horizonEnd).filter((due) => !existingDates.has(due));
                     if (dates.length === 0) return [] as Assignment[];
 
                     const occurrences = dates.map((due) => ({

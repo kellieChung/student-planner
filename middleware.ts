@@ -56,6 +56,8 @@ export function middleware(request: NextRequest) {
     return response;
 }
 
+// Only the extension-facing routes need CORS; every other /api request
+// would otherwise pay for a pass-through middleware invocation.
 export const config = {
-    matcher: "/api/:path*",
+    matcher: ["/api/extension/:path*", "/api/canvas/:path*"],
 };
