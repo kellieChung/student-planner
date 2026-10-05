@@ -18,6 +18,7 @@ export {
     classifyAssignmentType,
     estimateMinutesByType,
     normalizeAssignmentType,
+    resolveAssignmentType,
     type AssignmentType,
 } from "@/lib/assignmentType";
 
@@ -167,6 +168,10 @@ const SCORE_TOOL: Anthropic.Tool = {
     strict: true,
 };
 
+// Shared by both prompts: the type alone sets the time estimate
+// (estimateMinutesByType), so a discussion read as an essay quadruples it.
+const ASSIGNMENT_TYPE_GUIDE = `ASSIGNMENT TYPE: discussion = forum post or replies, even if it asks for written paragraphs; essay = standalone paper or written assignment submitted on its own; reflection = short personal response or journal; reading = read or watch material; practice = ungraded or low-stakes drills/worksheets; problem_set = set of problems; homework = other routine graded exercises; quiz = short timed check; test/exam = major timed assessment; project/presentation = multi-step deliverable or talk; lab = lab work or report. Use "other" only when nothing fits.`;
+
 const SCORING_RUBRIC = `
 You score student assignments for a planner. Judge each assignment independently, only from its own information; never invent grading policies, weights, or requirements. Scores are integers 1-10.
 
@@ -175,6 +180,8 @@ IMPORTANCE: academic significance vs. normal coursework. 1-2 routine/negligible;
 DIFFICULTY: how challenging for a capable student. 1-2 trivial; 3-4 straightforward, familiar procedures; 5-6 moderate reasoning or multiple steps; 7-8 substantial reasoning, writing, or synthesis; 9-10 very to exceptionally demanding. Points are not a proxy for difficulty.
 
 CONSEQUENCE: harm from missing it, submitting late, or doing poorly. 1-2 minimal; 3-4 small; 5-6 noticeable; 7-8 significant; 9-10 very to extremely significant. Use stated grading or late policy when given; otherwise infer cautiously.
+
+${ASSIGNMENT_TYPE_GUIDE}
 
 "index" is the ASSIGNMENT number (1-based).
 `.trim();
@@ -305,6 +312,8 @@ If it is unknown, infer cautiously without inventing grade percentages or penalt
 ASSIGNMENT TYPE
 Choose one:
 homework, reading, reflection, discussion, quiz, test, exam, essay, project, presentation, lab, problem_set, practice, other
+
+${ASSIGNMENT_TYPE_GUIDE}
 
 
 RETURN ONLY VALID JSON, with exactly one entry per assignment above, in this exact shape:

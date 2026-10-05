@@ -1,6 +1,12 @@
+import { parseLocalDate } from "@/lib/utils";
+
 export type PriorityInput = {
     name: string;
     due: string | null;
+
+    // Time-of-day of `due` as a 0-1 fraction (see Assignment.dueFraction).
+    // Omitted → end of day.
+    dueFraction?: number;
 
     // Resolved "YYYY-MM-DD" custom start date (caller resolves
     // TaskCustomization/the expired-start-date auto-revert first — this
@@ -48,10 +54,18 @@ const MAX_URGENCY_SHIFT_HOURS = 120;
 // same condition.
 const FROG_THRESHOLD = 7;
 
-// estimatedMinutes above this is treated as "as long as it gets" for the
-// effort tie-breaker below — there's no benefit to distinguishing a 4-hour
-// task from an 8-hour one for prioritization purposes.
-const EFFORT_CAP_MINUTES = 240;
+// Slack is clamped to a finite range: overdue tasks stay on top without
+// growing more urgent forever, and undated/far-off tasks share the bottom.
+// Never Infinity — scores are stored and JSON-serialized, and Infinity
+// becomes null, which WeeklyPlannerView's estimate validation rejects.
+const OVERDUE_FLOOR_HOURS = -24;
+const MAX_SLACK_HOURS = 90 * 24;
+
+// The most importance/difficulty/consequence/frog can move a task, in
+// hours of slack. Small on purpose: they only decide between tasks that
+// need starting at about the same time, never against a day's difference
+// in deadline — see prioritizationModule.md's "Scoring rules".
+const MAX_TIE_BREAK_HOURS = 6;
 
 function calculateUrgencyShiftHours(procrastinationIndexHours: number): number {
     return Math.min(
@@ -60,113 +74,95 @@ function calculateUrgencyShiftHours(procrastinationIndexHours: number): number {
     );
 }
 
-function calculateUrgency(
-    due: string | null,
-    procrastinationIndexHours?: number | null
+// Hours until the due moment, honoring time of day (absent dueFraction =
+// end of day, same as the grid).
+function hoursUntilDue(due: string, dueFraction: number | undefined, now: Date): number {
+    const dueDay = parseLocalDate(due);
+    const fraction = typeof dueFraction === "number" && Number.isFinite(dueFraction)
+        ? Math.min(1, Math.max(0, dueFraction))
+        : 1;
+    const dueAt = dueDay.getTime() + fraction * 24 * 60 * 60 * 1000 - 1000;
+
+    return (dueAt - now.getTime()) / (1000 * 60 * 60);
+}
+
+/*
+ * Slack = how many hours are left before you'd have to start: time until
+ * due, minus the estimated work time, minus the student's procrastination
+ * shift for this type. The task with the least slack is the most urgent.
+ */
+function calculateSlackHours(
+    task: PriorityInput,
+    useHistory: boolean,
+    now: Date
 ): number {
-    if (!due) {
-        return 0;
+    if (!task.due) {
+        return MAX_SLACK_HOURS;
     }
 
-    const now = new Date();
-    let dueDate = new Date(`${due}T23:59:59`);
+    let hours = hoursUntilDue(task.due, task.dueFraction, now) - task.estimatedMinutes / 60;
 
-    /*
-     * Treat a task type the student historically leaves until close to (or
-     * past) the deadline as more urgent sooner than the raw due date would
-     * suggest, by evaluating urgency against an earlier effective due date.
-     */
     if (
-        typeof procrastinationIndexHours === "number" &&
-        Number.isFinite(procrastinationIndexHours)
+        useHistory &&
+        typeof task.procrastinationIndexHours === "number" &&
+        Number.isFinite(task.procrastinationIndexHours)
     ) {
-        const shiftHours = calculateUrgencyShiftHours(procrastinationIndexHours);
-        dueDate = new Date(dueDate.getTime() - shiftHours * 60 * 60 * 1000);
+        hours -= calculateUrgencyShiftHours(task.procrastinationIndexHours);
     }
 
-    const hoursUntilDue =
-        (dueDate.getTime() - now.getTime()) /
-        (1000 * 60 * 60);
+    return Math.min(MAX_SLACK_HOURS, Math.max(OVERDUE_FLOOR_HOURS, hours));
+}
 
-    if (hoursUntilDue <= 0) {
-        return 100;
-    }
+// Coarse 0-100 view of slack, kept for the stored urgencyScore and the
+// reason text; ranking uses the continuous score.
+function urgencyBucket(slackHours: number): number {
+    if (slackHours <= 0) return 100;
+    if (slackHours <= 24) return 95;
+    if (slackHours <= 48) return 85;
+    if (slackHours <= 72) return 75;
+    if (slackHours <= 7 * 24) return 60;
+    if (slackHours <= 14 * 24) return 40;
+    if (slackHours < MAX_SLACK_HOURS) return 20;
+    return 0;
+}
 
-    if (hoursUntilDue <= 24) {
-        return 95;
-    }
-
-    if (hoursUntilDue <= 48) {
-        return 85;
-    }
-
-    if (hoursUntilDue <= 72) {
-        return 75;
-    }
-
-    if (hoursUntilDue <= 7 * 24) {
-        return 60;
-    }
-
-    if (hoursUntilDue <= 14 * 24) {
-        return 40;
-    }
-
-    return 20;
+function formatHours(minutes: number): string {
+    const hours = Math.round((minutes / 60) * 2) / 2;
+    return hours >= 1 ? `${hours}h` : `${Math.round(minutes)} min`;
 }
 
 export function calculatePriority(
     task: PriorityInput
 ): PriorityResult {
-    const rawUrgencyScore =
-        calculateUrgency(task.due);
+    const now = new Date();
+    const rawSlackHours = calculateSlackHours(task, false, now);
+    const slackHours = calculateSlackHours(task, true, now);
 
-    const urgencyScore =
-        calculateUrgency(task.due, task.procrastinationIndexHours);
+    const rawUrgencyScore = urgencyBucket(rawSlackHours);
+    const urgencyScore = urgencyBucket(slackHours);
 
     const historyAdjusted = urgencyScore > rawUrgencyScore;
 
-    const frogScore =
+    const isFrog =
         task.importance >= FROG_THRESHOLD &&
-        task.difficulty >= FROG_THRESHOLD
-            ? 100
-            : 0;
+        task.difficulty >= FROG_THRESHOLD;
 
-    const effortScore =
-        Math.min(task.estimatedMinutes, EFFORT_CAP_MINUTES) /
-        EFFORT_CAP_MINUTES *
-        100;
+    const frogScore = isFrog ? 100 : 0;
 
-    /*
-     * Urgency must be dominant, not just heavily weighted: the planner
-     * should never tell a student to work on a distant-but-important essay
-     * instead of a normal assignment due tonight. A weighted sum where
-     * importance/difficulty/consequence are each worth up to ~15-20% can
-     * still add up to more than a whole urgency-bucket gap (e.g. a 9/9/8
-     * task due in 10 days used to outscore a 4/3/3 task due today) — see
-     * prioritizationModule.md's "Scoring formula" section.
-     *
-     * So urgencyScore (the bucketed, procrastination-adjusted value, in
-     * increments of at least 5) is the primary key, and the
-     * importance/difficulty/consequence/frog/effort blend is squashed into
-     * a secondary term capped well under that smallest possible gap — it
-     * can only break ties between tasks of similar urgency, never overcome
-     * a real difference in how soon something is due.
-     */
-
-    const secondaryScore =
-        task.importance * 10 * 0.35 +
-        task.difficulty * 10 * 0.25 +
-        task.consequence * 10 * 0.15 +
-        frogScore * 0.10 +
-        effortScore * 0.15;
+    // Effort isn't here: it already counts through slack (a long task has
+    // to start sooner), which is where it belongs.
+    const tieBreakHours =
+        (task.importance / 10 * 0.4 +
+            task.difficulty / 10 * 0.25 +
+            task.consequence / 10 * 0.2 +
+            (isFrog ? 0.15 : 0)) *
+        MAX_TIE_BREAK_HOURS;
 
     // A future custom start date means the user literally can't start this
     // task yet, so it must never be auto-selected as Up Next/the frog, even
     // if its due-date urgency would otherwise dominate. This gates the
-    // final score to 0 rather than touching the urgency/secondary
-    // weighting documented in prioritizationModule.md's "Scoring formula"
-    // section.
+    // final score to 0 rather than touching the slack/tie-break weighting
+    // documented in prioritizationModule.md's "Scoring rules" section.
     //
     // An already-overdue due date wins regardless: if a due date later
     // moves earlier than a previously-set startAt (e.g. via Canvas
@@ -179,27 +175,38 @@ export function calculatePriority(
         !(task.due && task.due < task.today)
     );
 
+    // Always > 0 for a startable task (slack ≤ MAX_SLACK_HOURS, tie-break
+    // > 0), so 0 stays reserved for the start-date gate.
     const score = notYetStartable
         ? 0
-        : urgencyScore + secondaryScore / 100;
+        : MAX_SLACK_HOURS - slackHours + tieBreakHours;
+
+    const isOverdue = Boolean(task.due) && hoursUntilDue(task.due as string, task.dueFraction, now) <= 0;
 
     let reason = "";
 
     if (notYetStartable) {
         reason =
             "This task's start date hasn't arrived yet.";
-    } else if (rawUrgencyScore >= 95) {
+    } else if (isOverdue) {
         reason =
-            "This is due very soon, so it needs immediate attention.";
+            "This is overdue, so it needs attention now.";
+    } else if (rawSlackHours <= 24) {
+        reason = task.estimatedMinutes >= 60
+            ? `It needs about ${formatHours(task.estimatedMinutes)} and is due soon, so start it now.`
+            : "This is due very soon, so it needs immediate attention.";
     } else if (historyAdjusted) {
         reason =
             "You've historically finished tasks like this close to the deadline, so it's prioritized earlier than the due date alone would suggest.";
-    } else if (
-        task.importance >= FROG_THRESHOLD &&
-        task.difficulty >= FROG_THRESHOLD
-    ) {
+    } else if (task.estimatedMinutes >= 90 && rawSlackHours <= 72) {
+        reason =
+            `It needs about ${formatHours(task.estimatedMinutes)}, so start it well before the deadline.`;
+    } else if (isFrog) {
         reason =
             "This is a high-value, difficult task, making it a strong candidate for your Frog.";
+    } else if (!task.due) {
+        reason =
+            "This has no due date, so it's ranked after your dated work.";
     } else if (task.importance >= 8) {
         reason =
             "This task has high academic value, so finishing it early is worthwhile.";

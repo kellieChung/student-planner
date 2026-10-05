@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { analyzeAssignments, estimateMinutesByType, fallbackAssignmentAnalysis, FALLBACK_ANALYSIS_REASON, normalizeAssignmentType } from "@/lib/analyzeAssignment";
+import { analyzeAssignments, estimateMinutesByType, fallbackAssignmentAnalysis, FALLBACK_ANALYSIS_REASON, normalizeAssignmentType, resolveAssignmentType } from "@/lib/analyzeAssignment";
 import { calculatePriority } from "@/lib/prioritization";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getTaskSignature } from "@/lib/taskPlanning";
@@ -158,7 +158,8 @@ const MAX_TEXT_LENGTH = 200;
 const DAILY_ANALYSIS_LIMIT = 200;
 
 function toEstimate(task: PlanningTask, normalized: ReturnType<typeof normalizeAnalysis>) {
-    const estimatedMinutes = estimateMinutesByType(normalized.assignmentType);
+    const assignmentType = resolveAssignmentType(normalized.assignmentType, task);
+    const estimatedMinutes = estimateMinutesByType(assignmentType);
 
     const priority = calculatePriority({
         name: task.name,
@@ -176,7 +177,7 @@ function toEstimate(task: PlanningTask, normalized: ReturnType<typeof normalizeA
         importance: normalized.importance,
         difficulty: normalized.difficulty,
         consequence: normalized.consequence,
-        assignmentType: normalized.assignmentType,
+        assignmentType,
         reason: normalized.reason,
         priorityScore: priority.score,
         urgencyScore: priority.urgencyScore,

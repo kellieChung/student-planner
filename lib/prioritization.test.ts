@@ -1,5 +1,94 @@
-import { analyzeAssignments, estimateMinutesByType } from "./analyzeAssignment";
-import { calculatePriority } from "./prioritization";
+import { analyzeAssignments, estimateMinutesByType, resolveAssignmentType } from "./analyzeAssignment";
+import { calculatePriority, type PriorityInput } from "./prioritization";
+import { toDateKey } from "./utils";
+
+// "YYYY-MM-DD" for today + offsetDays, in local time.
+function dateKeyFromToday(offsetDays: number): string {
+    const date = new Date();
+    date.setDate(date.getDate() + offsetDays);
+    return toDateKey(date);
+}
+
+function check(label: string, ok: boolean) {
+    console.log(`${ok ? "PASS" : "FAIL"}  ${label}`);
+}
+
+// Deterministic ranking rules (no AI needed) — see prioritizationModule.md.
+function checkRankingRules() {
+    console.log("\nRANKING RULES");
+
+    const base: PriorityInput = {
+        name: "Task",
+        due: null,
+        importance: 5,
+        difficulty: 5,
+        consequence: 5,
+        estimatedMinutes: 30,
+    };
+    const score = (task: Partial<PriorityInput>) => calculatePriority({ ...base, ...task }).score;
+
+    check(
+        "same effort: due in 3 days beats due in 4 days, even if the later one rates higher",
+        score({ due: dateKeyFromToday(3), importance: 4, difficulty: 3, consequence: 3 }) >
+            score({ due: dateKeyFromToday(4), importance: 9, difficulty: 9, consequence: 9 })
+    );
+    check(
+        "reported case: Mon discussion (20 min) beats Tue discussion mis-typed as an essay (120 min, rated higher)",
+        score({ due: dateKeyFromToday(3), estimatedMinutes: 20, importance: 4, difficulty: 3, consequence: 3 }) >
+            score({ due: dateKeyFromToday(4), estimatedMinutes: 120, importance: 9, difficulty: 8, consequence: 8 })
+    );
+    check(
+        "10-min quiz due tomorrow beats a 3h exam due in 4 days",
+        score({ due: dateKeyFromToday(1), estimatedMinutes: 10 }) >
+            score({ due: dateKeyFromToday(4), estimatedMinutes: 180, importance: 9, difficulty: 9 })
+    );
+    check(
+        "same due day and effort: the frog beats a trivial task",
+        score({ due: dateKeyFromToday(2), importance: 8, difficulty: 8 }) >
+            score({ due: dateKeyFromToday(2), importance: 2, difficulty: 2, consequence: 2 })
+    );
+    check(
+        "a long task has to start sooner: 3h due midday beats 30 min due that evening",
+        score({ due: dateKeyFromToday(3), dueFraction: 0.5, estimatedMinutes: 180 }) >
+            score({ due: dateKeyFromToday(3), estimatedMinutes: 30 })
+    );
+    check(
+        "due at 9am tomorrow beats due at end of tomorrow",
+        score({ due: dateKeyFromToday(1), dueFraction: 0.375 }) >
+            score({ due: dateKeyFromToday(1) })
+    );
+    check(
+        "overdue beats due today",
+        score({ due: dateKeyFromToday(-1) }) > score({ due: dateKeyFromToday(0) })
+    );
+    check(
+        "a future start date gates the score to 0",
+        score({ due: dateKeyFromToday(1), startAt: dateKeyFromToday(3), today: dateKeyFromToday(0) }) === 0
+    );
+    const undated = score({ due: null });
+    check(
+        "an undated task has a finite score and ranks below a task due in 60 days",
+        Number.isFinite(undated) && undated > 0 && undated < score({ due: dateKeyFromToday(60) })
+    );
+
+    check(
+        "AI 'essay' on 'Week 5 Discussion' resolves to discussion (30 min)",
+        resolveAssignmentType("essay", { name: "Week 5 Discussion" }) === "discussion" &&
+            estimateMinutesByType("discussion") === 30
+    );
+    check(
+        "AI 'discussion' on 'Exam Review Discussion' stays discussion",
+        resolveAssignmentType("discussion", { name: "Exam Review Discussion" }) === "discussion"
+    );
+    check(
+        "AI 'other' on 'Discussion 3' resolves to discussion",
+        resolveAssignmentType("other", { name: "Discussion 3" }) === "discussion"
+    );
+    check(
+        "AI 'essay' on 'Persuasive Essay Draft' stays essay",
+        resolveAssignmentType("essay", { name: "Persuasive Essay Draft" }) === "essay"
+    );
+}
 
 function demonstrateProcrastinationAdjustment() {
     const sharedTask = {
@@ -74,6 +163,7 @@ function demonstrateStartDateGate() {
 }
 
 async function main() {
+    checkRankingRules();
     demonstrateProcrastinationAdjustment();
     demonstrateStartDateGate();
 

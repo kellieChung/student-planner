@@ -1,4 +1,4 @@
-import { classifyAssignmentType, normalizeAssignmentType, type AssignmentType } from "@/lib/assignmentType";
+import { classifyAssignmentType, resolveAssignmentType, type AssignmentType } from "@/lib/assignmentType";
 import { daysBetween, isDateKey, parseLocalDate } from "@/lib/utils";
 
 // By task type, not estimated minutes: students can edit their estimates, so
@@ -40,14 +40,15 @@ export type XpInput = {
     course: string;
     due?: unknown;
     completedAt?: unknown;
-    // The AI's stored classification; the student's typeOverride is
-    // deliberately not used, so XP can't be raised by relabelling.
+    // The AI's stored classification (reconciled with the name, see
+    // resolveAssignmentType); the student's typeOverride is deliberately
+    // not used, so XP can't be raised by relabelling.
     assignmentType?: string | null;
 };
 
 export function computeTaskXp(task: XpInput): number {
     const type = task.assignmentType
-        ? normalizeAssignmentType(task.assignmentType)
+        ? resolveAssignmentType(task.assignmentType, task)
         : classifyAssignmentType({ name: task.name, course: task.course });
     const baseXp = xpForAssignmentType(type);
 

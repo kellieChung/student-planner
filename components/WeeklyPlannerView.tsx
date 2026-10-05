@@ -21,6 +21,7 @@ import {useMascot} from "./world/LaptopFrame";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
+import {estimateMinutesByType, resolveAssignmentType} from "@/lib/assignmentType";
 import {classifyLabelType, courseAbbreviationDefault, DEFAULT_TASK_LABEL_PARTS, formatTaskLabel, isDefaultTaskLabelParts, type TaskLabelPart} from "@/lib/taskLabel";
 import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
 import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
@@ -314,6 +315,32 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         [tasks, taskCustomizations]
     );
 
+    // Stored estimates with the AI's type reconciled against the task name
+    // (resolveAssignmentType) and minutes recomputed to match — fixes rows
+    // the AI already mislabeled (e.g. a discussion stored as an essay)
+    // without re-analyzing them. Read type/minutes from here, not
+    // taskPlanning.
+    const resolvedPlanning = useMemo(() => {
+        const resolved: TaskPlanningEstimates = { ...taskPlanning };
+
+        for (const task of effectiveTasks) {
+            const estimate = taskPlanning[task.id];
+            // Rows from before types were stored keep their own minutes.
+            if (!estimate?.assignmentType) continue;
+
+            const assignmentType = resolveAssignmentType(estimate.assignmentType, task);
+            if (assignmentType === estimate.assignmentType) continue;
+
+            resolved[task.id] = {
+                ...estimate,
+                assignmentType,
+                estimatedMinutes: estimateMinutesByType(assignmentType),
+            };
+        }
+
+        return resolved;
+    }, [taskPlanning, effectiveTasks]);
+
     const courseAbbreviationByName = useMemo(
         () => new Map(courses.map((c) => [c.name, c.abbreviation || courseAbbreviationDefault(c.name)])),
         [courses]
@@ -451,7 +478,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
     // The student's own estimate wins over the AI/type one.
     const getEstimatedMinutes = (taskId: string): number | undefined =>
-        taskCustomizations[taskId]?.estimatedMinutesOverride ?? taskPlanning[taskId]?.estimatedMinutes;
+        taskCustomizations[taskId]?.estimatedMinutesOverride ?? resolvedPlanning[taskId]?.estimatedMinutes;
 
     /*
      * Shared with the "focus task" lookup below, so both use the exact
@@ -462,12 +489,13 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
      * course) sort used for the grid below.
      */
     const computeTaskPriority = (task: Assignment): PriorityResult => {
-        const estimate = taskPlanning[task.id];
+        const estimate = resolvedPlanning[task.id];
         const estimatedMinutes = getEstimatedMinutes(task.id);
 
         return calculatePriority({
             name: task.name,
             due: task.due || null,
+            dueFraction: task.dueFraction,
             startAt: resolveStartAt(taskCustomizations[task.id]?.startAt ?? "") || null,
             today: todayKey,
             importance: estimate?.importance ?? 5,
@@ -480,23 +508,17 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         });
     };
 
-    // The single highest-priority open task ("the frog").
-    const upNext = useMemo(() => {
-        let best: { task: Assignment; priority: PriorityResult } | null = null;
-
-        for (const task of openTasks) {
-            const priority = computeTaskPriority(task);
-
-            if (priority.notYetStartable) continue;
-
-            if (!best || priority.score > best.priority.score) {
-                best = { task, priority };
-            }
-        }
-
-        return best;
+    // Open, startable tasks, highest priority first. The first is Polaris
+    // ("the frog"); the next few render as the "Then" list under it.
+    const rankedOpenTasks = useMemo(() => {
+        return openTasks
+            .map((task) => ({ task, priority: computeTaskPriority(task) }))
+            .filter(({ priority }) => !priority.notYetStartable)
+            .sort((a, b) => b.priority.score - a.priority.score);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [openTasks, taskPlanning, procrastinationIndexByType, todayKey, taskCustomizations]);
+    }, [openTasks, resolvedPlanning, procrastinationIndexByType, todayKey, taskCustomizations]);
+
+    const upNext = rankedOpenTasks[0] ?? null;
 
     const activeFocusTask = useMemo(() => {
         if (!focusTaskId) return null;
@@ -506,7 +528,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
         return { task, priority: computeTaskPriority(task) };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [focusTaskId, effectiveTasks, taskCustomizations, taskPlanning, procrastinationIndexByType]);
+    }, [focusTaskId, effectiveTasks, taskCustomizations, resolvedPlanning, procrastinationIndexByType]);
 
     // Publishes the rich focus-task summary into PomodoroRemoteContext
     // whenever it changes — the context owns *which* task id is focused
@@ -1473,7 +1495,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
     useEffect(() => {
         const types = new Set(
-            Object.values(taskPlanning)
+            Object.values(resolvedPlanning)
                 .map((estimate) => estimate.assignmentType)
                 .filter((type): type is string => Boolean(type))
         );
@@ -1490,7 +1512,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
             return changed ? next : current;
         });
-    }, [taskPlanning, procrastinationHistory]);
+    }, [resolvedPlanning, procrastinationHistory]);
 
     // Adds a custom task optimistically and saves it; on failure the task is
     // removed again and the user is told. Resolves to whether it saved.
@@ -1574,7 +1596,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const awardCompletionSideEffects = (task: Assignment) => {
         if (completionSound) playCompletionSound();
 
-        const assignmentType = taskPlanning[task.id]?.assignmentType;
+        const assignmentType = resolvedPlanning[task.id]?.assignmentType;
         const addedAt = deriveAddedAt(task);
 
         if (task.due && addedAt && assignmentType) {
@@ -2265,6 +2287,36 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             </button>
                         </div>
                     </div>
+                    {rankedOpenTasks.length > 1 && (
+                        <div className="mt-3 border-t border-amber-500/20 pt-3">
+                            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Then</p>
+                            <ol className="mt-1.5 space-y-1">
+                                {rankedOpenTasks.slice(1, 5).map(({ task, priority }) => {
+                                    const minutes = getEstimatedMinutes(task.id);
+
+                                    return (
+                                        <li key={task.id}>
+                                            <button
+                                                type="button"
+                                                onClick={() => setSelectedTask(task)}
+                                                className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-[var(--accent-soft)]"
+                                            >
+                                                <span className="block truncate text-sm font-medium text-slate-100">{task.name}</span>
+                                                <span className="block truncate text-xs text-slate-400">
+                                                    {task.course || "General"}
+                                                    {task.due
+                                                        ? ` · Due ${parseLocalDate(task.due).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
+                                                        : ""}
+                                                    {minutes ? ` · ~${minutes} min` : ""}
+                                                    {` · ${priority.reason}`}
+                                                </span>
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ol>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2288,7 +2340,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     taskCustomizations[selectedTask?.id ?? ""]?.inProgress ?? false
                 )}
                 estimatedMinutesOverride = {taskCustomizations[selectedTask?.id ?? ""]?.estimatedMinutesOverride ?? null}
-                suggestedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
+                suggestedMinutes = {resolvedPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
                 recurringTaskRule = {recurringTasks.find((rule) => rule.id === selectedTask?.recurrenceId) ?? null}
                 courses = {courses}
                 taskLabelParts = {taskLabelParts}

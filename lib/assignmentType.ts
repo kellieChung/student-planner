@@ -84,3 +84,24 @@ export function classifyAssignmentType(text: {
 
     return "other";
 }
+
+// Reconciles the AI's stored type with the task name's keyword type. The
+// AI sometimes labels e.g. "Week 5 Discussion" as an essay, and since the
+// time estimate is a lookup on type, that turned a 30-minute post into a
+// 2-hour task. The name keyword wins only when the AI said "other" or the
+// keyword type is the *smaller* one: the classifier checks exam/test before
+// discussion, so a blanket keyword-wins rule would turn "Exam Review
+// Discussion" into a 3-hour exam. Name only — descriptions mention "essay"
+// etc. too loosely.
+export function resolveAssignmentType(
+    aiType: unknown,
+    task: { name: string }
+): AssignmentType {
+    const ai = normalizeAssignmentType(aiType);
+    const keyword = classifyAssignmentType({ name: task.name });
+
+    if (keyword === "other") return ai;
+    if (ai === "other") return keyword;
+
+    return estimateMinutesByType(keyword) < estimateMinutesByType(ai) ? keyword : ai;
+}
