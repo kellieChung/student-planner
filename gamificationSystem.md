@@ -25,7 +25,7 @@ No illustrated companion. The player's own star is the emotional anchor; encoura
 Starlight (currency) · Constellation · **Polaris** (top-priority task) · **Ship's Log** (planner) · **Star Chart** (progress view) · **Nebula** (future cosmetics) · **True North** (home) · **The Watch** (focus timer) · **Comms** (music).
 
 ## Onboarding
-A spotlight tour over the real UI (`components/starchart/Onboarding.tsx`) teaches this vocabulary, how to read a task label (`COURSE - TYPE - DAY - name`, e.g. `MA - HW - F - Problem set 4`), and why the Chrome extension is needed. Replay from settings → "Replay intro" or `/dev/onboarding`.
+A spotlight tour over the real UI (`components/starchart/Onboarding.tsx`) teaches this vocabulary, how to read a task label (`COURSE - TYPE - DAY - name`, e.g. `MA - HW - F - Problem set 4`), why the Chrome extension is needed, how to finish a task (status circle / Mark done, Canvas auto-complete), the Rundown's manual checks and Still deciding, what lives under Settings, and that new sky regions can be unlocked. Replay from settings → "Replay intro" or `/dev/onboarding`. After the tour, a student with no Canvas course sees a "Connect Canvas" notice in the Ship's Log (its "How to install" button replays the tour).
 
 ## Assets
 Light by design: a few star-mark variants (unlit / partial / lit), a shared glow/twinkle effect, procedural constellation lines, and a night-sky field. No per-level bespoke art.

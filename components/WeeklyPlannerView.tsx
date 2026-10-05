@@ -17,7 +17,8 @@ import {awardTaskXp, getGamificationState} from "@/lib/gamification";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {useStarChart} from "@/components/starchart/StarChartContext";
 import {StarIcon} from "@/components/brand/Icons";
-import {useMascot} from "./world/LaptopFrame";
+import {useLodestarFrame, useMascot} from "./world/LaptopFrame";
+import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
@@ -184,6 +185,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const latestGamificationRef = useRef<GamificationState | null>(null);
     const starChart = useStarChart();
     const mascot = useMascot();
+    const { replayOnboarding } = useLodestarFrame();
     const [taskPlanning, setTaskPlanning] = useState<TaskPlanningEstimates>({});
     const [taskPlanningLoaded, setTaskPlanningLoaded] = useState(false);
     const [taskCustomizations, setTaskCustomizations] = useState<Record<string, TaskCustomizationState>>({});
@@ -229,6 +231,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [isRecurringPanelOpen, setIsRecurringPanelOpen] = useState(false);
     const [procrastinationHistory, setProcrastinationHistory] = useState<ProcrastinationHistory>({});
     const [courses, setCourses] = useState<Course[]>([]);
+    // False until /api/courses succeeds once, so the connect-Canvas notice
+    // never flashes during load or shows after a failed fetch.
+    const [coursesLoaded, setCoursesLoaded] = useState(false);
     const [estimatingCount, setEstimatingCount] = useState(0);
     // AutoTaskCreation.md's Rundown screen. showRundown is seeded once
     // from the server-computed initialRundown.shouldAutoShow (see
@@ -758,6 +763,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
             const data = await response.json() as { courses: Course[] };
             setCourses(data.courses ?? []);
+            setCoursesLoaded(true);
         } catch (error) {
             console.error("Could not load courses", error);
         }
@@ -2277,6 +2283,35 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     >
                         ✕
                     </button>
+                </div>
+            )}
+
+            {/* Keyed off courses, not tasks: a synced student can have no
+                upcoming work because of the first-sync cutoff. */}
+            {coursesLoaded && !courses.some((course) => !course.isCustom) && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-4 py-3 text-sm">
+                    <span className="text-[var(--foreground)]">
+                        <strong className="text-[var(--heading)]">Connect Canvas to fill your log.</strong> Install the
+                        Lodestar extension, then press Sync Canvas in it.
+                    </span>
+                    {EXTENSION_STORE_URL ? (
+                        <a
+                            href={EXTENSION_STORE_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-lg bg-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--accent-contrast)]"
+                        >
+                            Get the extension
+                        </a>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={replayOnboarding}
+                            className="rounded-lg border border-[var(--accent)] px-3 py-1.5 text-xs font-semibold text-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                        >
+                            How to install
+                        </button>
+                    )}
                 </div>
             )}
 

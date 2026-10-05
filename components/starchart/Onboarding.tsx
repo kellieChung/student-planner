@@ -63,8 +63,9 @@ export default function Onboarding({ onFinish }: Props) {
                 title: "Your week, all in one place.",
                 body: (
                     <p>
-                        Every assignment and task lands here on the day it&apos;s due. Open a card to give it a start
-                        date and it stretches back to when you&apos;ll begin; switch between Weekly and Monthly up top.
+                        Every assignment and task lands here on the day it&apos;s due. Open a card to rename it, adjust
+                        its time estimate, or give it a start date so it stretches back to when you&apos;ll begin.
+                        Switch between Weekly and Monthly up top.
                     </p>
                 ),
             },
@@ -99,6 +100,8 @@ export default function Onboarding({ onFinish }: Props) {
                     <p>
                         <strong>Polaris</strong> is the single task most worth doing next, weighed by due date,
                         importance, and how long it&apos;ll take. When you&apos;re not sure where to start, start there.
+                        The circle on any card moves a task from to-do to in progress to done (or press{" "}
+                        <strong>Mark done</strong> here), and <strong>Focus on the Watch</strong> pins it to your timer.
                     </p>
                 ),
                 illustration: <PolarisIllustration />,
@@ -125,8 +128,10 @@ export default function Onboarding({ onFinish }: Props) {
                 body: (
                     <p>
                         Teachers sometimes bury due dates in announcements. Lodestar reads them and lists what it finds
-                        in the <strong>Rundown</strong>. You choose Yes, No, or Maybe. Nothing lands in your log unless
-                        you say so, or turn on auto-accept in settings.
+                        in the <strong>Rundown</strong> when you press <strong>Check for new announcements</strong>{" "}
+                        (twice a week). You choose Yes, No, or Maybe, and Maybes wait under{" "}
+                        <strong>Still deciding</strong>. Nothing lands in your log unless you say so, or turn on
+                        auto-accept in settings.
                     </p>
                 ),
             },
@@ -154,11 +159,25 @@ export default function Onboarding({ onFinish }: Props) {
                         Completing a task earns <strong>XP</strong>, which levels you up, and{" "}
                         <strong>Starlight</strong> to spend. Bigger tasks earn more: a quick reading brings in a little, a
                         long project a lot. Late work still counts, just a bit less. A star takes a few tasks, so each one
-                        you chart means something.
+                        you chart means something. Submitted it in Canvas? Lodestar checks it off for you.
                     </p>
                 ),
                 illustration: <StarlightIllustration />,
                 showIllustrationWithTarget: true,
+            },
+            {
+                id: "settings",
+                target: "taskbar-settings",
+                before: onLog,
+                eyebrow: "Settings",
+                title: "Make it yours.",
+                body: (
+                    <p>
+                        The gear holds Night and Day themes, the order of task labels, whether Canvas submissions
+                        check tasks off, Rundown auto-accept, the completion sound, your account, and this tour if you
+                        want it again.
+                    </p>
+                ),
             },
             {
                 id: "star-chart-button",
@@ -168,8 +187,7 @@ export default function Onboarding({ onFinish }: Props) {
                 title: "Where Starlight goes.",
                 body: (
                     <p>
-                        This opens your <strong>Star Chart</strong>. Let&apos;s step back and take a look. Night/Day
-                        themes, your account, and this tour live under the gear in the taskbar.
+                        This opens your <strong>Star Chart</strong>. Let&apos;s step back and take a look.
                     </p>
                 ),
             },
@@ -184,6 +202,7 @@ export default function Onboarding({ onFinish }: Props) {
                         Pick a constellation and chart its stars one at a time. <strong>Orion</strong>, the{" "}
                         <strong>Big Dipper</strong>, and <strong>Cassiopeia</strong> are open now. New constellations
                         appear as your lifetime Starlight grows, and finishing a whole one is a moment worth earning.
+                        Chart far enough and you can unlock a new region, starting with the Southern Sky.
                     </p>
                 ),
                 illustration: (
@@ -240,8 +259,9 @@ function ExtensionExplainer() {
             )}
 
             <p className="text-xs">
-                Then pin it from Chrome&apos;s puzzle-piece menu, open it, sign in with Google, connect your Canvas, and
-                press <strong>Sync Canvas</strong>. Already set up? Just keep going.
+                Then pin it from Chrome&apos;s puzzle-piece menu, open it, sign in with your Lodestar account, connect
+                your Canvas, and press <strong>Sync Canvas</strong>. Only work due from today on is brought in.
+                Already set up? Just keep going.
             </p>
         </div>
     );
