@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { analyzeAssignments, DETERMINISTIC_ANALYSIS_REASON, estimateMinutesByType, fallbackAssignmentAnalysis, FALLBACK_ANALYSIS_REASON, normalizeAssignmentType, resolveAssignmentType } from "@/lib/analyzeAssignment";
 import { adjustScoresForPoints, deterministicType, scoresForType, typeFromSubmissionTypes } from "@/lib/assignmentType";
@@ -39,7 +39,9 @@ async function getAuthenticatedUser() {
 
 export async function GET() {
     try {
-        const user = await getAuthenticatedUser();
+        // Reading stored estimates sends nothing to Anthropic, so this skips
+        // the terms check and its user lookup.
+        const user = sessionUserRef(await auth());
 
         if (!user) {
             return NextResponse.json(

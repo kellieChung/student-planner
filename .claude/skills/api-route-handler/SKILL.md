@@ -11,7 +11,7 @@ Match the existing shape; don't invent a new auth or error style.
 
 ```ts
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
@@ -22,7 +22,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: false, error: "You must be logged in." }, { status: 401 });
         }
 
-        const user = await prisma.user.findUnique({ where: { email: session.user.email } });
+        // Id from the signed JWT: no billed DB read. If the route needs user
+        // fields (terms acceptance, email, passwordHash), load the row instead:
+        // prisma.user.findUnique({ where: { id: session.user.id } }).
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json({ success: false, error: "User not found." }, { status: 404 });
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
 ```
 
 ## Rules
-1. **Auth:** resolve the user as above; never trust a client `userId`; scope every query by `user.id`.
+1. **Auth:** resolve the user as above; never trust a client `userId`; scope every query by `user.id`. Prisma Postgres bills per query, so id-only routes use `sessionUserRef(session)` (the JWT's user id); load the user row only when the route reads user fields or gates on terms (`hasAcceptedCurrentTerms`, e.g. anything that sends user data to Anthropic).
 2. **Extension-facing routes** (called by `canvas-extension/`, no cookie session) also accept `Authorization: Bearer <token>` checked against `prisma.extensionSession` (`token` → `userId`); 401 for a missing/malformed header or unknown token. Copy the dual-path pattern from `app/api/canvas/sync/route.ts`.
 3. **Errors:** catch at the top level, `console.error` with context, return `{ success: false, error }` with 400 (bad input) / 401 / 404 / 500; never leak raw errors or stacks.
 4. **AI calls:** always a timeout (`AbortSignal.timeout`) plus a deterministic fallback; normalize/clamp model output; use `lib/ai/anthropicClient.ts` (Haiku) when `ANTHROPIC_API_KEY` is set, else Ollama (`lib/ollamaConfig.ts`).

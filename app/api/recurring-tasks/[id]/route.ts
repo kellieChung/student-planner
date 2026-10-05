@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { expandOccurrences, RECURRENCE_FREQUENCIES, RecurrenceFrequency, shiftDateKey } from "@/lib/recurrence";
 import { isDateKey, resolveClientToday } from "@/lib/utils";
@@ -106,9 +106,7 @@ export async function PATCH(request: Request, { params }: Params) {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(
@@ -542,9 +540,7 @@ export async function DELETE(request: Request, { params }: Params) {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(

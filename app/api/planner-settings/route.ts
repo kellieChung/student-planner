@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { backfillCanvasCompletions } from "@/lib/canvasCompletions";
 import { isTaskLabelPart, normalizeTaskLabelParts, type TaskLabelPart } from "@/lib/taskLabel";
@@ -23,9 +23,7 @@ export async function GET() {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(
@@ -67,9 +65,7 @@ export async function PATCH(request: Request) {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(

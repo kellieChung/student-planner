@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isDevAccountEmail } from "@/lib/devAccounts";
 import { grantTaskXp } from "@/lib/xpAward";
@@ -10,7 +10,8 @@ async function getUser() {
 
     if (!session?.user?.email) return null;
 
-    return prisma.user.findUnique({ where: { email: session.user.email } });
+    const user = sessionUserRef(session);
+    return user && { ...user, email: session.user.email };
 }
 
 export async function GET() {

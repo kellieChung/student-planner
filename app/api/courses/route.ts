@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
 
@@ -11,9 +11,7 @@ async function getAuthenticatedUser() {
         return null;
     }
 
-    return prisma.user.findUnique({
-        where: { email: session.user.email },
-    });
+    return sessionUserRef(session);
 }
 
 export async function GET() {

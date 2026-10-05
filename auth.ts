@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type Session } from "next-auth";
 import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import {PrismaAdapter} from "@auth/prisma-adapter";
@@ -14,6 +14,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
     pages: {
         signIn: "/login",
+    },
+
+    callbacks: {
+        // Auth.js puts the database user id in token.sub at sign-in; exposing
+        // it lets id-only routes skip a billed user lookup per request.
+        session({ session, token }) {
+            if (token.sub) session.user.id = token.sub;
+            return session;
+        },
     },
 
     providers: [
@@ -44,3 +53,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }),
     ],
 });
+
+// The signed-in user's id, without a database read. Routes that need user
+// fields (terms acceptance, email, password) must still load the row.
+export function sessionUserRef(session: Session | null): { id: string } | null {
+    return session?.user?.id ? { id: session.user.id } : null;
+}

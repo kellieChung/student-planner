@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 // Rolling window: keep the ranking responsive to recent behavior instead of
@@ -15,9 +15,7 @@ async function getAuthenticatedUser() {
         return null;
     }
 
-    return prisma.user.findUnique({
-        where: { email: session.user.email },
-    });
+    return sessionUserRef(session);
 }
 
 export async function GET() {

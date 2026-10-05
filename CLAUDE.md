@@ -12,7 +12,7 @@ Next.js (App Router) student planner named **Lodestar**. A Chrome extension (`ca
 - Types: `type` aliases in `types/*.ts`, one concept per file; single-use types stay local. `lib/*.ts` is framework-free pure logic (no Next/React imports).
 - Components: default export, PascalCase, `type Props` above, `"use client"` first line when needed.
 - Comments only for non-obvious *why*.
-- API routes (`app/api/**/route.ts`): `try/catch` → `console.error` + `{ success: false, error }` with a status; call `auth()`, look up the user by `session.user.email` via `prisma.user.findUnique`, scope every query by `user.id`, never trust a client `userId`. Extension-facing routes also accept a `Bearer` `ExtensionSession` token (see `app/api/canvas/sync/route.ts`; skill `api-route-handler`).
+- API routes (`app/api/**/route.ts`): `try/catch` → `console.error` + `{ success: false, error }` with a status; call `auth()`, take the user id from the JWT via `sessionUserRef(session)` (`auth.ts`; no DB read, Prisma Postgres bills per query) and load the user row only when you need its fields or the terms gate, scope every query by `user.id`, never trust a client `userId`. Extension-facing routes also accept a `Bearer` `ExtensionSession` token (see `app/api/canvas/sync/route.ts`; skill `api-route-handler`).
 - AI calls use Claude Haiku (`lib/ai/anthropicClient.ts`) when `ANTHROPIC_API_KEY` is set, else local Ollama; always a timeout and deterministic fallback. Anthropic is paid: batch, don't re-analyze unchanged input, log via `logAnthropicUsage`.
 - Dates are `"YYYY-MM-DD"` strings; use `parseLocalDate`/`toDateKey`/`getTodayString` (`lib/utils.ts`), never `new Date("YYYY-MM-DD")` or `toISOString()` for a calendar day.
 - UI controls come from `components/ui/` and `DatePicker` (Radix + react-day-picker), not native `<select>`/date/time/checkbox/`confirm()`/`title=`. Don't put `focus:outline-none` on them.
@@ -23,4 +23,4 @@ Next.js (App Router) student planner named **Lodestar**. A Chrome extension (`ca
 ## Never
 - Commit `.env*` or secrets; hand-edit `app/generated/prisma/**`; edit the `nextjs-agent-rules` block in `AGENTS.md` (`next dev` owns it).
 - Add a test framework, state library or other dependency without asking.
-- Query across users' data or authorize on `session.user.email` alone.
+- Query across users' data, or authorize on anything but the signed session (`session.user.id`/`email`) or a valid `ExtensionSession` token.

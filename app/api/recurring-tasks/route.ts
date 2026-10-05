@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { RECURRENCE_FREQUENCIES } from "@/lib/recurrence";
 
@@ -48,9 +48,7 @@ export async function GET() {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(
@@ -87,9 +85,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(

@@ -9,7 +9,7 @@ metadata:
 
 No CI or tests catch these, so check the diff for each:
 
-1. **Auth/scoping:** new `app/api/**/route.ts` code resolves the user (`auth()` → `session.user.email` → `prisma.user.findUnique`) and scopes every query by `user.id`; nothing trusts a client-supplied `userId` (IDOR). Extension-facing routes also accept the `Bearer` + `ExtensionSession` fallback (`app/api/canvas/sync/route.ts`).
+1. **Auth/scoping:** new `app/api/**/route.ts` code resolves the user (`auth()` → `sessionUserRef(session)` for id-only routes, or a `prisma.user.findUnique` when user fields or the terms gate are needed) and scopes every query by `user.id`; nothing trusts a client-supplied `userId` (IDOR). Extension-facing routes also accept the `Bearer` + `ExtensionSession` fallback (`app/api/canvas/sync/route.ts`).
 2. **Generated/secret files:** no hand edits under `app/generated/prisma/**` (change `schema.prisma` and regenerate); no `.env*` staged (if one was already committed, stop and tell the user; history scrubbing is a separate conversation).
 3. **AI calls:** every model call (Anthropic or Ollama `fetch`) has a timeout (`AbortSignal.timeout`) and a deterministic fallback; model JSON is normalized/clamped before use; Canvas HTML passes through `lib/htmlText.ts` before a prompt; Anthropic calls are batched and logged (`logAnthropicUsage`).
 4. **`"use client"` boundary:** no `lib/prisma`, `@/auth` or secret env values in, or passed as props into, a client component (e.g. importing `lib/taskLabel` into a client file drags the Anthropic SDK in).

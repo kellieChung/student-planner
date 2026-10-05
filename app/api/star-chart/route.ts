@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { getConstellation, getSkyRegion, isComplete, isVisible, starPrice } from "@/lib/constellations";
 
@@ -14,7 +14,7 @@ async function getUser() {
 
     if (!session?.user?.email) return null;
 
-    return prisma.user.findUnique({ where: { email: session.user.email } });
+    return sessionUserRef(session);
 }
 
 async function getOrCreateChart(userId: string) {

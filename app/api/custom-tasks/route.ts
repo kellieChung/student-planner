@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -16,9 +16,7 @@ export async function GET() {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(
@@ -67,9 +65,7 @@ export async function POST(request: Request) {
             );
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: session.user.email },
-        });
+        const user = sessionUserRef(session);
 
         if (!user) {
             return NextResponse.json(
