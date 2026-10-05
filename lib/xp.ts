@@ -53,3 +53,9 @@ export function computeTaskXp(task: XpInput): number {
 
     return Math.max(5, Math.floor((baseXp * latePenalty(calculateDaysLate(task.due, task.completedAt))) / 5) * 5);
 }
+
+// Starlight pays well under XP so a star takes a few tasks, not one; the
+// late penalty carries through because it's already in `xp`.
+export function starlightForXp(xp: number): number {
+    return Math.max(1, Math.round(xp * 0.4));
+}

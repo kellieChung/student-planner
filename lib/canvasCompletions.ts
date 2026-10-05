@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { isDateKey } from "@/lib/utils";
+import { daysBetween, getTodayString, isDateKey, parseLocalDate } from "@/lib/utils";
 import { grantTaskXp } from "@/lib/xpAward";
 
 // One assignment's Canvas submission state, as canvas-extension/background.js
@@ -57,6 +57,16 @@ const MAX_COMPLETIONS_PER_CALL = 40;
 // day at UTC midnight. With `flagSubmitted`, each Assignment is flagged
 // canvasSubmitted only once it's handled, so a failure partway leaves the
 // rest as transitions for the next check instead of losing them.
+// Only a recent submission earns Starlight (XP is always awarded). Turning
+// the setting on, or the first check after connecting, reports every past
+// submission at once, and that catch-up shouldn't be a Starlight windfall.
+// 8 days leaves room for the user's timezone and a week offline.
+function isRecentSubmission(completedDay: string | null): boolean {
+    if (!completedDay || !isDateKey(completedDay)) return false;
+
+    return daysBetween(parseLocalDate(getTodayString()), parseLocalDate(completedDay)) <= 8;
+}
+
 async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmitted: boolean) {
     if (tasks.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
 
@@ -99,6 +109,7 @@ async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmit
         const award = await grantTaskXp(userId, task.taskId, {
             due: task.dueDay ?? undefined,
             completedAt: task.completedDay ?? undefined,
+            starlight: isRecentSubmission(task.completedDay) ? "full" : "none",
         });
 
         if (flagSubmitted) {

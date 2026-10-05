@@ -506,14 +506,20 @@ model WorldLayout {
 // decrement (app/api/star-chart) — never by a client sending a new total —
 // so a stale client copy can't undo a purchase or double an award.
 model StarChart {
-  id                String    @id @default(cuid())
-  userId            String    @unique
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  starlight         Int       @default(0)
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  starlight            Int       @default(0)
   // Total ever earned, never decremented; drives constellation unlocks.
-  lifetimeStarlight Int       @default(0)
-  onboardedAt       DateTime?
-  updatedAt         DateTime  @updatedAt
+  lifetimeStarlight    Int       @default(0)
+  onboardedAt          DateTime?
+  // Bought expansion regions (lib/constellations.ts SKY_REGIONS); "home" is implicit.
+  unlockedRegions      String[]  @default([])
+  // The custom-task Starlight cap (lib/xpAward.ts): the user's local day and
+  // how much custom tasks have earned on it.
+  customStarlightDay   String?
+  customStarlightToday Int       @default(0)
+  updatedAt            DateTime  @updatedAt
 }
 
 // constellationId is a key into lib/constellations.ts's catalog.

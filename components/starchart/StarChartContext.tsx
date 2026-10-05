@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { ChartedStarRef } from "@/lib/constellations";
-import { chartStar, getStarChart, type ChartStarResult, type StarChartState } from "@/lib/starChart";
+import { chartStar, getStarChart, unlockRegion, type ChartStarResult, type StarChartState, type UnlockRegionResult } from "@/lib/starChart";
 
 type StarChartContextValue = {
     state: StarChartState;
@@ -10,10 +10,11 @@ type StarChartContextValue = {
     // (POST /api/gamification) — Starlight is only ever earned there.
     applyBalance: (balance: { starlight: number; lifetimeStarlight: number }) => void;
     chart: (constellationId: string, starIndex: number) => Promise<ChartStarResult>;
+    unlockRegion: (regionId: string) => Promise<UnlockRegionResult>;
     markOnboarded: (onboardedAt: string | null) => void;
 };
 
-const EMPTY_STATE: StarChartState = { starlight: 0, lifetimeStarlight: 0, onboardedAt: null, charted: [] };
+const EMPTY_STATE: StarChartState = { starlight: 0, lifetimeStarlight: 0, onboardedAt: null, unlockedRegions: [], charted: [] };
 
 // Shared between the Ship's Log (which earns Starlight on task completion and
 // shows the balance in the taskbar) and the Star Chart (which spends it) —
@@ -22,6 +23,7 @@ const StarChartContext = createContext<StarChartContextValue>({
     state: EMPTY_STATE,
     applyBalance: () => {},
     chart: async () => ({ ok: false, error: "The star chart isn't available here." }),
+    unlockRegion: async () => ({ ok: false, error: "The star chart isn't available here." }),
     markOnboarded: () => {},
 });
 
@@ -67,11 +69,36 @@ export function StarChartProvider({ initialState, children }: Props) {
         return result;
     }, []);
 
+    const unlock = useCallback(async (regionId: string) => {
+        const result = await unlockRegion(regionId);
+
+        if (result.ok) {
+            setState((current) => ({
+                ...current,
+                starlight: result.starlight,
+                lifetimeStarlight: result.lifetimeStarlight,
+                unlockedRegions: result.unlockedRegions,
+            }));
+        } else {
+            // Already bought or spent in another tab: resync.
+            const fresh = await getStarChart();
+
+            if (fresh) {
+                setState((current) => ({ ...fresh, onboardedAt: current.onboardedAt }));
+            }
+        }
+
+        return result;
+    }, []);
+
     const markOnboarded = useCallback((onboardedAt: string | null) => {
         setState((current) => ({ ...current, onboardedAt }));
     }, []);
 
-    const value = useMemo(() => ({ state, applyBalance, chart, markOnboarded }), [state, applyBalance, chart, markOnboarded]);
+    const value = useMemo(
+        () => ({ state, applyBalance, chart, unlockRegion: unlock, markOnboarded }),
+        [state, applyBalance, chart, unlock, markOnboarded]
+    );
 
     return <StarChartContext.Provider value={value}>{children}</StarChartContext.Provider>;
 }

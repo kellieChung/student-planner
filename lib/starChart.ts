@@ -4,6 +4,8 @@ export type StarChartState = {
     starlight: number;
     lifetimeStarlight: number;
     onboardedAt: string | null;
+    // Bought expansion regions; "home" is always open.
+    unlockedRegions: string[];
     charted: ChartedStarRef[];
 };
 
@@ -22,6 +24,7 @@ export async function getStarChart(): Promise<StarChartState | null> {
             starlight: data.starlight,
             lifetimeStarlight: data.lifetimeStarlight,
             onboardedAt: data.onboardedAt,
+            unlockedRegions: Array.isArray(data.unlockedRegions) ? data.unlockedRegions : [],
             charted: data.charted,
         };
     } catch {
@@ -48,6 +51,34 @@ export async function chartStar(constellationId: string, starIndex: number): Pro
             lifetimeStarlight: data.lifetimeStarlight,
             charted: data.charted,
             completedConstellation: data.completedConstellation,
+        };
+    } catch {
+        return { ok: false, error: "Couldn't reach the star chart. Check your connection and try again." };
+    }
+}
+
+export type UnlockRegionResult =
+    | { ok: true; starlight: number; lifetimeStarlight: number; unlockedRegions: string[] }
+    | { ok: false; error: string };
+
+export async function unlockRegion(regionId: string): Promise<UnlockRegionResult> {
+    try {
+        const response = await fetch("/api/star-chart", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "unlock-region", regionId }),
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            return { ok: false, error: typeof data.error === "string" ? data.error : "Couldn't open that part of the sky." };
+        }
+
+        return {
+            ok: true,
+            starlight: data.starlight,
+            lifetimeStarlight: data.lifetimeStarlight,
+            unlockedRegions: data.unlockedRegions,
         };
     } catch {
         return { ok: false, error: "Couldn't reach the star chart. Check your connection and try again." };

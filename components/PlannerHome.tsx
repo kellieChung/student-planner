@@ -33,6 +33,7 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
         starlight: starChartRow?.starlight ?? 0,
         lifetimeStarlight: starChartRow?.lifetimeStarlight ?? 0,
         onboardedAt: starChartRow?.onboardedAt?.toISOString() ?? null,
+        unlockedRegions: starChartRow?.unlockedRegions ?? [],
         charted: chartedStars,
     };
 

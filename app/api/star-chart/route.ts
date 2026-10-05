@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getConstellation, isComplete, isUnlocked, starPrice } from "@/lib/constellations";
+import { getConstellation, getSkyRegion, isComplete, isVisible, starPrice } from "@/lib/constellations";
 
 class ChartError extends Error {
     constructor(message: string, readonly status: number) {
@@ -48,6 +48,7 @@ export async function GET() {
             starlight: chart.starlight,
             lifetimeStarlight: chart.lifetimeStarlight,
             onboardedAt: chart.onboardedAt?.toISOString() ?? null,
+            unlockedRegions: chart.unlockedRegions,
             charted,
         });
     } catch (error) {
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ success: false, error: "Unknown star." }, { status: 400 });
             }
 
-            const price = starPrice(constellation);
+            const price = starPrice(constellation, starIndex);
 
             const result = await prisma.$transaction(async (tx) => {
                 const chart = await tx.starChart.upsert({
@@ -93,7 +94,12 @@ export async function POST(request: Request) {
                     update: {},
                 });
 
-                if (!isUnlocked(constellation, chart.lifetimeStarlight)) {
+                const chartedSoFar = await tx.chartedStar.findMany({
+                    where: { userId: user.id, constellationId: constellation.id },
+                    select: { constellationId: true, starIndex: true },
+                });
+
+                if (!isVisible(constellation, chart.lifetimeStarlight, chartedSoFar, chart.unlockedRegions)) {
                     throw new ChartError(`${constellation.name} hasn't appeared in your sky yet.`, 403);
                 }
 
@@ -140,6 +146,52 @@ export async function POST(request: Request) {
                 lifetimeStarlight: result.chart.lifetimeStarlight,
                 charted: result.charted,
                 completedConstellation: isComplete(constellation, result.charted),
+            });
+        }
+
+        if (body.action === "unlock-region") {
+            const region = typeof body.regionId === "string" ? getSkyRegion(body.regionId) : undefined;
+
+            if (!region || region.price === 0) {
+                return NextResponse.json({ success: false, error: "Unknown region." }, { status: 400 });
+            }
+
+            const chart = await prisma.$transaction(async (tx) => {
+                const current = await tx.starChart.upsert({
+                    where: { userId: user.id },
+                    create: { userId: user.id },
+                    update: {},
+                });
+
+                if (current.lifetimeStarlight < region.requiresLifetime) {
+                    throw new ChartError(`${region.name} isn't within reach yet.`, 403);
+                }
+
+                // Balance check, ownership check and charge in one statement,
+                // so a double click can't buy it twice.
+                const bought = await tx.starChart.updateMany({
+                    where: { userId: user.id, starlight: { gte: region.price }, NOT: { unlockedRegions: { has: region.id } } },
+                    data: { starlight: { decrement: region.price }, unlockedRegions: { push: region.id } },
+                });
+
+                if (bought.count === 0) {
+                    const latest = await tx.starChart.findUniqueOrThrow({ where: { userId: user.id } });
+
+                    if (latest.unlockedRegions.includes(region.id)) {
+                        throw new ChartError(`You've already charted a course to ${region.name}.`, 409);
+                    }
+
+                    throw new ChartError(`Not enough Starlight to reach ${region.name} yet.`, 402);
+                }
+
+                return tx.starChart.findUniqueOrThrow({ where: { userId: user.id } });
+            });
+
+            return NextResponse.json({
+                success: true,
+                starlight: chart.starlight,
+                lifetimeStarlight: chart.lifetimeStarlight,
+                unlockedRegions: chart.unlockedRegions,
             });
         }
 

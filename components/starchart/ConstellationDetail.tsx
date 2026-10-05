@@ -20,10 +20,16 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
     const [celebrating, setCelebrating] = useState(false);
 
     const charted = chartedIndexes(constellation.id, state.charted);
-    const price = starPrice(constellation);
     const complete = charted.size >= constellation.stars.length;
     const selectedStar = selected === null ? null : constellation.stars[selected];
+    const price = selected === null ? 0 : starPrice(constellation, selected);
     const shortfall = price - state.starlight;
+    const remainingPrices = constellation.stars
+        .map((_, index) => index)
+        .filter((index) => !charted.has(index))
+        .map((index) => starPrice(constellation, index));
+    const minPrice = Math.min(...remainingPrices);
+    const maxPrice = Math.max(...remainingPrices);
 
     async function handleChart() {
         if (selected === null) return;
@@ -78,7 +84,9 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
                 </div>
 
                 <p className="mt-2 text-xs text-[var(--ls-muted)]">
-                    {charted.size} of {constellation.stars.length} stars charted · {price} Starlight per star
+                    {charted.size} of {constellation.stars.length} stars charted
+                    {remainingPrices.length > 0 &&
+                        ` · ${minPrice === maxPrice ? minPrice : `${minPrice}–${maxPrice}`} Starlight per star (brighter stars cost more)`}
                 </p>
 
                 <div className="relative mx-auto mt-4 aspect-square w-full max-w-[380px]">
@@ -101,7 +109,7 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
                                     setError(null);
                                 }}
                                 aria-pressed={selected === index}
-                                aria-label={`Select ${star.name ?? `star ${index + 1}`}`}
+                                aria-label={`Select ${star.name ?? `star ${index + 1}`}, ${starPrice(constellation, index)} Starlight`}
                                 className={`absolute h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-[var(--ls-gold)] ${
                                     selected === index ? "ring-2 ring-[var(--ls-gold)]" : "hover:ring-1 hover:ring-[var(--ls-gold)]/60"
                                 }`}

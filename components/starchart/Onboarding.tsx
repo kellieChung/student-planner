@@ -151,9 +151,10 @@ export default function Onboarding({ onFinish }: Props) {
                 title: "Finished work becomes Starlight.",
                 body: (
                     <p>
-                        Completing a task earns <strong>XP</strong>, which levels you up, and the same amount of{" "}
+                        Completing a task earns <strong>XP</strong>, which levels you up, and{" "}
                         <strong>Starlight</strong> to spend. Bigger tasks earn more: a quick reading brings in a little, a
-                        long project a lot. Late work still counts, just a bit less.
+                        long project a lot. Late work still counts, just a bit less. A star takes a few tasks, so each one
+                        you chart means something.
                     </p>
                 ),
                 illustration: <StarlightIllustration />,

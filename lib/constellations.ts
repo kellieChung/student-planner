@@ -6,13 +6,27 @@ export type ChartStar = {
     name?: string;
 };
 
+export type SkyRegionId = "home" | "southern";
+
+export type SkyRegion = {
+    id: SkyRegionId;
+    name: string;
+    description: string;
+    // Starlight spent to open it; 0 = always open.
+    price: number;
+    // Lifetime Starlight before it can be bought.
+    requiresLifetime: number;
+};
+
 export type Constellation = {
     id: string;
+    region: SkyRegionId;
     name: string;
     commonName?: string;
     stars: ChartStar[];
     edges: [number, number][];
-    // Lifetime Starlight needed before this constellation appears.
+    // Lifetime Starlight needed before this constellation appears (once its
+    // region is open).
     unlockAt: number;
 };
 
@@ -25,12 +39,14 @@ export type ChartedStarRef = {
 // (gamificationSystem.md). Ordered by unlock: instantly recognisable ones
 // first, more obscure ones surfacing as lifetime Starlight grows. Coordinates
 // are a 0–100 box per constellation — recognisable approximations of each
-// asterism, not astrometric data. The first 15 of 88 ship now.
+// asterism, not astrometric data. 27 of 88 ship now: the home sky, then
+// The Southern Sky, an expansion bought with Starlight (SKY_REGIONS).
 export const CONSTELLATIONS: Constellation[] = [
     {
         id: "orion",
         name: "Orion",
         commonName: "The Hunter",
+        region: "home",
         unlockAt: 0,
         stars: [
             { x: 28, y: 22, mag: 1, name: "Betelgeuse" },
@@ -48,6 +64,7 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "ursa-major",
         name: "Ursa Major",
         commonName: "The Big Dipper",
+        region: "home",
         unlockAt: 0,
         stars: [
             { x: 78, y: 30, mag: 1, name: "Dubhe" },
@@ -64,6 +81,7 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "cassiopeia",
         name: "Cassiopeia",
         commonName: "The Queen",
+        region: "home",
         unlockAt: 0,
         stars: [
             { x: 8, y: 34, mag: 2, name: "Caph" },
@@ -78,7 +96,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "ursa-minor",
         name: "Ursa Minor",
         commonName: "The Little Dipper",
-        unlockAt: 150,
+        region: "home",
+        unlockAt: 180,
         stars: [
             { x: 12, y: 20, mag: 1, name: "Polaris" },
             { x: 28, y: 30, mag: 3, name: "Yildun" },
@@ -94,7 +113,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "cygnus",
         name: "Cygnus",
         commonName: "The Swan",
-        unlockAt: 350,
+        region: "home",
+        unlockAt: 420,
         stars: [
             { x: 50, y: 10, mag: 1, name: "Deneb" },
             { x: 50, y: 40, mag: 2, name: "Sadr" },
@@ -109,7 +129,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "lyra",
         name: "Lyra",
         commonName: "The Lyre",
-        unlockAt: 600,
+        region: "home",
+        unlockAt: 720,
         stars: [
             { x: 30, y: 14, mag: 1, name: "Vega" },
             { x: 16, y: 28, mag: 3 },
@@ -124,7 +145,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "scorpius",
         name: "Scorpius",
         commonName: "The Scorpion",
-        unlockAt: 900,
+        region: "home",
+        unlockAt: 1080,
         stars: [
             { x: 18, y: 10, mag: 2, name: "Acrab" },
             { x: 22, y: 24, mag: 2, name: "Dschubba" },
@@ -144,7 +166,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "leo",
         name: "Leo",
         commonName: "The Lion",
-        unlockAt: 1250,
+        region: "home",
+        unlockAt: 1500,
         stars: [
             { x: 70, y: 74, mag: 1, name: "Regulus" },
             { x: 66, y: 56, mag: 3 },
@@ -162,7 +185,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "gemini",
         name: "Gemini",
         commonName: "The Twins",
-        unlockAt: 1650,
+        region: "home",
+        unlockAt: 1980,
         stars: [
             { x: 20, y: 12, mag: 1, name: "Castor" },
             { x: 44, y: 10, mag: 1, name: "Pollux" },
@@ -179,7 +203,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "taurus",
         name: "Taurus",
         commonName: "The Bull",
-        unlockAt: 2100,
+        region: "home",
+        unlockAt: 2520,
         stars: [
             { x: 40, y: 56, mag: 1, name: "Aldebaran" },
             { x: 58, y: 58, mag: 3 },
@@ -196,7 +221,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "pegasus",
         name: "Pegasus",
         commonName: "The Winged Horse",
-        unlockAt: 2600,
+        region: "home",
+        unlockAt: 3120,
         stars: [
             { x: 60, y: 60, mag: 2, name: "Markab" },
             { x: 60, y: 30, mag: 2, name: "Scheat" },
@@ -212,7 +238,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "andromeda",
         name: "Andromeda",
         commonName: "The Princess",
-        unlockAt: 3150,
+        region: "home",
+        unlockAt: 3780,
         stars: [
             { x: 12, y: 62, mag: 1, name: "Alpheratz" },
             { x: 30, y: 54, mag: 3 },
@@ -228,7 +255,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "aquila",
         name: "Aquila",
         commonName: "The Eagle",
-        unlockAt: 3750,
+        region: "home",
+        unlockAt: 4500,
         stars: [
             { x: 50, y: 40, mag: 1, name: "Altair" },
             { x: 44, y: 30, mag: 2, name: "Tarazed" },
@@ -244,7 +272,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "draco",
         name: "Draco",
         commonName: "The Dragon",
-        unlockAt: 4400,
+        region: "home",
+        unlockAt: 5280,
         stars: [
             { x: 92, y: 18, mag: 3, name: "Giausar" },
             { x: 82, y: 30, mag: 3 },
@@ -265,7 +294,8 @@ export const CONSTELLATIONS: Constellation[] = [
         id: "crux",
         name: "Crux",
         commonName: "The Southern Cross",
-        unlockAt: 5100,
+        region: "home",
+        unlockAt: 6120,
         stars: [
             { x: 48, y: 88, mag: 1, name: "Acrux" },
             { x: 50, y: 12, mag: 1, name: "Gacrux" },
@@ -275,27 +305,287 @@ export const CONSTELLATIONS: Constellation[] = [
         ],
         edges: [[0, 1], [2, 3]],
     },
+    // The Southern Sky expansion. The first three appear as soon as it's bought.
+    {
+        id: "canis-major",
+        region: "southern",
+        name: "Canis Major",
+        commonName: "The Great Dog",
+        unlockAt: 6120,
+        stars: [
+            { x: 40, y: 26, mag: 1, name: "Sirius" },
+            { x: 22, y: 20, mag: 2, name: "Mirzam" },
+            { x: 46, y: 10, mag: 3, name: "Muliphein" },
+            { x: 54, y: 58, mag: 1, name: "Wezen" },
+            { x: 44, y: 80, mag: 1, name: "Adhara" },
+            { x: 78, y: 70, mag: 2, name: "Aludra" },
+            { x: 26, y: 74, mag: 3, name: "Furud" },
+        ],
+        edges: [[1, 0], [2, 0], [0, 3], [3, 4], [3, 5], [4, 6]],
+    },
+    {
+        id: "sagittarius",
+        region: "southern",
+        name: "Sagittarius",
+        commonName: "The Teapot",
+        unlockAt: 6120,
+        stars: [
+            { x: 10, y: 52, mag: 2, name: "Alnasl" },
+            { x: 28, y: 44, mag: 3, name: "Kaus Media" },
+            { x: 40, y: 24, mag: 2, name: "Kaus Borealis" },
+            { x: 30, y: 72, mag: 1, name: "Kaus Australis" },
+            { x: 54, y: 42, mag: 3 },
+            { x: 74, y: 36, mag: 1, name: "Nunki" },
+            { x: 78, y: 60, mag: 3 },
+            { x: 56, y: 70, mag: 2, name: "Ascella" },
+        ],
+        edges: [[0, 1], [0, 3], [1, 2], [2, 4], [1, 4], [1, 3], [3, 7], [4, 7], [4, 5], [5, 6], [6, 7]],
+    },
+    {
+        id: "centaurus",
+        region: "southern",
+        name: "Centaurus",
+        commonName: "The Centaur",
+        unlockAt: 6120,
+        stars: [
+            { x: 78, y: 84, mag: 1, name: "Rigil Kentaurus" },
+            { x: 62, y: 88, mag: 1, name: "Hadar" },
+            { x: 56, y: 66, mag: 3 },
+            { x: 40, y: 52, mag: 2, name: "Muhlifain" },
+            { x: 20, y: 24, mag: 2, name: "Menkent" },
+            { x: 66, y: 40, mag: 3 },
+            { x: 10, y: 40, mag: 3 },
+        ],
+        edges: [[0, 1], [1, 2], [2, 3], [3, 4], [3, 5], [4, 6]],
+    },
+    {
+        id: "carina",
+        region: "southern",
+        name: "Carina",
+        commonName: "The Keel",
+        unlockAt: 6820,
+        stars: [
+            { x: 8, y: 30, mag: 1, name: "Canopus" },
+            { x: 48, y: 40, mag: 2, name: "Avior" },
+            { x: 66, y: 36, mag: 2, name: "Aspidiske" },
+            { x: 76, y: 62, mag: 3 },
+            { x: 58, y: 72, mag: 1, name: "Miaplacidus" },
+            { x: 90, y: 70, mag: 3 },
+            { x: 84, y: 50, mag: 3 },
+        ],
+        edges: [[0, 1], [1, 2], [2, 6], [6, 5], [5, 3], [3, 4], [4, 1]],
+    },
+    {
+        id: "vela",
+        region: "southern",
+        name: "Vela",
+        commonName: "The Sails",
+        unlockAt: 7520,
+        stars: [
+            { x: 18, y: 62, mag: 1, name: "Regor" },
+            { x: 40, y: 24, mag: 1, name: "Suhail" },
+            { x: 64, y: 16, mag: 3 },
+            { x: 86, y: 40, mag: 3 },
+            { x: 66, y: 70, mag: 2, name: "Markeb" },
+            { x: 34, y: 84, mag: 2, name: "Alsephina" },
+        ],
+        edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]],
+    },
+    {
+        id: "lupus",
+        region: "southern",
+        name: "Lupus",
+        commonName: "The Wolf",
+        unlockAt: 8220,
+        stars: [
+            { x: 30, y: 80, mag: 2 },
+            { x: 44, y: 50, mag: 2 },
+            { x: 58, y: 36, mag: 3 },
+            { x: 72, y: 30, mag: 2 },
+            { x: 66, y: 56, mag: 3 },
+            { x: 20, y: 62, mag: 3 },
+            { x: 80, y: 12, mag: 3 },
+        ],
+        edges: [[0, 5], [0, 1], [1, 2], [2, 3], [3, 6], [1, 4], [4, 3]],
+    },
+    {
+        id: "corona-australis",
+        region: "southern",
+        name: "Corona Australis",
+        commonName: "The Southern Crown",
+        unlockAt: 8920,
+        stars: [
+            { x: 10, y: 40, mag: 3 },
+            { x: 22, y: 62, mag: 3 },
+            { x: 40, y: 76, mag: 2, name: "Meridiana" },
+            { x: 60, y: 78, mag: 2 },
+            { x: 78, y: 66, mag: 3 },
+            { x: 90, y: 46, mag: 3 },
+        ],
+        edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]],
+    },
+    {
+        id: "grus",
+        region: "southern",
+        name: "Grus",
+        commonName: "The Crane",
+        unlockAt: 9620,
+        stars: [
+            { x: 20, y: 10, mag: 2, name: "Aldhanab" },
+            { x: 36, y: 30, mag: 3 },
+            { x: 50, y: 46, mag: 3 },
+            { x: 62, y: 64, mag: 1, name: "Tiaki" },
+            { x: 36, y: 70, mag: 1, name: "Alnair" },
+            { x: 78, y: 78, mag: 3 },
+            { x: 88, y: 90, mag: 3 },
+        ],
+        edges: [[0, 1], [1, 2], [2, 3], [2, 4], [3, 5], [5, 6]],
+    },
+    {
+        id: "pavo",
+        region: "southern",
+        name: "Pavo",
+        commonName: "The Peacock",
+        unlockAt: 10320,
+        stars: [
+            { x: 18, y: 30, mag: 1, name: "Peacock" },
+            { x: 40, y: 44, mag: 2 },
+            { x: 60, y: 40, mag: 2 },
+            { x: 30, y: 70, mag: 3 },
+            { x: 48, y: 66, mag: 3 },
+            { x: 78, y: 58, mag: 3 },
+            { x: 84, y: 80, mag: 3 },
+        ],
+        edges: [[0, 1], [1, 2], [1, 4], [4, 3], [2, 5], [5, 6]],
+    },
+    {
+        id: "phoenix",
+        region: "southern",
+        name: "Phoenix",
+        commonName: "The Firebird",
+        unlockAt: 11020,
+        stars: [
+            { x: 20, y: 30, mag: 1, name: "Ankaa" },
+            { x: 38, y: 20, mag: 3 },
+            { x: 48, y: 48, mag: 2 },
+            { x: 74, y: 40, mag: 2 },
+            { x: 72, y: 66, mag: 3 },
+            { x: 40, y: 74, mag: 3, name: "Wurren" },
+        ],
+        edges: [[0, 1], [0, 2], [1, 2], [2, 3], [3, 4], [4, 5], [5, 2]],
+    },
+    {
+        id: "triangulum-australe",
+        region: "southern",
+        name: "Triangulum Australe",
+        commonName: "The Southern Triangle",
+        unlockAt: 11720,
+        stars: [
+            { x: 14, y: 72, mag: 1, name: "Atria" },
+            { x: 40, y: 54, mag: 3 },
+            { x: 66, y: 36, mag: 2 },
+            { x: 84, y: 78, mag: 2 },
+            { x: 30, y: 86, mag: 3 },
+        ],
+        edges: [[0, 1], [1, 2], [2, 3], [3, 0], [0, 4]],
+    },
+    {
+        id: "tucana",
+        region: "southern",
+        name: "Tucana",
+        commonName: "The Toucan",
+        unlockAt: 12420,
+        stars: [
+            { x: 20, y: 30, mag: 2 },
+            { x: 16, y: 58, mag: 3 },
+            { x: 46, y: 40, mag: 3 },
+            { x: 60, y: 24, mag: 3 },
+            { x: 72, y: 62, mag: 3 },
+            { x: 84, y: 46, mag: 3 },
+        ],
+        edges: [[0, 1], [0, 2], [2, 3], [2, 4], [4, 5], [3, 5]],
+    },
 ];
 
-const BASE_STAR_PRICE = 25;
-const PRICE_STEP = 5;
+export const SKY_REGIONS: SkyRegion[] = [
+    {
+        id: "home",
+        name: "Your sky",
+        description: "The constellations every navigator starts with.",
+        price: 0,
+        requiresLifetime: 0,
+    },
+    {
+        id: "southern",
+        name: "The Southern Sky",
+        description: "Twelve constellations below the horizon you started from, led by Sirius, the Teapot and Alpha Centauri.",
+        price: 750,
+        // Every home constellation has appeared by then.
+        requiresLifetime: 6120,
+    },
+];
+
+const BASE_STAR_PRICE = 20;
+const PRICE_STEP = 6;
+// Bright named stars cost more than faint ones, so there's a real choice
+// between charting the showpiece now or a few dim stars.
+const MAGNITUDE_PRICE_FACTOR: Record<ChartStar["mag"], number> = { 1: 1.5, 2: 1, 3: 0.75 };
 
 export function getConstellation(id: string): Constellation | undefined {
     return CONSTELLATIONS.find((constellation) => constellation.id === id);
 }
 
-// Later constellations cost a little more per star, so the sky keeps pace
-// with a growing Starlight balance without any one star feeling out of reach.
-export function starPrice(constellation: Constellation): number {
-    return BASE_STAR_PRICE + PRICE_STEP * CONSTELLATIONS.indexOf(constellation);
+export function getSkyRegion(id: string): SkyRegion | undefined {
+    return SKY_REGIONS.find((region) => region.id === id);
 }
 
-export function isUnlocked(constellation: Constellation, lifetimeStarlight: number): boolean {
-    return lifetimeStarlight >= constellation.unlockAt;
+export function ownsRegion(regionId: SkyRegionId, unlockedRegions: string[]): boolean {
+    return regionId === "home" || unlockedRegions.includes(regionId);
 }
 
-export function nextUnlock(lifetimeStarlight: number): Constellation | null {
-    return CONSTELLATIONS.find((constellation) => constellation.unlockAt > lifetimeStarlight) ?? null;
+// Later constellations cost more per star, so the sky keeps pace with a
+// growing Starlight balance. The curve levels off at the last home
+// constellation so the expansion stays reachable.
+const PRICE_CURVE_CAP = 14;
+
+export function starPrice(constellation: Constellation, starIndex: number): number {
+    const step = Math.min(CONSTELLATIONS.indexOf(constellation), PRICE_CURVE_CAP);
+    const base = BASE_STAR_PRICE + PRICE_STEP * step;
+    const factor = MAGNITUDE_PRICE_FACTOR[constellation.stars[starIndex]?.mag ?? 2];
+
+    return Math.max(10, Math.round((base * factor) / 5) * 5);
+}
+
+// The cheapest star still to chart (null when complete), for "from N" labels.
+export function cheapestStarPrice(constellation: Constellation, charted: ChartedStarRef[]): number | null {
+    const done = chartedIndexes(constellation.id, charted);
+    const prices = constellation.stars
+        .map((_, index) => index)
+        .filter((index) => !done.has(index))
+        .map((index) => starPrice(constellation, index));
+
+    return prices.length > 0 ? Math.min(...prices) : null;
+}
+
+// Its region is open and lifetime Starlight has reached it. A constellation
+// the student already started stays visible even if a rebalance raised its
+// threshold past their lifetime total.
+export function isVisible(
+    constellation: Constellation,
+    lifetimeStarlight: number,
+    charted: ChartedStarRef[],
+    unlockedRegions: string[]
+): boolean {
+    if (!ownsRegion(constellation.region, unlockedRegions)) return false;
+
+    return lifetimeStarlight >= constellation.unlockAt
+        || charted.some((star) => star.constellationId === constellation.id);
+}
+
+export function nextUnlock(regionId: SkyRegionId, lifetimeStarlight: number): Constellation | null {
+    return CONSTELLATIONS.find(
+        (constellation) => constellation.region === regionId && constellation.unlockAt > lifetimeStarlight
+    ) ?? null;
 }
 
 export function chartedIndexes(constellationId: string, charted: ChartedStarRef[]): Set<number> {

@@ -26,6 +26,7 @@ export async function getGamificationState(): Promise<GamificationState | null> 
 export type XpAwardResult = {
     awarded: boolean;
     xp: number;
+    starlightEarned: number;
     totalXp: number;
     starlight: number;
     lifetimeStarlight: number;
