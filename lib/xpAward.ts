@@ -1,10 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { computeTaskXp, starlightForXp } from "@/lib/xp";
-import { resolveClientToday } from "@/lib/utils";
-
-// Students can create and check off their own tasks, so those pay at most
-// this much Starlight a day (XP is uncapped).
-export const CUSTOM_TASK_DAILY_STARLIGHT = 30;
 
 export type TaskXpAward = {
     awarded: boolean;
@@ -15,23 +10,15 @@ export type TaskXpAward = {
     lifetimeStarlight: number;
 };
 
-type StarlightGrant =
-    | { kind: "full"; amount: number }
-    | { kind: "none" }
-    // Counted against the custom-task cap for `day` (the user's local day).
-    | { kind: "custom"; amount: number; day: string };
-
 // Awards XP and Starlight for completing a task, once per task, ever. The
 // dedup and both increments happen in one transaction against the stored
 // awardedTaskIds, so a stale tab, a second device or a replayed request
-// can't award the same task twice or overwrite the total. The dedup update
-// also row-locks the user's state, so concurrent awards serialize and the
-// custom-task cap below can't be overrun.
+// can't award the same task twice or overwrite the total.
 async function awardTask(
     userId: string,
     taskId: string,
     xp: number,
-    grant: StarlightGrant
+    starlight: number
 ): Promise<{ awarded: boolean; starlightEarned: number; totalXp: number; starlight: number; lifetimeStarlight: number }> {
     return prisma.$transaction(async (tx) => {
         await tx.gamificationState.upsert({
@@ -49,30 +36,11 @@ async function awardTask(
         let chart = await tx.starChart.upsert({ where: { userId }, create: { userId }, update: {} });
         let starlightEarned = 0;
 
-        if (awarded && grant.kind !== "none") {
-            let capData = {};
-
-            if (grant.kind === "custom") {
-                // An older day counts against the stored one, so alternating
-                // day keys can't reset the cap.
-                const isNewDay = !chart.customStarlightDay || grant.day > chart.customStarlightDay;
-                const used = isNewDay ? 0 : chart.customStarlightToday;
-
-                starlightEarned = Math.max(0, Math.min(grant.amount, CUSTOM_TASK_DAILY_STARLIGHT - used));
-                capData = isNewDay
-                    ? { customStarlightDay: grant.day, customStarlightToday: starlightEarned }
-                    : { customStarlightToday: { increment: starlightEarned } };
-            } else {
-                starlightEarned = grant.amount;
-            }
-
+        if (awarded && starlight > 0) {
+            starlightEarned = starlight;
             chart = await tx.starChart.update({
                 where: { userId },
-                data: {
-                    starlight: { increment: starlightEarned },
-                    lifetimeStarlight: { increment: starlightEarned },
-                    ...capData,
-                },
+                data: { starlight: { increment: starlight }, lifetimeStarlight: { increment: starlight } },
             });
         }
 
@@ -89,21 +57,6 @@ async function awardTask(
             lifetimeStarlight: chart.lifetimeStarlight,
         };
     });
-}
-
-// Tasks accepted from an announcement scan are real schoolwork stored as
-// custom tasks, so they skip the cap. sourceAnnouncementId is client-set
-// (POST /api/custom-tasks), so it only counts while there are at least as
-// many accepted suggestions for that announcement as tasks claiming it.
-async function isAcceptedAnnouncementTask(userId: string, sourceAnnouncementId: string | null): Promise<boolean> {
-    if (!sourceAnnouncementId) return false;
-
-    const [accepted, claiming] = await Promise.all([
-        prisma.announcementSuggestionReview.count({ where: { userId, sourceAnnouncementId, status: "accepted" } }),
-        prisma.customTask.count({ where: { userId, sourceAnnouncementId } }),
-    ]);
-
-    return accepted > 0 && claiming <= accepted;
 }
 
 // Shared by app/api/gamification/route.ts (a student checking a task off)
@@ -124,7 +77,7 @@ export async function grantTaskXp(
         }),
         prisma.customTask.findFirst({
             where: { id: taskId, userId },
-            select: { name: true, course: true, sourceAnnouncementId: true },
+            select: { name: true, course: true },
         }),
         prisma.taskPlanningEstimate.findUnique({
             where: { userId_taskId: { userId, taskId } },
@@ -146,23 +99,17 @@ export async function grantTaskXp(
         completedAt: options.completedAt,
         assignmentType: estimate?.assignmentType,
     });
-    const amount = starlightForXp(xp);
-    const capped = customTask && !assignment && !(await isAcceptedAnnouncementTask(userId, customTask.sourceAnnouncementId));
-    const grant: StarlightGrant = options.starlight === "none"
-        ? { kind: "none" }
-        : capped
-            ? { kind: "custom", amount, day: resolveClientToday(options.completedAt) }
-            : { kind: "full", amount };
+    const starlight = options.starlight === "none" ? 0 : starlightForXp(xp);
 
     let result;
 
     try {
-        result = await awardTask(userId, taskId, xp, grant);
+        result = await awardTask(userId, taskId, xp, starlight);
     } catch (error) {
         // Two first-ever awards racing to create the row: the loser's
         // upsert hits the unique userId. Retrying sees the row.
         if ((error as { code?: string }).code === "P2002") {
-            result = await awardTask(userId, taskId, xp, grant);
+            result = await awardTask(userId, taskId, xp, starlight);
         } else {
             throw error;
         }

@@ -515,10 +515,6 @@ model StarChart {
   onboardedAt          DateTime?
   // Bought expansion regions (lib/constellations.ts SKY_REGIONS); "home" is implicit.
   unlockedRegions      String[]  @default([])
-  // The custom-task Starlight cap (lib/xpAward.ts): the user's local day and
-  // how much custom tasks have earned on it.
-  customStarlightDay   String?
-  customStarlightToday Int       @default(0)
   updatedAt            DateTime  @updatedAt
 }
 
