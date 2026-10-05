@@ -163,41 +163,35 @@ export async function POST(request: Request, { params }: Params) {
 
         // skipDuplicates still covers an occurrence whose own due date was
         // edited (its id exists under the original date).
-        await prisma.customTask.createMany({
-            data: toCreate.map((occurrence) => ({
-                id: `custom-r${recurringTask.id}-${occurrence.due}`,
-                userId: user.id,
-                name: recurringTask.name,
-                course: recurringTask.course,
-                due: occurrence.due,
-                dueAt: occurrence.dueAt ? new Date(occurrence.dueAt) : null,
-                dueFraction: occurrence.dueFraction,
-                recurrenceId: recurringTask.id,
-            })),
-            skipDuplicates: true,
-        });
+        const created = toCreate.length > 0
+            ? await prisma.customTask.createManyAndReturn({
+                data: toCreate.map((occurrence) => ({
+                    id: `custom-r${recurringTask.id}-${occurrence.due}`,
+                    userId: user.id,
+                    name: recurringTask.name,
+                    course: recurringTask.course,
+                    due: occurrence.due,
+                    dueAt: occurrence.dueAt ? new Date(occurrence.dueAt) : null,
+                    dueFraction: occurrence.dueFraction,
+                    recurrenceId: recurringTask.id,
+                })),
+                skipDuplicates: true,
+                select: { id: true },
+            })
+            : [];
 
-        if (recurringTask.typeOverride !== null) {
-            const newlyCreatedDates = dueDates.filter((due) => !existingDueSet.has(due));
-
-            await Promise.all(
-                newlyCreatedDates.map((due) =>
-                    prisma.taskCustomization.upsert({
-                        where: {
-                            userId_taskId: {
-                                userId: user.id,
-                                taskId: `custom-r${recurringTask.id}-${due}`,
-                            },
-                        },
-                        update: { typeOverride: recurringTask.typeOverride },
-                        create: {
-                            userId: user.id,
-                            taskId: `custom-r${recurringTask.id}-${due}`,
-                            typeOverride: recurringTask.typeOverride,
-                        },
-                    })
-                )
-            );
+        // Only rows created just now get the series type, and never over an
+        // existing customization: a skipped row may be a moved occurrence
+        // with its own type edit.
+        if (recurringTask.typeOverride !== null && created.length > 0) {
+            await prisma.taskCustomization.createMany({
+                data: created.map((task) => ({
+                    userId: user.id,
+                    taskId: task.id,
+                    typeOverride: recurringTask.typeOverride,
+                })),
+                skipDuplicates: true,
+            });
         }
 
         const customTasks = await prisma.customTask.findMany({

@@ -1040,8 +1040,14 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     // Each POST costs several billed DB queries, so only dates
                     // with no loaded occurrence (tombstoned ones included) are
                     // sent; the server still drops any it already has.
+                    // An occurrence moved to another day keeps its original
+                    // id, so that original date counts as existing too.
+                    const idPrefix = `custom-r${rule.id}-`;
                     const existingDates = new Set(
-                        tasksRef.current.filter((task) => task.recurrenceId === rule.id).map((task) => task.due)
+                        tasksRef.current.flatMap((task) => [
+                            ...(task.recurrenceId === rule.id ? [task.due] : []),
+                            ...(task.id.startsWith(idPrefix) ? [task.id.slice(idPrefix.length)] : []),
+                        ])
                     );
                     const dates = expandOccurrences(rule, today, horizonEnd).filter((due) => !existingDates.has(due));
                     if (dates.length === 0) return [] as Assignment[];
