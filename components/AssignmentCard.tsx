@@ -12,9 +12,11 @@ type AssignmentCardProps = {
     name: string;
     // Pieces of the normalized "COURSE - TYPE - DAY - name" card title
     // (lib/taskLabel.ts, computed by the caller).
-    courseAbbreviation: string;
-    typeCode: string;
-    dayCode: string;
+    // Built with the student's chosen parts (lib/taskLabel.ts's formatTaskLabel).
+    label: string;
+    // Lets the onboarding tour tell whether it can split the label as
+    // course - type - day - name.
+    isDefaultLabel: boolean;
     // Marks this card's label as the onboarding tour's "task-label" stop.
     tourAnchor?: boolean;
     due: string;
@@ -67,9 +69,8 @@ type AssignmentCardProps = {
 export default function AssignmentCard({
     id,
     name,
-    courseAbbreviation,
-    typeCode,
-    dayCode,
+    label,
+    isDefaultLabel,
     tourAnchor = false,
     due,
     dueAt,
@@ -174,8 +175,12 @@ export default function AssignmentCard({
 
                 {completed ? (
                     <Tooltip label={name}>
-                        <h3 data-tour={tourAnchor ? "task-label" : undefined} className="min-w-0 truncate text-xs leading-none line-through">
-                            {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
+                        <h3
+                            data-tour={tourAnchor ? "task-label" : undefined}
+                            data-default-label={tourAnchor && isDefaultLabel ? "true" : undefined}
+                            className="min-w-0 truncate text-xs leading-none line-through"
+                        >
+                            {label}
                         </h3>
                     </Tooltip>
                 ) : (
@@ -194,9 +199,10 @@ export default function AssignmentCard({
                         <Tooltip label={name}>
                             <h3
                                 data-tour={tourAnchor ? "task-label" : undefined}
+                                data-default-label={tourAnchor && isDefaultLabel ? "true" : undefined}
                                 className="text-sm font-semibold leading-tight truncate"
                             >
-                                {`${courseAbbreviation} - ${typeCode} - ${dayCode} - ${name}`}
+                                {label}
                             </h3>
                         </Tooltip>
 

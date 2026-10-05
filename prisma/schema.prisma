@@ -574,6 +574,9 @@ model PlannerSettings {
   completionSound     Boolean   @default(true)
   // Marks a Canvas task completed (with XP) once Canvas reports it submitted.
   completeFromCanvas  Boolean   @default(true)
+  // Visible card-label parts in display order (lib/taskLabel.ts's
+  // TaskLabelPart); a part left out is hidden. Always includes "name".
+  taskLabelParts      String[]  @default(["course", "type", "day", "name"])
   // Null = never viewed — everything currently pending/added counts as
   // "new," which is also the correct behavior for a first-ever login.
   lastRundownViewedAt DateTime?

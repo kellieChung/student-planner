@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
 import UserMenu from "@/components/UserMenu";
+import TaskLabelSettings from "@/components/TaskLabelSettings";
+import type { TaskLabelPart } from "@/lib/taskLabel";
 import { XpAward } from "@/types/gamification";
 import { useWindowManager } from "./WindowManagerContext";
 import { useLodestarFrame } from "@/components/world/LaptopFrame";
@@ -47,6 +49,8 @@ type Props = {
     onSetCompletionSound: (value: boolean) => void;
     completeFromCanvas: boolean;
     onSetCompleteFromCanvas: (value: boolean) => void;
+    taskLabelParts: TaskLabelPart[];
+    onSetTaskLabelParts: (parts: TaskLabelPart[]) => void;
 };
 
 function useClock(): string {
@@ -92,6 +96,8 @@ export default function Taskbar({
     onSetCompletionSound,
     completeFromCanvas,
     onSetCompleteFromCanvas,
+    taskLabelParts,
+    onSetTaskLabelParts,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const { replayOnboarding } = useLodestarFrame();
@@ -222,7 +228,7 @@ export default function Taskbar({
                     </button>
                     {isSettingsOpen && (
                         <div
-                            className="absolute bottom-full right-0 z-40 mb-2 w-64 rounded-xl border p-3 shadow-xl"
+                            className="absolute bottom-full right-0 z-40 mb-2 max-h-[calc(100dvh-6rem)] w-64 overflow-y-auto rounded-xl border p-3 shadow-xl"
                             style={{ borderColor: "var(--border)", background: "var(--panel)" }}
                         >
                             <p className="mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
@@ -256,6 +262,11 @@ export default function Taskbar({
                                 <span>Task completion sound</span>
                                 <Switch checked={completionSound} onChange={onSetCompletionSound} ariaLabel="Task completion sound" />
                             </label>
+
+                            <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
+                                Task labels
+                            </p>
+                            <TaskLabelSettings parts={taskLabelParts} onChange={onSetTaskLabelParts} />
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
                                 Canvas

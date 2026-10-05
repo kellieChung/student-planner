@@ -61,15 +61,49 @@ export function dayCode(dueDateKey: string | null | undefined): string | null {
     return DAY_CODES[parseLocalDate(dueDateKey).getDay()];
 }
 
+export type TaskLabelPart = "course" | "type" | "day" | "name";
+
+export const TASK_LABEL_PARTS: TaskLabelPart[] = ["course", "type", "day", "name"];
+
+export const DEFAULT_TASK_LABEL_PARTS: TaskLabelPart[] = ["course", "type", "day", "name"];
+
+export function isTaskLabelPart(value: unknown): value is TaskLabelPart {
+    return typeof value === "string" && (TASK_LABEL_PARTS as string[]).includes(value);
+}
+
+// The student's visible parts, in order. "name" is always kept so a card
+// can never be reduced to bare codes.
+export function normalizeTaskLabelParts(value: unknown): TaskLabelPart[] {
+    if (!Array.isArray(value)) return DEFAULT_TASK_LABEL_PARTS;
+
+    const parts = [...new Set(value.filter(isTaskLabelPart))];
+    if (!parts.includes("name")) parts.push("name");
+
+    return parts;
+}
+
+export function isDefaultTaskLabelParts(parts: TaskLabelPart[]): boolean {
+    return parts.length === DEFAULT_TASK_LABEL_PARTS.length
+        && parts.every((part, index) => part === DEFAULT_TASK_LABEL_PARTS[index]);
+}
+
 type FormatTaskLabelInput = {
     courseAbbreviation: string;
-    typeCode: LabelType;
+    typeCode: string;
     dueDateKey: string | null | undefined;
     name: string;
 };
 
-export function formatTaskLabel(input: FormatTaskLabelInput): string {
-    const day = dayCode(input.dueDateKey) ?? "—";
+export function formatTaskLabel(
+    input: FormatTaskLabelInput,
+    parts: TaskLabelPart[] = DEFAULT_TASK_LABEL_PARTS,
+): string {
+    const values: Record<TaskLabelPart, string> = {
+        course: input.courseAbbreviation,
+        type: input.typeCode,
+        day: dayCode(input.dueDateKey) ?? "—",
+        name: input.name,
+    };
 
-    return `${input.courseAbbreviation} - ${input.typeCode} - ${day} - ${input.name}`;
+    return parts.map((part) => values[part]).join(" - ");
 }

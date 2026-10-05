@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isDevAccountEmail } from "@/lib/devAccounts";
 import LaptopFrame, { type TourMode } from "@/components/world/LaptopFrame";
 import { StarChartState } from "@/lib/starChart";
+import { normalizeTaskLabelParts } from "@/lib/taskLabel";
 
 type Props = {
     user: { id: string; name: string | null; email: string | null };
@@ -68,6 +69,7 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
         autoAcceptAiTasks: plannerSettingsRow?.autoAcceptAiTasks ?? false,
         completionSound: plannerSettingsRow?.completionSound ?? true,
         completeFromCanvas: plannerSettingsRow?.completeFromCanvas ?? true,
+        taskLabelParts: normalizeTaskLabelParts(plannerSettingsRow?.taskLabelParts),
     };
 
     return (

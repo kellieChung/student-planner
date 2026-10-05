@@ -13,7 +13,7 @@ import DueTimeField from "./DueTimeField";
 import CourseSelect from "./CourseSelect";
 import RecurrenceField, {DEFAULT_RECURRENCE_VALUE, RecurrenceFieldValue} from "./RecurrenceField";
 import {resolveDueTime, formatTimeInputValue, formatEstimatedMinutes} from "@/lib/utils";
-import {classifyLabelType, courseAbbreviationDefault, formatTaskLabel, LabelType} from "@/lib/taskLabel";
+import {classifyLabelType, courseAbbreviationDefault, formatTaskLabel, LabelType, type TaskLabelPart} from "@/lib/taskLabel";
 import {TaskStatus} from "@/lib/taskStatus";
 import {describeRecurrenceRule} from "@/lib/recurrence";
 import useEscapeToClose from "@/components/ui/useEscapeToClose";
@@ -31,6 +31,7 @@ type EditTaskModalProps = {
     notes: string;
     status: TaskStatus;
     courses: Course[];
+    taskLabelParts: TaskLabelPart[];
     // The student's own estimate (null = none) and the AI/type one it
     // replaces; saving the suggested value stores null so the task keeps
     // following future re-estimates.
@@ -54,6 +55,7 @@ export default function EditTaskModal({
     notes: initialNotes,
     status: initialStatus,
     courses,
+    taskLabelParts,
     estimatedMinutesOverride: initialEstimateOverride,
     suggestedMinutes,
     recurringTaskRule,
@@ -139,7 +141,7 @@ export default function EditTaskModal({
         typeCode: effectiveTypeCode,
         dueDateKey: due,
         name,
-    });
+    }, taskLabelParts);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

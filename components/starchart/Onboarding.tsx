@@ -279,7 +279,9 @@ function LabelExplainer() {
 
     useEffect(() => {
         const frame = requestAnimationFrame(() => {
-            const text = document.querySelector('[data-tour="task-label"]')?.textContent ?? "";
+            // A student who reordered or hid parts gets the example instead.
+            const anchor = document.querySelector('[data-tour="task-label"][data-default-label="true"]');
+            const text = anchor?.textContent ?? "";
             const [course, type, day, ...rest] = text.split(" - ");
 
             if (course && type && day && rest.length > 0) {
@@ -301,7 +303,7 @@ function LabelExplainer() {
     return (
         <div className="space-y-3">
             <p>
-                Every card is labelled <strong>course · type · due day · name</strong>
+                By default, every card is labelled <strong>course · type · due day · name</strong>
                 {isOwn ? ". Here's one of yours, taken apart:" : ", for example:"}
             </p>
 
@@ -327,7 +329,7 @@ function LabelExplainer() {
             <p className="text-xs">
                 Days are <strong>M T W F</strong>, with <strong>TH</strong>, <strong>SA</strong>, and{" "}
                 <strong>SU</strong> spelled out so they never clash. Course abbreviations come from the course name,
-                and you can change them in Courses.
+                and you can change them in Courses. To reorder or hide parts, open Settings → Task labels.
             </p>
         </div>
     );

@@ -21,7 +21,7 @@ import {useMascot} from "./world/LaptopFrame";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
-import {classifyLabelType, courseAbbreviationDefault, dayCode} from "@/lib/taskLabel";
+import {classifyLabelType, courseAbbreviationDefault, DEFAULT_TASK_LABEL_PARTS, formatTaskLabel, isDefaultTaskLabelParts, type TaskLabelPart} from "@/lib/taskLabel";
 import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
 import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
 import {ProcrastinationHistory} from "@/types/procrastination";
@@ -78,6 +78,7 @@ type InitialRundown = {
     autoAcceptAiTasks: boolean;
     completionSound: boolean;
     completeFromCanvas: boolean;
+    taskLabelParts: TaskLabelPart[];
 };
 
 type WeeklyPlannerProps = {
@@ -228,6 +229,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [autoAcceptAiTasks, setAutoAcceptAiTasks] = useState(initialRundown?.autoAcceptAiTasks ?? false);
     const [completionSound, setCompletionSound] = useState(initialRundown?.completionSound ?? true);
     const [completeFromCanvas, setCompleteFromCanvas] = useState(initialRundown?.completeFromCanvas ?? true);
+    const [taskLabelParts, setTaskLabelParts] = useState<TaskLabelPart[]>(initialRundown?.taskLabelParts ?? DEFAULT_TASK_LABEL_PARTS);
     const [showRundown, setShowRundown] = useState(() => initialRundown?.shouldAutoShow ?? false);
     const [showStillDeciding, setShowStillDeciding] = useState(false);
     const [awardingXp, setAwardingXp] = useState(false);
@@ -1971,6 +1973,25 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         savePlannerSettings({ completionSound: value });
     }
 
+    // Quick ↑/↓ clicks fire several full-array saves; one at a time, always
+    // sending the latest, so an earlier request can't land last.
+    const pendingLabelPartsRef = useRef<TaskLabelPart[] | null>(null);
+    const labelPartsSavingRef = useRef(false);
+
+    async function handleSetTaskLabelParts(parts: TaskLabelPart[]) {
+        setTaskLabelParts(parts);
+        pendingLabelPartsRef.current = parts;
+        if (labelPartsSavingRef.current) return;
+
+        labelPartsSavingRef.current = true;
+        while (pendingLabelPartsRef.current) {
+            const next = pendingLabelPartsRef.current;
+            pendingLabelPartsRef.current = null;
+            await savePlannerSettings({ taskLabelParts: next });
+        }
+        labelPartsSavingRef.current = false;
+    }
+
     async function handleSetCompleteFromCanvas(value: boolean) {
         setCompleteFromCanvas(value);
         await savePlannerSettings({ completeFromCanvas: value });
@@ -2270,6 +2291,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 suggestedMinutes = {taskPlanning[selectedTask?.id ?? ""]?.estimatedMinutes}
                 recurringTaskRule = {recurringTasks.find((rule) => rule.id === selectedTask?.recurrenceId) ?? null}
                 courses = {courses}
+                taskLabelParts = {taskLabelParts}
                 onCourseCreated = {handleCourseCreated}
                 onClose = {() => setSelectedTask(null)}
                 onSaveTask = {handleSaveTask}
@@ -2383,17 +2405,21 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     course: task.course,
                                     isCustomCourse: taskCourse?.isCustom,
                                 });
-                                const taskDayCode = dayCode(task.due) ?? "—";
+                                const taskLabel = formatTaskLabel({
+                                    courseAbbreviation: taskCourseAbbreviation,
+                                    typeCode: taskTypeCode,
+                                    dueDateKey: task.due,
+                                    name: task.name,
+                                }, taskLabelParts);
 
                                 return (
                                     <AssignmentCard
                                         key = {task.id}
                                         id = {task.id}
                                         name = {task.name}
-                                        courseAbbreviation = {taskCourseAbbreviation}
-                                        typeCode = {taskTypeCode}
+                                        label = {taskLabel}
+                                        isDefaultLabel = {isDefaultTaskLabelParts(taskLabelParts)}
                                         tourAnchor = {layoutIndex === 0}
-                                        dayCode = {taskDayCode}
                                         due = {task.due}
                                         dueAt = {task.dueAt}
                                         course = {task.course}
@@ -2562,6 +2588,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             onSetCompletionSound={handleSetCompletionSound}
             completeFromCanvas={completeFromCanvas}
             onSetCompleteFromCanvas={handleSetCompleteFromCanvas}
+            taskLabelParts={taskLabelParts}
+            onSetTaskLabelParts={handleSetTaskLabelParts}
         />
 
         {showRundown && (

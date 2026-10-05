@@ -1,7 +1,10 @@
+import { DEFAULT_TASK_LABEL_PARTS, normalizeTaskLabelParts, type TaskLabelPart } from "@/lib/taskLabel";
+
 export type PlannerSettings = {
     autoAcceptAiTasks: boolean;
     completionSound: boolean;
     completeFromCanvas: boolean;
+    taskLabelParts: TaskLabelPart[];
     lastRundownViewedAt: string | null;
 };
 
@@ -9,6 +12,7 @@ const defaultSettings: PlannerSettings = {
     autoAcceptAiTasks: false,
     completionSound: true,
     completeFromCanvas: true,
+    taskLabelParts: DEFAULT_TASK_LABEL_PARTS,
     lastRundownViewedAt: null,
 };
 
@@ -17,6 +21,7 @@ function coerceSettings(data: Partial<PlannerSettings>): PlannerSettings {
         autoAcceptAiTasks: typeof data.autoAcceptAiTasks === "boolean" ? data.autoAcceptAiTasks : false,
         completionSound: typeof data.completionSound === "boolean" ? data.completionSound : true,
         completeFromCanvas: typeof data.completeFromCanvas === "boolean" ? data.completeFromCanvas : true,
+        taskLabelParts: normalizeTaskLabelParts(data.taskLabelParts),
         lastRundownViewedAt: typeof data.lastRundownViewedAt === "string" ? data.lastRundownViewedAt : null,
     };
 }

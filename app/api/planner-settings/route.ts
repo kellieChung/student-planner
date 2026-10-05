@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { backfillCanvasCompletions } from "@/lib/canvasCompletions";
+import { isTaskLabelPart, normalizeTaskLabelParts, type TaskLabelPart } from "@/lib/taskLabel";
 
 const SELECT = {
     autoAcceptAiTasks: true,
     completionSound: true,
     completeFromCanvas: true,
+    taskLabelParts: true,
     lastRundownViewedAt: true,
 } as const;
 
@@ -42,6 +44,7 @@ export async function GET() {
             autoAcceptAiTasks: settings?.autoAcceptAiTasks ?? false,
             completionSound: settings?.completionSound ?? true,
             completeFromCanvas: settings?.completeFromCanvas ?? true,
+            taskLabelParts: normalizeTaskLabelParts(settings?.taskLabelParts),
             lastRundownViewedAt: settings?.lastRundownViewedAt?.toISOString() ?? null,
         });
     } catch (error) {
@@ -96,6 +99,7 @@ export async function PATCH(request: Request) {
             autoAcceptAiTasks?: boolean;
             completionSound?: boolean;
             completeFromCanvas?: boolean;
+            taskLabelParts?: TaskLabelPart[];
             lastRundownViewedAt?: Date | null;
         } = {};
 
@@ -127,6 +131,22 @@ export async function PATCH(request: Request) {
                 );
             }
             data.completeFromCanvas = input.completeFromCanvas;
+        }
+
+        if ("taskLabelParts" in input) {
+            const parts = input.taskLabelParts;
+            const valid = Array.isArray(parts)
+                && parts.every(isTaskLabelPart)
+                && new Set(parts).size === parts.length
+                && parts.includes("name");
+
+            if (!valid) {
+                return NextResponse.json(
+                    { success: false, error: "'taskLabelParts' must list unique label parts, including 'name'." },
+                    { status: 400 }
+                );
+            }
+            data.taskLabelParts = parts;
         }
 
         if ("lastRundownViewedAt" in input) {
@@ -169,6 +189,7 @@ export async function PATCH(request: Request) {
             autoAcceptAiTasks: settings.autoAcceptAiTasks,
             completionSound: settings.completionSound,
             completeFromCanvas: settings.completeFromCanvas,
+            taskLabelParts: normalizeTaskLabelParts(settings.taskLabelParts),
             completedCount,
             lastRundownViewedAt: settings.lastRundownViewedAt?.toISOString() ?? null,
         });

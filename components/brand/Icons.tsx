@@ -181,6 +181,22 @@ export function ChevronDownIcon(props: IconProps) {
     );
 }
 
+export function ChevronUpIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="m6 15 6-6 6 6" />
+        </Icon>
+    );
+}
+
+export function GripIcon(props: IconProps) {
+    return (
+        <Icon {...props}>
+            <path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" strokeWidth={3} />
+        </Icon>
+    );
+}
+
 export function AlertIcon(props: IconProps) {
     return (
         <Icon {...props}>
