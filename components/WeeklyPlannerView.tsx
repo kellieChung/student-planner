@@ -21,7 +21,7 @@ import {useMascot} from "./world/LaptopFrame";
 import {getTaskPlanningEstimates, getTaskPriority, getTaskSignature, selectTasksNeedingEstimates} from "@/lib/taskPlanning";
 import {TaskPlanningEstimate, TaskPlanningEstimates} from "@/types/taskPlanning";
 import {calculatePriority, PriorityResult} from "@/lib/prioritization";
-import {estimateMinutesByType, resolveAssignmentType} from "@/lib/assignmentType";
+import {deterministicType, estimateMinutesByType, resolveAssignmentType} from "@/lib/assignmentType";
 import {classifyLabelType, courseAbbreviationDefault, DEFAULT_TASK_LABEL_PARTS, formatTaskLabel, isDefaultTaskLabelParts, type TaskLabelPart} from "@/lib/taskLabel";
 import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
 import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
@@ -213,6 +213,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // Custom tasks whose create POST hasn't finished; the estimator skips
     // them (the server only estimates tasks it already has).
     const pendingCreateIdsRef = useRef<Set<string>>(new Set());
+    // Tasks with an estimate request in flight. Requests are never aborted
+    // and in-flight tasks are never re-sent: the server bills the AI call
+    // either way, so an abort + re-send (e.g. a completion changing this
+    // effect's deps mid-request) would pay twice for the same tasks.
+    const estimateInFlightIdsRef = useRef<Set<string>>(new Set());
     const lastServerReloadAtRef = useRef(0);
     const [recurringTasks, setRecurringTasks] = useState<RecurringTask[]>([]);
     const [isRecurringPanelOpen, setIsRecurringPanelOpen] = useState(false);
@@ -471,14 +476,50 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         [effectiveTasks, taskPlanning]
     );
 
+    // A string, not a Set, so the estimate request effect only re-runs when
+    // completion actually changes (not on every customization edit).
+    const completedTaskIdsKey = useMemo(
+        () => Object.entries(taskCustomizations)
+            .filter(([, customization]) => customization.completed)
+            .map(([id]) => id)
+            .sort()
+            .join("\n"),
+        [taskCustomizations]
+    );
+
     const openTasks = useMemo(
         () => effectiveTasks.filter((task) => !(taskCustomizations[task.id]?.completed ?? false)),
         [effectiveTasks, taskCustomizations]
     );
 
-    // The student's own estimate wins over the AI/type one.
-    const getEstimatedMinutes = (taskId: string): number | undefined =>
-        taskCustomizations[taskId]?.estimatedMinutesOverride ?? resolvedPlanning[taskId]?.estimatedMinutes;
+    // Stored type, else one known without the AI (Canvas type or a name
+    // keyword). Tasks outside the estimate window still get a type, so
+    // their completions still count toward procrastination history.
+    const taskTypeFor = (task: Assignment): string | null =>
+        resolvedPlanning[task.id]?.assignmentType ?? deterministicType(task);
+
+    // The student's own estimate wins over the AI/type one; unestimated
+    // tasks fall back to their known type's minutes.
+    const getEstimatedMinutes = (task: Assignment): number | undefined => {
+        const override = taskCustomizations[task.id]?.estimatedMinutesOverride;
+        if (override != null) return override;
+
+        const stored = resolvedPlanning[task.id]?.estimatedMinutes;
+        if (stored != null) return stored;
+
+        const type = deterministicType(task);
+        return type ? estimateMinutesByType(type) : undefined;
+    };
+
+    // Every type in play, as a string so the index effect only re-runs when
+    // the set changes.
+    const knownTaskTypesKey = useMemo(
+        () => [...new Set(effectiveTasks.map(taskTypeFor).filter((type): type is string => Boolean(type)))]
+            .sort()
+            .join(","),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [effectiveTasks, resolvedPlanning]
+    );
 
     /*
      * Shared with the "focus task" lookup below, so both use the exact
@@ -490,7 +531,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
      */
     const computeTaskPriority = (task: Assignment): PriorityResult => {
         const estimate = resolvedPlanning[task.id];
-        const estimatedMinutes = getEstimatedMinutes(task.id);
+        const estimatedMinutes = getEstimatedMinutes(task);
+        const taskType = taskTypeFor(task);
 
         return calculatePriority({
             name: task.name,
@@ -502,8 +544,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             difficulty: estimate?.difficulty ?? 5,
             consequence: estimate?.consequence ?? 5,
             estimatedMinutes: estimatedMinutes ?? 30,
-            procrastinationIndexHours: estimate?.assignmentType
-                ? procrastinationIndexByType[estimate.assignmentType] ?? null
+            procrastinationIndexHours: taskType
+                ? procrastinationIndexByType[taskType] ?? null
                 : null,
         });
     };
@@ -1424,27 +1466,23 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         // (already-computed) values arrive a moment later.
         if (!taskPlanningLoaded) return;
 
+        const inFlight = estimateInFlightIdsRef.current;
         const tasksNeedingEstimates = selectTasksNeedingEstimates(
-            tasks.filter((task) => !pendingCreateIdsRef.current.has(task.id)),
-            taskPlanning
+            tasks.filter((task) => !pendingCreateIdsRef.current.has(task.id) && !inFlight.has(task.id)),
+            taskPlanning,
+            { completedIds: new Set(completedTaskIdsKey.split("\n")), today: todayKey }
         );
 
-        if (tasksNeedingEstimates.length === 0) {
-            // An earlier run may have been aborted by this re-run.
-            setEstimatingCount(0);
-            return;
-        }
+        if (tasksNeedingEstimates.length === 0) return;
 
-        const controller = new AbortController();
-
-        setEstimatingCount(tasksNeedingEstimates.length);
+        for (const task of tasksNeedingEstimates) inFlight.add(task.id);
+        setEstimatingCount(inFlight.size);
 
         const estimateTasks = async () => {
             try {
                 const response = await fetch("/api/task-planning", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    signal: controller.signal,
                     body: JSON.stringify({
                         tasks: tasksNeedingEstimates.map(({ id, name, course }) => ({ id, name, course })),
                     }),
@@ -1478,27 +1516,18 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                     return next;
                 });
             } catch (error) {
-                if ((error as Error).name !== "AbortError") {
-                    console.error("Could not estimate task planning details", error);
-                }
+                console.error("Could not estimate task planning details", error);
             } finally {
-                if (!controller.signal.aborted) {
-                    setEstimatingCount(0);
-                }
+                for (const task of tasksNeedingEstimates) inFlight.delete(task.id);
+                setEstimatingCount(inFlight.size);
             }
         };
 
         void estimateTasks();
-
-        return () => controller.abort();
-    }, [tasks, taskPlanning, taskPlanningLoaded]);
+    }, [tasks, taskPlanning, taskPlanningLoaded, completedTaskIdsKey, todayKey]);
 
     useEffect(() => {
-        const types = new Set(
-            Object.values(resolvedPlanning)
-                .map((estimate) => estimate.assignmentType)
-                .filter((type): type is string => Boolean(type))
-        );
+        const types = new Set(knownTaskTypesKey ? knownTaskTypesKey.split(",") : []);
 
         setProcrastinationIndexByType((current) => {
             const next: Record<string, number | null> = {};
@@ -1512,7 +1541,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
             return changed ? next : current;
         });
-    }, [resolvedPlanning, procrastinationHistory]);
+    }, [knownTaskTypesKey, procrastinationHistory]);
 
     // Adds a custom task optimistically and saves it; on failure the task is
     // removed again and the user is told. Resolves to whether it saved.
@@ -1596,7 +1625,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const awardCompletionSideEffects = (task: Assignment) => {
         if (completionSound) playCompletionSound();
 
-        const assignmentType = resolvedPlanning[task.id]?.assignmentType;
+        const assignmentType = taskTypeFor(task);
         const addedAt = deriveAddedAt(task);
 
         if (task.due && addedAt && assignmentType) {
@@ -2292,7 +2321,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Then</p>
                             <ol className="mt-1.5 space-y-1">
                                 {rankedOpenTasks.slice(1, 5).map(({ task, priority }) => {
-                                    const minutes = getEstimatedMinutes(task.id);
+                                    const minutes = getEstimatedMinutes(task);
 
                                     return (
                                         <li key={task.id}>
@@ -2484,7 +2513,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         completedAt = {taskCustomization?.completedAt || null}
                                         completedFromCanvas = {taskCustomization?.completedFromCanvas ?? false}
                                         isCompleting = {pulsingIds.has(task.id)}
-                                        estimatedMinutes = {getEstimatedMinutes(task.id)}
+                                        estimatedMinutes = {getEstimatedMinutes(task)}
                                         isFocused={task.id === focusTaskId}
                                         isAiDetected={Boolean(task.sourceAnnouncementId) && !task.aiTagDismissedAt}
                                         onDismissAiTag={handleDismissAiTag}
@@ -2590,7 +2619,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     <div className="min-w-0 flex-1">
                                         <p className={`truncate font-medium ${completed ? "line-through" : "text-slate-100"}`}>{task.name}</p>
                                         <p className="text-xs text-slate-400">
-                                            {task.course || "General"}{estimate ? ` · Est. ${getEstimatedMinutes(task.id)} min · ${priority.label}` : ""}
+                                            {task.course || "General"}{estimate ? ` · Est. ${getEstimatedMinutes(task)} min · ${priority.label}` : ""}
                                         </p>
                                     </div>
                                     <button

@@ -153,6 +153,11 @@ model Assignment {
   // never reported (old extension build or never checked); only a flip to
   // true auto-completes the task, so a student's manual un-check sticks.
   canvasSubmitted Boolean?
+  // Canvas submission_types/points_possible (extension 0.3.2+). Empty/null
+  // until a sync from a new enough extension; used to classify tasks
+  // without an AI call (lib/assignmentType.ts typeFromSubmissionTypes).
+  submissionTypes String[]  @default([])
+  pointsPossible  Float?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

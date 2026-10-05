@@ -2,13 +2,15 @@ import { Assignment } from "@/types/assignment";
 import { TaskPlanningEstimate, TaskPlanningEstimates, TaskPriority } from "@/types/taskPlanning";
 import { parseLocalDate, daysBetween } from "@/lib/utils";
 
-// Local Ollama inference is CPU/GPU-heavy per call — auto-estimating a
-// whole backlog (150+ assignments) back-to-back visibly heats up the
-// machine. Scope it down: only tasks due soon are worth estimating
-// proactively, and even then, only up to a hard ceiling per pass. Tasks
-// with no due date are never auto-estimated (nothing to window/rank them
-// by) — see prioritizationModule.md.
-const ESTIMATION_WINDOW_DAYS = 21;
+// Every task sent here costs a (paid) AI call unless the server can type
+// it for free, and each is analyzed once then reused — so only send open
+// work that can actually compete for the top of the list: not completed,
+// not already past due (overdue ranks first regardless), due within
+// ESTIMATION_WINDOW_DAYS. With slack-based ranking the AI's scores only
+// break near-ties, which only matter near the top. Undated tasks are never
+// auto-estimated (nothing to window/rank them by) — see
+// prioritizationModule.md.
+const ESTIMATION_WINDOW_DAYS = 10;
 const ESTIMATION_CAP = 60;
 
 export function getTaskSignature(task: Pick<Assignment, "name" | "course">): string {
@@ -17,14 +19,15 @@ export function getTaskSignature(task: Pick<Assignment, "name" | "course">): str
 
 export function selectTasksNeedingEstimates(
     tasks: Assignment[],
-    estimates: TaskPlanningEstimates
+    estimates: TaskPlanningEstimates,
+    options: { completedIds: ReadonlySet<string>; today: string }
 ): Assignment[] {
-    const windowEnd = new Date();
-    windowEnd.setHours(0, 0, 0, 0);
+    const windowEnd = parseLocalDate(options.today);
     windowEnd.setDate(windowEnd.getDate() + ESTIMATION_WINDOW_DAYS);
 
     const eligible = tasks.filter((task) => {
-        if (!task.due) return false;
+        if (!task.due || task.due < options.today) return false;
+        if (options.completedIds.has(task.id)) return false;
         return parseLocalDate(task.due) <= windowEnd;
     });
 

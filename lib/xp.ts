@@ -44,10 +44,12 @@ export type XpInput = {
     // resolveAssignmentType); the student's typeOverride is deliberately
     // not used, so XP can't be raised by relabelling.
     assignmentType?: string | null;
+    // Canvas's own type (typeFromSubmissionTypes); wins over both.
+    canvasType?: string | null;
 };
 
 export function computeTaskXp(task: XpInput): number {
-    const type = task.assignmentType
+    const type = task.assignmentType || task.canvasType
         ? resolveAssignmentType(task.assignmentType, task)
         : classifyAssignmentType({ name: task.name, course: task.course });
     const baseXp = xpForAssignmentType(type);

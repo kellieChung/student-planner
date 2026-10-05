@@ -13,7 +13,11 @@ For each completed task, log when it became visible and when it was done; comput
 Output: Polaris (the frog) plus a "Then" list of the next 4 tasks, re-ranked as data accrues.
 
 ## Estimates
-`estimatedMinutes` comes from `estimateMinutesByType()` (`lib/assignmentType.ts`), a deterministic type→minutes lookup. The type is `resolveAssignmentType(aiType, task)`: the task-name keyword type overrides the AI only when the AI said `other` or the keyword type is the smaller estimate (the AI once typed a discussion as an essay, 30 → 120 min). A per-student estimator from actual completion times is the intended future version. Auto-estimation (`selectTasksNeedingEstimates`, `lib/taskPlanning.ts`) covers tasks due within 3 weeks, max 60, soonest first; undated tasks are never auto-estimated.
+`estimatedMinutes` comes from `estimateMinutesByType()` (`lib/assignmentType.ts`), a deterministic type→minutes lookup, so **the type is what matters**. Type precedence (`resolveAssignmentType`): Canvas's own `submission_types` (`typeFromSubmissionTypes`: `discussion_topic` → discussion, `online_quiz` → quiz, or exam if the name says midterm/final/exam), then the name keyword when the AI said `other` or the keyword is the smaller estimate, then the AI.
+
+**No-AI gate (2026-10-04, cost):** the client sends only open tasks that aren't past due and are due within 10 days (`selectTasksNeedingEstimates`, max 60). The server types each from the DB (Canvas type, else a confident name keyword incl. a leading "DISCUSS:"). Those get `scoresForType` scores, nudged by points vs the course median (`adjustScoresForPoints`), and are stored with `DETERMINISTIC_ANALYSIS_REASON`, with no AI call and not counted toward the daily cap. Only the rest go to Haiku as one line each (`N. name | course | pts`) with short output keys (`i,t,imp,dif`; consequence comes from the type table). Unestimated tasks still rank and record procrastination history using their deterministic type.
+
+Rejected: prompt caching (the prompt is ~1.1k tokens, under Haiku 4.5's 4,096-token minimum, so it silently doesn't cache) and the Batch API (50% off but async; not worth the polling infrastructure at ~$0.002 per call). Sending descriptions was also left off for cost.
 
 ## Not v1
 Opt-in one-tap post-completion effort estimate; opt-in gamified session timer. **Do not build** mandatory active time tracking, pause/resume timers, or anything needing a babysat clock.

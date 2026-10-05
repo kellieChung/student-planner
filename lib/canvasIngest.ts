@@ -88,6 +88,26 @@ function httpUrl(value: unknown): string | null {
     return typeof value === "string" && /^https:\/\//.test(value) ? value.slice(0, MAX_URL_LENGTH) : null;
 }
 
+// Canvas type/points from extension 0.3.2+. Older builds don't send the
+// keys at all, so these return {} and an existing row keeps what it has.
+function canvasTypeFields(assignment: Record<string, unknown>): { submissionTypes?: string[]; pointsPossible?: number | null } {
+    const fields: { submissionTypes?: string[]; pointsPossible?: number | null } = {};
+
+    if (Array.isArray(assignment.submission_types)) {
+        fields.submissionTypes = assignment.submission_types
+            .filter((type): type is string => typeof type === "string")
+            .slice(0, 10)
+            .map((type) => type.slice(0, 40));
+    }
+
+    if ("points_possible" in assignment) {
+        const points = assignment.points_possible;
+        fields.pointsPossible = typeof points === "number" && Number.isFinite(points) && points >= 0 ? points : null;
+    }
+
+    return fields;
+}
+
 // An unparseable timestamp becomes null instead of making Prisma throw and
 // failing the whole sync.
 function instant(value: unknown): Date | null {
@@ -181,6 +201,7 @@ export async function upsertCanvasCourses(
                 description: html(assignment.description),
                 dueAt: instant(assignment.due_at),
                 htmlUrl: httpUrl(assignment.html_url),
+                ...canvasTypeFields(assignment),
             };
             const day = dueDay(assignment, fields.dueAt);
 

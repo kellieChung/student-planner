@@ -1,4 +1,5 @@
 import {prisma} from "@/lib/prisma";
+import {typeFromSubmissionTypes} from "@/lib/assignmentType";
 
 // Sentinel CanvasCourse.canvasOrigin value for a user-added course (e.g.
 // "Personal") rather than one synced from Canvas — shared so every call
@@ -30,6 +31,8 @@ export async function getAllAssignments(userId: string) {
             dueAt: assignment.dueAt ? assignment.dueAt.toISOString() : null,
             course: course.displayName ?? course.name,
             createdAt: assignment.createdAt.toISOString(),
+            canvasType: typeFromSubmissionTypes(assignment.submissionTypes, assignment.name),
+            pointsPossible: assignment.pointsPossible,
         }))
     );
 

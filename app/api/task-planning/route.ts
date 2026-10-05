@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { analyzeAssignments, estimateMinutesByType, fallbackAssignmentAnalysis, FALLBACK_ANALYSIS_REASON, normalizeAssignmentType, resolveAssignmentType } from "@/lib/analyzeAssignment";
+import { analyzeAssignments, DETERMINISTIC_ANALYSIS_REASON, estimateMinutesByType, fallbackAssignmentAnalysis, FALLBACK_ANALYSIS_REASON, normalizeAssignmentType, resolveAssignmentType } from "@/lib/analyzeAssignment";
+import { adjustScoresForPoints, deterministicType, scoresForType, typeFromSubmissionTypes } from "@/lib/assignmentType";
 import { calculatePriority } from "@/lib/prioritization";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getTaskSignature } from "@/lib/taskPlanning";
@@ -15,6 +16,9 @@ type PlanningTask = {
     description?: string | null;
     due?: string | null;
     pointsPossible?: number | null;
+    // From the DB, never the client: Canvas's own type and course.
+    canvasType?: string | null;
+    courseId?: string | null;
 };
 
 async function getAuthenticatedUser() {
@@ -186,6 +190,33 @@ function toEstimate(task: PlanningTask, normalized: ReturnType<typeof normalizeA
     };
 }
 
+// Median points of each course's assignments, for adjustScoresForPoints.
+async function getCoursePointsMedians(userId: string, tasks: PlanningTask[]): Promise<Map<string, number>> {
+    const courseIds = [...new Set(tasks.map((task) => task.courseId).filter((id): id is string => Boolean(id)))];
+    if (courseIds.length === 0) return new Map();
+
+    const rows = await prisma.assignment.findMany({
+        where: { userId, courseId: { in: courseIds }, pointsPossible: { gt: 0 } },
+        select: { courseId: true, pointsPossible: true },
+    });
+
+    const pointsByCourse = new Map<string, number[]>();
+    for (const row of rows) {
+        const points = pointsByCourse.get(row.courseId) ?? [];
+        points.push(row.pointsPossible as number);
+        pointsByCourse.set(row.courseId, points);
+    }
+
+    const medians = new Map<string, number>();
+    for (const [courseId, points] of pointsByCourse) {
+        points.sort((a, b) => a - b);
+        const mid = Math.floor(points.length / 2);
+        medians.set(courseId, points.length % 2 ? points[mid] : (points[mid - 1] + points[mid]) / 2);
+    }
+
+    return medians;
+}
+
 export async function POST(request: Request) {
     try {
         const user = await getAuthenticatedUser();
@@ -231,12 +262,28 @@ export async function POST(request: Request) {
         // paid calls).
         const requestedIds = tasks.map((task) => task.id);
         const [ownedAssignments, ownedCustomTasks] = await Promise.all([
-            prisma.assignment.findMany({ where: { userId: user.id, id: { in: requestedIds } }, select: { id: true } }),
+            prisma.assignment.findMany({
+                where: { userId: user.id, id: { in: requestedIds } },
+                select: { id: true, name: true, submissionTypes: true, pointsPossible: true, courseId: true },
+            }),
             prisma.customTask.findMany({ where: { userId: user.id, id: { in: requestedIds } }, select: { id: true } }),
         ]);
         const ownedIds = new Set([...ownedAssignments, ...ownedCustomTasks].map((task) => task.id));
+        const assignmentFacts = new Map(ownedAssignments.map((assignment) => [assignment.id, assignment]));
 
-        tasks = tasks.filter((task) => ownedIds.has(task.id));
+        tasks = tasks
+            .filter((task) => ownedIds.has(task.id))
+            .map((task) => {
+                const facts = assignmentFacts.get(task.id);
+                return facts
+                    ? {
+                        ...task,
+                        canvasType: typeFromSubmissionTypes(facts.submissionTypes, facts.name),
+                        pointsPossible: facts.pointsPossible,
+                        courseId: facts.courseId,
+                    }
+                    : task;
+            });
 
         if (tasks.length === 0) {
             return NextResponse.json({
@@ -265,8 +312,32 @@ export async function POST(request: Request) {
 
         tasks = tasks.filter((task) => !reusedIds.has(task.id));
 
+        // Free first: a task whose type Canvas or a confident name keyword
+        // settles never reaches the AI (see prioritizationModule.md).
+        const courseMedians = await getCoursePointsMedians(user.id, tasks);
+
+        const deterministicEstimates = tasks.flatMap((task) => {
+            const type = deterministicType(task);
+            if (!type) return [];
+
+            const scores = adjustScoresForPoints(
+                scoresForType(type),
+                task.pointsPossible,
+                task.courseId ? courseMedians.get(task.courseId) : null
+            );
+
+            return [toEstimate(task, normalizeAnalysis({ ...scores, assignmentType: type, reason: DETERMINISTIC_ANALYSIS_REASON }))];
+        });
+
+        const deterministicIds = new Set(deterministicEstimates.map((estimate) => estimate.id));
+        tasks = tasks.filter((task) => !deterministicIds.has(task.id));
+
         const analyzedToday = await prisma.taskPlanningEstimate.count({
-            where: { userId: user.id, updatedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+            where: {
+                userId: user.id,
+                updatedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+                reason: { not: DETERMINISTIC_ANALYSIS_REASON },
+            },
         });
         const remaining = Math.max(0, DAILY_ANALYSIS_LIMIT - analyzedToday);
         const tasksForModel = tasks.slice(0, remaining);
@@ -302,7 +373,7 @@ export async function POST(request: Request) {
             }
         );
 
-        const estimates = estimatesByBatch.flat();
+        const estimates = [...deterministicEstimates, ...estimatesByBatch.flat()];
 
         // A fallback isn't stored: stored estimates are reused forever, so a
         // brief AI outage would otherwise freeze those tasks on fallback scores.

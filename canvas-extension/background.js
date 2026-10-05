@@ -149,6 +149,10 @@ function pickAssignment(assignment) {
         description: capHtml(assignment.description),
         due_at: assignment.due_at ?? null,
         html_url: assignment.html_url ?? null,
+        // Canvas's own type (discussion_topic, online_quiz, …) and points
+        // let the app classify most tasks without an AI call.
+        submission_types: Array.isArray(assignment.submission_types) ? assignment.submission_types : [],
+        points_possible: typeof assignment.points_possible === "number" ? assignment.points_possible : null,
         ...pickSubmission(assignment),
     };
 }

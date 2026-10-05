@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { computeTaskXp, starlightForXp } from "@/lib/xp";
+import { typeFromSubmissionTypes } from "@/lib/assignmentType";
 
 export type TaskXpAward = {
     awarded: boolean;
@@ -73,7 +74,7 @@ export async function grantTaskXp(
     const [assignment, customTask, estimate] = await Promise.all([
         prisma.assignment.findFirst({
             where: { id: taskId, userId },
-            select: { name: true, course: { select: { name: true, displayName: true } } },
+            select: { name: true, submissionTypes: true, course: { select: { name: true, displayName: true } } },
         }),
         prisma.customTask.findFirst({
             where: { id: taskId, userId },
@@ -86,7 +87,11 @@ export async function grantTaskXp(
     ]);
 
     const task = assignment
-        ? { name: assignment.name, course: assignment.course.displayName ?? assignment.course.name }
+        ? {
+            name: assignment.name,
+            course: assignment.course.displayName ?? assignment.course.name,
+            canvasType: typeFromSubmissionTypes(assignment.submissionTypes, assignment.name),
+        }
         : customTask
             ? { name: customTask.name, course: customTask.course }
             : null;

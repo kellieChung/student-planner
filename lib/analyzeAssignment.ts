@@ -9,7 +9,7 @@ import {
     logAnthropicUsage,
 } from "@/lib/ai/anthropicClient";
 import { stripHtml, truncateText } from "@/lib/htmlText";
-import { ASSIGNMENT_TYPES, classifyAssignmentType, normalizeAssignmentType, type AssignmentType } from "@/lib/assignmentType";
+import { ASSIGNMENT_TYPES, classifyAssignmentType, normalizeAssignmentType, scoresForType, type AssignmentType } from "@/lib/assignmentType";
 
 // Pure type helpers live in lib/assignmentType.ts so client code can use them
 // without bundling the Anthropic SDK; re-exported for existing server imports.
@@ -53,25 +53,16 @@ const PREDICT_TOKENS_BASE = 100;
 // a real estimate (it would then never be retried).
 export const FALLBACK_ANALYSIS_REASON = "This estimate was generated using a fallback because AI analysis was unavailable.";
 
+// Stored (and reused like an AI estimate) when the type was settled by
+// Canvas or a name keyword and no AI call was made.
+export const DETERMINISTIC_ANALYSIS_REASON = "Estimated from the assignment type.";
+
 export function fallbackAssignmentAnalysis(
     assignment: AssignmentInput
 ): AssignmentAnalysis {
     const assignmentType = classifyAssignmentType(assignment);
-    const reason = FALLBACK_ANALYSIS_REASON;
 
-    if (assignmentType === "exam" || assignmentType === "test" || assignmentType === "project" || assignmentType === "presentation") {
-        return { importance: 8, difficulty: 8, consequence: 7, assignmentType, reason };
-    }
-
-    if (assignmentType === "essay" || assignmentType === "lab" || assignmentType === "problem_set" || assignmentType === "homework") {
-        return { importance: 6, difficulty: 6, consequence: 5, assignmentType, reason };
-    }
-
-    if (assignmentType === "quiz" || assignmentType === "reading" || assignmentType === "discussion" || assignmentType === "practice" || assignmentType === "reflection") {
-        return { importance: 4, difficulty: 3, consequence: 3, assignmentType, reason };
-    }
-
-    return { importance: 4, difficulty: 3, consequence: 3, assignmentType, reason };
+    return { ...scoresForType(assignmentType), assignmentType, reason: FALLBACK_ANALYSIS_REASON };
 }
 
 function buildAssignmentBlock(
@@ -140,29 +131,32 @@ const ANTHROPIC_REASON = "Estimated by AI.";
 
 const SCORE_TOOL_NAME = "record_assignment_scores";
 
+// Short keys on purpose: output tokens cost 5x input, and the key names are
+// repeated for every entry. i = assignment number, t = type, imp/dif =
+// importance/difficulty. Consequence isn't asked for — it comes from the
+// type table (scoresForType), since these scores only break near-ties.
 const SCORE_TOOL: Anthropic.Tool = {
     name: SCORE_TOOL_NAME,
-    description: "Record one score entry per assignment, in order.",
+    description: "Record one entry per assignment.",
     input_schema: {
         type: "object",
         properties: {
-            results: {
+            r: {
                 type: "array",
                 items: {
                     type: "object",
                     properties: {
-                        index: { type: "integer" },
-                        importance: { type: "integer" },
-                        difficulty: { type: "integer" },
-                        consequence: { type: "integer" },
-                        assignmentType: { type: "string", enum: [...ASSIGNMENT_TYPES] },
+                        i: { type: "integer" },
+                        t: { type: "string", enum: [...ASSIGNMENT_TYPES] },
+                        imp: { type: "integer" },
+                        dif: { type: "integer" },
                     },
-                    required: ["index", "importance", "difficulty", "consequence", "assignmentType"],
+                    required: ["i", "t", "imp", "dif"],
                     additionalProperties: false,
                 },
             },
         },
-        required: ["results"],
+        required: ["r"],
         additionalProperties: false,
     },
     strict: true,
@@ -172,19 +166,21 @@ const SCORE_TOOL: Anthropic.Tool = {
 // (estimateMinutesByType), so a discussion read as an essay quadruples it.
 const ASSIGNMENT_TYPE_GUIDE = `ASSIGNMENT TYPE: discussion = forum post or replies, even if it asks for written paragraphs; essay = standalone paper or written assignment submitted on its own; reflection = short personal response or journal; reading = read or watch material; practice = ungraded or low-stakes drills/worksheets; problem_set = set of problems; homework = other routine graded exercises; quiz = short timed check; test/exam = major timed assessment; project/presentation = multi-step deliverable or talk; lab = lab work or report. Use "other" only when nothing fits.`;
 
+// Only tasks the server couldn't type from Canvas or the name reach this,
+// so the type is the main job; imp/dif just break near-ties.
 const SCORING_RUBRIC = `
-You score student assignments for a planner. Judge each assignment independently, only from its own information; never invent grading policies, weights, or requirements. Scores are integers 1-10.
-
-IMPORTANCE: academic significance vs. normal coursework. 1-2 routine/negligible; 3-4 ordinary homework, practice, participation; 5-6 meaningful graded work; 7-8 substantial graded work or key skill assessment; 9 major essay, project, or exam; 10 final exam or capstone. Points are evidence, not a formula. Don't confuse importance with difficulty or time.
-
-DIFFICULTY: how challenging for a capable student. 1-2 trivial; 3-4 straightforward, familiar procedures; 5-6 moderate reasoning or multiple steps; 7-8 substantial reasoning, writing, or synthesis; 9-10 very to exceptionally demanding. Points are not a proxy for difficulty.
-
-CONSEQUENCE: harm from missing it, submitting late, or doing poorly. 1-2 minimal; 3-4 small; 5-6 noticeable; 7-8 significant; 9-10 very to extremely significant. Use stated grading or late policy when given; otherwise infer cautiously.
-
+Score each student assignment (line: "N. name | course | pts"). Judge each only from its own line.
 ${ASSIGNMENT_TYPE_GUIDE}
-
-"index" is the ASSIGNMENT number (1-based).
+imp (1-10): academic weight vs normal coursework. 2 routine, 4 ordinary homework, 6 meaningful graded work, 8 substantial assessment, 10 final/capstone. Points are evidence, not a formula.
+dif (1-10): effort for a capable student. 2 trivial, 4 familiar steps, 6 multi-step reasoning, 8 substantial writing/synthesis, 10 exceptional.
+i = the line number.
 `.trim();
+
+// One compact line per task (vs the Ollama path's multi-line block).
+function buildAssignmentLine(assignment: AssignmentInput, index: number): string {
+    const points = assignment.pointsPossible != null ? ` | pts ${assignment.pointsPossible}` : "";
+    return `${index + 1}. ${assignment.name} | ${assignment.course || "General"}${points}`;
+}
 
 function clampScore(value: number): number {
     return Math.min(10, Math.max(1, Math.round(value)));
@@ -207,7 +203,7 @@ async function analyzeAssignmentsWithAnthropic(
                 messages: [
                     {
                         role: "user",
-                        content: assignments.map(buildAssignmentBlock).join("\n"),
+                        content: assignments.map(buildAssignmentLine).join("\n"),
                     },
                 ],
             },
@@ -219,17 +215,17 @@ async function analyzeAssignmentsWithAnthropic(
 
     logAnthropicUsage("assignment scoring", response);
 
-    const input = getToolInput(response, SCORE_TOOL_NAME) as { results?: unknown };
+    const input = getToolInput(response, SCORE_TOOL_NAME) as { r?: unknown };
 
-    if (!Array.isArray(input.results)) {
+    if (!Array.isArray(input.r)) {
         throw new Error("Anthropic scoring tool call did not contain a results array.");
     }
 
     const resultsByIndex = new Map<number, Record<string, unknown>>();
 
-    for (const entry of input.results) {
-        if (entry && typeof entry === "object" && typeof (entry as { index?: unknown }).index === "number") {
-            resultsByIndex.set((entry as { index: number }).index, entry as Record<string, unknown>);
+    for (const entry of input.r) {
+        if (entry && typeof entry === "object" && typeof (entry as { i?: unknown }).i === "number") {
+            resultsByIndex.set((entry as { i: number }).i, entry as Record<string, unknown>);
         }
     }
 
@@ -240,18 +236,19 @@ async function analyzeAssignmentsWithAnthropic(
 
         if (
             !entry ||
-            typeof entry.importance !== "number" ||
-            typeof entry.difficulty !== "number" ||
-            typeof entry.consequence !== "number"
+            typeof entry.imp !== "number" ||
+            typeof entry.dif !== "number"
         ) {
             return fallbackAssignmentAnalysis(assignment);
         }
 
+        const assignmentType = normalizeAssignmentType(entry.t);
+
         return {
-            importance: clampScore(entry.importance),
-            difficulty: clampScore(entry.difficulty),
-            consequence: clampScore(entry.consequence),
-            assignmentType: normalizeAssignmentType(entry.assignmentType),
+            importance: clampScore(entry.imp),
+            difficulty: clampScore(entry.dif),
+            consequence: scoresForType(assignmentType).consequence,
+            assignmentType,
             reason: ANTHROPIC_REASON,
         };
     });

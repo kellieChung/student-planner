@@ -1,6 +1,8 @@
 import { analyzeAssignments, estimateMinutesByType, resolveAssignmentType } from "./analyzeAssignment";
 import { calculatePriority, type PriorityInput } from "./prioritization";
 import { toDateKey } from "./utils";
+import { adjustScoresForPoints, deterministicType, typeFromSubmissionTypes } from "./assignmentType";
+import { selectTasksNeedingEstimates } from "./taskPlanning";
 
 // "YYYY-MM-DD" for today + offsetDays, in local time.
 function dateKeyFromToday(offsetDays: number): string {
@@ -87,6 +89,65 @@ function checkRankingRules() {
     check(
         "AI 'essay' on 'Persuasive Essay Draft' stays essay",
         resolveAssignmentType("essay", { name: "Persuasive Essay Draft" }) === "essay"
+    );
+
+    console.log("\nNO-AI GATE");
+    check(
+        "Canvas discussion_topic → discussion",
+        typeFromSubmissionTypes(["discussion_topic"], "Week 3") === "discussion"
+    );
+    check(
+        "Canvas online_quiz named 'Midterm Exam' → exam; 'Practice Test' stays quiz",
+        typeFromSubmissionTypes(["online_quiz"], "Midterm Exam") === "exam" &&
+            typeFromSubmissionTypes(["online_quiz"], "Practice Test") === "quiz"
+    );
+    check(
+        "Canvas online_upload says nothing (null)",
+        typeFromSubmissionTypes(["online_upload"], "Unit 4") === null
+    );
+    check(
+        "Canvas type beats a stored AI 'essay'",
+        resolveAssignmentType("essay", { name: "Unit 4", canvasType: "discussion" }) === "discussion"
+    );
+    check(
+        "'DISCUSS: Metabolism, Nutrition & Scientific Evidence 1️⃣' → discussion without AI",
+        deterministicType({ name: "DISCUSS: Metabolism, Nutrition & Scientific Evidence 1️⃣" }) === "discussion"
+    );
+    check(
+        "'Essay: Discuss the causes of WWI' → essay",
+        deterministicType({ name: "Essay: Discuss the causes of WWI" }) === "essay"
+    );
+    check(
+        "names matching conflicting types go to the AI: 'Exam Review Discussion', 'DISCUSS: Exam 2 prep'",
+        deterministicType({ name: "Exam Review Discussion" }) === null &&
+            deterministicType({ name: "DISCUSS: Exam 2 prep" }) === null
+    );
+    check(
+        "classifier behavior unchanged: 'Homework 2: Derivatives Practice' still classifies as homework",
+        resolveAssignmentType("other", { name: "Homework 2: Derivatives Practice" }) === "homework"
+    );
+    check(
+        "an ambiguous name ('Unit 4 Submission') goes to the AI (null)",
+        deterministicType({ name: "Unit 4 Submission" }) === null
+    );
+    const base4 = { importance: 4, difficulty: 3, consequence: 3 };
+    check(
+        "points: 3x the course median → +2; ⅓ → −1; unknown → unchanged",
+        adjustScoresForPoints(base4, 300, 100).importance === 6 &&
+            adjustScoresForPoints(base4, 30, 100).importance === 3 &&
+            adjustScoresForPoints(base4, null, 100).importance === 4
+    );
+
+    const today = dateKeyFromToday(0);
+    const task = (id: string, offset: number) => ({ id, name: id, course: "C", due: dateKeyFromToday(offset) });
+    const selected = selectTasksNeedingEstimates(
+        [task("done", 2), task("past", -1), task("far", 11), task("soon", 2), { ...task("undated", 0), due: "" }],
+        {},
+        { completedIds: new Set(["done"]), today }
+    ).map((t) => t.id);
+    check(
+        "estimate selection skips completed, past-due, undated and > 10 days",
+        selected.length === 1 && selected[0] === "soon"
     );
 }
 
