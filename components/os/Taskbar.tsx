@@ -272,9 +272,17 @@ export default function Taskbar({
                                 Canvas
                             </p>
                             <label className="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
-                                <span>Complete tasks when submitted in Canvas</span>
+                                <span className="flex items-center gap-1.5">
+                                    Complete tasks when submitted in Canvas
+                                    <span className="rounded-full border border-amber-500/50 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-amber-400">
+                                        Alpha
+                                    </span>
+                                </span>
                                 <Switch checked={completeFromCanvas} onChange={onSetCompleteFromCanvas} ariaLabel="Complete tasks when submitted in Canvas" />
                             </label>
+                            <p className="px-1 text-[11px] leading-snug" style={{ color: "var(--muted)" }}>
+                                Tasks the AI found in announcements won&apos;t auto-complete. Things like discussion board replies may check off the wrong task.
+                            </p>
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
                                 AI Detection
