@@ -9,6 +9,10 @@ import { CompassIcon, StarIcon } from "@/components/brand/Icons";
 import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 
 type Props = {
+    // Star Chart beta (Galaxy, Nebula): adds a step for its tabs.
+    beta: boolean;
+    // Workload warnings kill switch: the dot is only mentioned when it exists.
+    workloadFeature: boolean;
     onFinish: () => void;
 };
 
@@ -20,7 +24,7 @@ const ORION = CONSTELLATIONS[0];
 // Vocabulary is gamificationSystem.md's "Feature naming" table, and every
 // `target` is a `data-tour` anchor on the real UI — add an anchor alongside
 // any new step. A missing anchor just centres the card.
-export default function Onboarding({ onFinish }: Props) {
+export default function Onboarding({ beta, workloadFeature, onFinish }: Props) {
     const { getView, openStarChart, openShipsLog } = useLodestarFrame();
 
     const steps = useMemo<TourStep[]>(() => {
@@ -32,7 +36,7 @@ export default function Onboarding({ onFinish }: Props) {
         };
         const onLog = inView("log");
 
-        return [
+        const tour: TourStep[] = [
             {
                 id: "welcome",
                 before: onLog,
@@ -66,6 +70,12 @@ export default function Onboarding({ onFinish }: Props) {
                         Every assignment and task lands here on the day it&apos;s due. Open a card to rename it, adjust
                         its time estimate, or give it a start date so it stretches back to when you&apos;ll begin.
                         Switch between Weekly and Monthly up top.
+                        {workloadFeature && (
+                            <>
+                                {" "}A gold dot by a date means a heavy day in the week ahead; hover or tap it for the
+                                breakdown.
+                            </>
+                        )}
                     </p>
                 ),
             },
@@ -99,9 +109,9 @@ export default function Onboarding({ onFinish }: Props) {
                 body: (
                     <p>
                         <strong>Polaris</strong> is the single task most worth doing next, weighed by due date,
-                        importance, and how long it&apos;ll take. When you&apos;re not sure where to start, start there.
-                        A big task due later asks only for today&apos;s chunk, not the whole thing.
-                        The circle on any card moves a task from to-do to in progress to done (or press{" "}
+                        importance, and how long it&apos;ll take. A big task due later asks only for today&apos;s chunk.
+                        Below it, <strong>Then</strong> lines up the next few, each marked <em>Finish it</em> or{" "}
+                        <em>Start</em>. The circle on any card moves a task from to-do to in progress to done (or press{" "}
                         <strong>Mark done</strong> here), and <strong>Focus on the Watch</strong> pins it to your timer.
                     </p>
                 ),
@@ -159,8 +169,9 @@ export default function Onboarding({ onFinish }: Props) {
                     <p>
                         Completing a task earns <strong>XP</strong>, which levels you up, and{" "}
                         <strong>Starlight</strong> to spend. Bigger tasks earn more: a quick reading brings in a little, a
-                        long project a lot. Late work still counts, just a bit less. A star takes a few tasks, so each one
-                        you chart means something. Submitted it in Canvas? Lodestar checks it off for you.
+                        long project a lot, and hovering a card shows what it&apos;s worth. Late work still counts, just
+                        a bit less. A star takes a few tasks, so each one you chart means something. Submitted it in
+                        Canvas? Lodestar can check it off for you (still in alpha).
                     </p>
                 ),
                 illustration: <StarlightIllustration />,
@@ -174,9 +185,9 @@ export default function Onboarding({ onFinish }: Props) {
                 title: "Make it yours.",
                 body: (
                     <p>
-                        The gear holds Night and Day themes, the order of task labels, whether Canvas submissions
-                        check tasks off, Rundown auto-accept, the completion sound, your account, and this tour if you
-                        want it again.
+                        The gear holds Night and Day themes,{workloadFeature && " heavy-day warnings,"} the order of task
+                        labels, whether Canvas submissions check tasks off (alpha), Rundown auto-accept, the completion
+                        sound, your account, and this tour if you want it again.
                     </p>
                 ),
             },
@@ -201,10 +212,11 @@ export default function Onboarding({ onFinish }: Props) {
                 body: (
                     <p>
                         Pick a constellation and chart its stars one at a time. <strong>Orion</strong>, the{" "}
-                        <strong>Big Dipper</strong>, and <strong>Cassiopeia</strong> are open now. New constellations
-                        appear as your lifetime Starlight grows, and finishing a whole one is a moment worth earning.
-                        Chart whole sets for <strong>Legends</strong> bounties, and go far enough to unlock new regions,
-                        starting with the Southern Sky, until you&apos;ve charted all 88.
+                        <strong>Big Dipper</strong>, and <strong>Cassiopeia</strong> are open now, and more appear as
+                        your lifetime Starlight grows. Finishing one reveals a <strong>field note</strong> about it, and
+                        whole sets earn <strong>Legends</strong> bounties. Go far enough to open the Southern Sky, then
+                        choose your path through the packs beyond it, where finishing one reveals the next, until
+                        you&apos;ve charted all 88.
                     </p>
                 ),
                 illustration: (
@@ -212,7 +224,27 @@ export default function Onboarding({ onFinish }: Props) {
                 ),
             },
         ];
-    }, [getView, openShipsLog, openStarChart]);
+
+        if (beta) {
+            tour.push({
+                id: "galaxy-nebula",
+                target: "chart-tabs",
+                before: inView("chart"),
+                eyebrow: "Galaxy & Nebula (beta)",
+                title: "See your sky, then make it yours.",
+                body: (
+                    <p>
+                        <strong>Galaxy</strong> maps every constellation you&apos;ve found at its real place in the sky;
+                        drag and zoom to explore. The <strong>Nebula</strong> sells new skies and line styles for
+                        Starlight. They change only how your chart looks, never what you earn. Name your ship there
+                        too (the first name is free), and it shows under the Ship&apos;s Log.
+                    </p>
+                ),
+            });
+        }
+
+        return tour;
+    }, [beta, workloadFeature, getView, openShipsLog, openStarChart]);
 
     return <TourSpotlight steps={steps} finishLabel="Start charting" onFinish={() => onFinish()} />;
 }
@@ -372,9 +404,10 @@ function PolarisIllustration() {
 
 function StarlightIllustration() {
     const rows = [
-        { label: "Reading", amount: 20 },
-        { label: "Problem set", amount: 50 },
-        { label: "Final project", amount: 100 },
+        // starlightForXp of the lib/xp.ts tiers (15/25/40 XP), on time.
+        { label: "Reading", amount: 8 },
+        { label: "Problem set", amount: 13 },
+        { label: "Final project", amount: 20 },
     ];
 
     return (

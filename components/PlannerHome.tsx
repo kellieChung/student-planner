@@ -82,7 +82,12 @@ export default countQueries("PlannerHome", async function PlannerHome({ user, to
 
     return (
         <main className="h-dvh w-full overflow-hidden">
-            <LaptopFrame starChart={starChart} starChartBeta={starChartBeta} tourMode={tourMode}>
+            <LaptopFrame
+                starChart={starChart}
+                starChartBeta={starChartBeta}
+                workloadFeature={initialRundown.workloadFeature}
+                tourMode={tourMode}
+            >
                 <div className="app-header mx-auto flex min-h-full w-full flex-col px-4">
                     <WeeklyPlannerView
                         assignments={assignments}

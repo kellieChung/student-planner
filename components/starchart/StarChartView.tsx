@@ -116,7 +116,7 @@ export default function StarChartView({ onBack, beta = false }: Props) {
     ).length;
 
     const tabs = beta ? (
-        <div role="tablist" aria-label="Star Chart sections" className="mt-6 inline-flex rounded-full border border-[var(--ls-line)] p-1">
+        <div data-tour="chart-tabs" role="tablist" aria-label="Star Chart sections" className="mt-6 inline-flex rounded-full border border-[var(--ls-line)] p-1">
             {TABS.map((item) => (
                 <button
                     key={item.id}

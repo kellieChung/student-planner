@@ -47,6 +47,8 @@ type Props = {
     starChart: StarChartState;
     // Star Chart beta (Galaxy, Nebula, ship name): lib/featureFlags.ts.
     starChartBeta?: boolean;
+    // Workload warnings kill switch, so the tour only mentions the dot when it exists.
+    workloadFeature?: boolean;
     tourMode?: TourMode;
 };
 
@@ -56,17 +58,29 @@ type Transition = { from: ViewMode; to: ViewMode; phase: "out" | "in" } | null;
 const OUT_MS = 320;
 const IN_MS = 420;
 
-export default function LaptopFrame({ children, starChart, starChartBeta = false, tourMode = "normal" }: Props) {
+export default function LaptopFrame({ children, starChart, starChartBeta = false, workloadFeature = false, tourMode = "normal" }: Props) {
     return (
         <StarChartProvider initialState={starChart}>
             <CosmeticsProvider enabled={starChartBeta}>
-                <FrameInner tourMode={tourMode} starChartBeta={starChartBeta}>{children}</FrameInner>
+                <FrameInner tourMode={tourMode} starChartBeta={starChartBeta} workloadFeature={workloadFeature}>
+                    {children}
+                </FrameInner>
             </CosmeticsProvider>
         </StarChartProvider>
     );
 }
 
-function FrameInner({ children, tourMode, starChartBeta }: { children: ReactNode; tourMode: TourMode; starChartBeta: boolean }) {
+function FrameInner({
+    children,
+    tourMode,
+    starChartBeta,
+    workloadFeature,
+}: {
+    children: ReactNode;
+    tourMode: TourMode;
+    starChartBeta: boolean;
+    workloadFeature: boolean;
+}) {
     const { state, markOnboarded } = useStarChart();
     const [view, setView] = useState<ViewMode>("log");
     const [transition, setTransition] = useState<Transition>(null);
@@ -181,7 +195,12 @@ function FrameInner({ children, tourMode, starChartBeta }: { children: ReactNode
                                 )}
                             </div>
 
-                            {showOnboarding && <Onboarding key={tourRun} onFinish={finishOnboarding} />}
+                            {showOnboarding && <Onboarding
+                                    key={tourRun}
+                                    beta={starChartBeta}
+                                    workloadFeature={workloadFeature}
+                                    onFinish={finishOnboarding}
+                                />}
 
                             {tourMode === "preview" && (
                                 <div className="fixed bottom-3 left-3 z-[80] flex max-w-xs flex-col gap-1.5 rounded-2xl border border-[#3a4470] bg-[#10142a] p-3 text-xs text-[#f7f3ec] shadow-2xl">

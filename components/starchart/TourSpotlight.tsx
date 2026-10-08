@@ -252,7 +252,7 @@ export default function TourSpotlight({ steps, finishLabel, onFinish }: Props) {
                     </p>
 
                     <div className="mt-5 flex items-center justify-between gap-3">
-                        <div className="flex gap-1.5" aria-hidden="true">
+                        <div className="flex min-w-0 flex-wrap gap-1.5" aria-hidden="true">
                             {steps.map((item, dotIndex) => (
                                 <span
                                     key={item.id}
