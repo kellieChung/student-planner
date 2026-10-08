@@ -18,7 +18,7 @@ export default function ConstellationFigure({ constellation, charted, igniting, 
     const { stars, edges } = constellation;
 
     return (
-        <svg viewBox="-6 -6 112 112" aria-hidden="true" className={`overflow-visible ${className}`}>
+        <svg viewBox="-6 -6 112 112" aria-hidden="true" className={`ls-figure overflow-visible ${className}`}>
             {edges.map(([from, to], index) => {
                 const lit = charted.has(from) && charted.has(to);
                 return (

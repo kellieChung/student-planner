@@ -3,9 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { COSMETIC_CATALOG } from "@/lib/cosmetics";
 
 // Syncs the CosmeticItem table to lib/cosmetics.ts, keyed on `key`. Safe to
-// re-run: one read, one createMany for new keys, and an update only for rows
-// whose fields changed. Items removed from the catalog are left alone (they
-// may be owned); set them inactive by hand instead.
+// re-run: one read, one createMany for new keys, an update only for rows
+// whose fields changed, and one updateMany that sets items no longer in the
+// catalog inactive (never deleted: they may be owned or equipped; inactive
+// items leave the shop, and their slot is ignored if it no longer exists).
 // Run: npx tsx scripts/seed-cosmetics.ts   (writes the shared database)
 async function main() {
     const existing = await prisma.cosmeticItem.findMany();
@@ -54,7 +55,12 @@ async function main() {
         });
     }
 
-    console.log(`Cosmetics: ${toCreate.length} created, ${toUpdate.length} updated, ${existing.length} already present.`);
+    const catalogKeys = COSMETIC_CATALOG.map((item) => item.key);
+    const retired = existing.some((item) => item.active && !catalogKeys.includes(item.key))
+        ? await prisma.cosmeticItem.updateMany({ where: { key: { notIn: catalogKeys }, active: true }, data: { active: false } })
+        : { count: 0 };
+
+    console.log(`Cosmetics: ${toCreate.length} created, ${toUpdate.length} updated, ${retired.count} retired, ${existing.length} already present.`);
 }
 
 main()

@@ -475,7 +475,7 @@ html[data-theme="light"] .planner-shell [class*="bg-amber-950"] {
 /* Star Chart's optional Day look (switch on the chart; ThemeScript sets
    data-star-chart before paint): a paper chart with ink stars. Scoped to
    .star-chart so the login sky and tour cards stay Night. */
-html[data-theme="light"][data-star-chart="day"] .star-chart {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) {
   --ls-night: #f7f3ec;
   --ls-navy: #fffdf8;
   --ls-navy-raised: #fffdf8;
@@ -489,35 +489,35 @@ html[data-theme="light"][data-star-chart="day"] .star-chart {
   --ls-error: #991b1b;
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-star-lit {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-star-lit {
   fill: var(--ls-ink);
   filter: none;
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-star-dim {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-star-dim {
   fill: var(--ls-ink);
   opacity: 0.35;
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-map-halo {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-map-halo {
   fill: rgb(27 33 64 / 0.08);
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:hover .ls-map-halo,
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:focus-visible .ls-map-halo {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:hover .ls-map-halo,
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:focus-visible .ls-map-halo {
   fill: rgb(138 100 24 / 0.18);
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:hover .ls-star-lit,
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-constellation:focus-visible .ls-star-lit {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:hover .ls-star-lit,
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:focus-visible .ls-star-lit {
   filter: drop-shadow(0 0 2px rgb(27 33 64 / 0.45));
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart .ls-edge-lit {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-edge-lit {
   opacity: 0.8;
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart :is(.ls-map-unlit, .ls-edge-dim) {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) :is(.ls-map-unlit, .ls-edge-dim) {
   stroke: var(--ls-ink-muted);
 }
 
@@ -884,10 +884,12 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
 }
 
 /* ── Nebula cosmetics (Star Chart beta, lib/cosmetics.ts) ──
-   Keyed on the root's data-sky / data-glow / data-lines (the part of the
-   item key after the slot). Appearance only; the default items have no rules.
-   Overlays stay faint so --ls-ivory/--ls-muted text keeps its contrast, and
-   the Day "light chart" keeps its own paper look. */
+   Keyed on the root's data-sky / data-lines (the part of the item key after
+   the slot). Appearance only; the default items have no rules.
+   The first three skies are faint overlays that give way to the Day "light
+   chart". Skies in OWN_PALETTE_SKIES get data-sky-palette: they set the whole
+   --ls-* palette (the base star/line rules read it) and win over Day, which is
+   excluded from them with :not([data-sky-palette]). */
 .star-chart[data-sky="midnight_indigo"] {
   --ls-night: #110e2b;
   --ls-tile: rgb(26 21 61 / 0.6);
@@ -926,46 +928,309 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
   );
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart[data-sky] {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette])[data-sky] {
   background-image: none;
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart[data-sky]::before {
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette])[data-sky]::before {
   display: none;
 }
 
-.star-chart[data-glow="crisp"] .ls-star-lit {
-  fill: #fff4d6;
-  filter: drop-shadow(0 0 1px rgb(255 248 225 / 1));
+/* Shared by the palette skies: halos and glows follow --ls-gold instead of
+   the hard-coded gold. */
+.star-chart[data-sky-palette] .ls-star-lit {
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ls-gold) 80%, transparent));
 }
 
-.star-chart[data-glow="crisp"] .ls-map-halo {
-  fill: rgb(233 196 106 / 0.05);
+.star-chart[data-sky-palette] .ls-map-halo {
+  fill: color-mix(in srgb, var(--ls-gold) 12%, transparent);
 }
 
-.star-chart[data-glow="radiant"] .ls-star-lit {
-  filter: drop-shadow(0 0 6px rgb(233 196 106 / 1));
+.star-chart[data-sky-palette] .ls-constellation:is(:hover, :focus-visible) .ls-map-halo {
+  fill: color-mix(in srgb, var(--ls-gold) 28%, transparent);
 }
 
-.star-chart[data-glow="radiant"] .ls-map-halo {
-  fill: rgb(233 196 106 / 0.22);
-  animation: ls-breathe 5s ease-in-out infinite;
+.star-chart[data-sky-palette] .ls-constellation:is(:hover, :focus-visible) .ls-star-lit {
+  filter: drop-shadow(0 0 6px var(--ls-gold));
 }
 
-@keyframes ls-breathe {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+.star-chart[data-sky-palette]::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
 }
 
-.star-chart[data-glow="ember"] .ls-star-lit {
-  fill: #f4a261;
-  filter: drop-shadow(0 0 4px rgb(231 111 81 / 0.9));
+/* Blueprint: drafting paper with a minor/major grid and a drawing frame. */
+.star-chart[data-sky="blueprint"] {
+  --ls-night: #1d4f91;
+  --ls-navy: #1a4682;
+  --ls-navy-raised: #22579f;
+  --ls-tile: rgb(26 70 130 / 0.75);
+  --ls-line: rgb(255 255 255 / 0.3);
+  --ls-gold: #ffffff;
+  --ls-gold-hover: #dbe9ff;
+  --ls-gold-deep: #bcd3f5;
+  --ls-ivory: #ffffff;
+  --ls-muted: #c9dbf5;
+  --ls-scrim: rgb(8 25 55 / 0.7);
+  background-image:
+    radial-gradient(ellipse at center, transparent 55%, rgb(5 25 60 / 0.45)),
+    linear-gradient(rgb(255 255 255 / 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.2) 1px, transparent 1px),
+    linear-gradient(rgb(255 255 255 / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.08) 1px, transparent 1px);
+  background-size: 100% 100%, 100px 100px, 100px 100px, 20px 20px, 20px 20px;
 }
 
-.star-chart[data-glow="ember"] .ls-map-halo {
-  fill: rgb(231 111 81 / 0.16);
+.star-chart[data-sky="blueprint"]::before {
+  inset: 10px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  outline: 1px solid rgb(255 255 255 / 0.15);
+  outline-offset: 3px;
 }
 
+.star-chart[data-sky="blueprint"] .ls-star-lit {
+  fill: var(--ls-night);
+  stroke: #ffffff;
+  stroke-width: 1.2;
+  filter: none;
+}
+
+.star-chart[data-sky="blueprint"] .ls-edge-lit {
+  opacity: 0.9;
+}
+
+/* Notebook: ruled paper, red margin, punched holes, pencil stars. */
+.star-chart[data-sky="notebook"] {
+  --ls-night: #fbf8ef;
+  --ls-navy: #fffdf6;
+  --ls-navy-raised: #fffdf6;
+  --ls-tile: rgb(255 253 246 / 0.85);
+  --ls-line: rgb(60 90 160 / 0.25);
+  --ls-gold: #2f5fb3;
+  --ls-gold-hover: #244c93;
+  --ls-gold-deep: #1e3f7a;
+  --ls-ivory: #22262f;
+  --ls-muted: #555b6b;
+  --ls-ink: #22262f;
+  --ls-scrim: rgb(34 38 47 / 0.35);
+  --ls-error: #991b1b;
+  background-image:
+    linear-gradient(90deg, transparent 64px, rgb(220 80 80 / 0.55) 64px, rgb(220 80 80 / 0.55) 66px, transparent 66px),
+    repeating-linear-gradient(to bottom, transparent 0 31px, rgb(100 140 210 / 0.3) 31px 32px);
+}
+
+.star-chart[data-sky="notebook"]::before {
+  inset: 0 auto 0 0;
+  width: 44px;
+  background: radial-gradient(circle at 22px 50%, #e6dfcd 8px, rgb(0 0 0 / 0.08) 9px, transparent 10px) 0 0 / 44px 260px repeat-y;
+}
+
+.star-chart[data-sky="notebook"] .ls-star-lit {
+  fill: var(--ls-ivory);
+  filter: none;
+}
+
+.star-chart[data-sky="notebook"] .ls-star-dim {
+  opacity: 0.25;
+}
+
+.star-chart[data-sky="notebook"] .ls-edge-lit {
+  stroke: #3a3f4a;
+  opacity: 0.75;
+}
+
+/* Chalkboard: green slate, chalk dust, a wooden frame. */
+.star-chart[data-sky="chalkboard"] {
+  --ls-night: #1f3a30;
+  --ls-navy: #24443a;
+  --ls-navy-raised: #2a4d42;
+  --ls-tile: rgb(36 68 58 / 0.7);
+  --ls-line: rgb(240 240 230 / 0.2);
+  --ls-gold: #f3e9a8;
+  --ls-gold-hover: #fff6c4;
+  --ls-gold-deep: #c9bd78;
+  --ls-ivory: #f2f1ea;
+  --ls-muted: #b9c8bf;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 40% 25% at 25% 30%, rgb(255 255 255 / 0.06), transparent 70%),
+    radial-gradient(ellipse 35% 20% at 70% 65%, rgb(255 255 255 / 0.05), transparent 70%),
+    radial-gradient(ellipse 50% 15% at 50% 90%, rgb(255 255 255 / 0.04), transparent 70%);
+  box-shadow: inset 0 0 0 10px #6b4a2b, inset 0 0 0 12px #4a321c, inset 0 0 80px rgb(0 0 0 / 0.45);
+}
+
+.star-chart[data-sky="chalkboard"] .ls-star-lit {
+  fill: #f6f5ee;
+  filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.6));
+}
+
+.star-chart[data-sky="chalkboard"] .ls-edge-lit {
+  stroke: #f2f1ea;
+  stroke-width: 1.3;
+  opacity: 0.8;
+}
+
+.star-chart[data-sky="chalkboard"] .ls-figure .ls-edge-lit {
+  filter: var(--ls-sketch);
+}
+
+/* Old Sea Chart: parchment, a compass rose with rhumb lines, sepia ink. */
+.star-chart[data-sky="sea_chart"] {
+  --ls-night: #efe2c4;
+  --ls-navy: #f5ead0;
+  --ls-navy-raised: #f8efd9;
+  --ls-tile: rgb(248 239 217 / 0.8);
+  --ls-line: rgb(92 64 30 / 0.25);
+  --ls-gold: #8b4513;
+  --ls-gold-hover: #6e350d;
+  --ls-gold-deep: #5a2c0b;
+  --ls-ivory: #3b2a17;
+  --ls-muted: #6b5538;
+  --ls-ink: #3b2a17;
+  --ls-ink-muted: #7a6345;
+  --ls-scrim: rgb(59 42 23 / 0.4);
+  --ls-error: #991b1b;
+  background-image:
+    radial-gradient(ellipse at center, transparent 45%, rgb(120 80 30 / 0.35) 100%),
+    radial-gradient(circle at 18% 22%, rgb(150 100 40 / 0.1), transparent 12%),
+    radial-gradient(circle at 72% 12%, rgb(150 100 40 / 0.08), transparent 9%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-50 -50 100 100'%3E%3Cg fill='none' stroke='%235c401e' stroke-opacity='0.45'%3E%3Ccircle r='46'/%3E%3Ccircle r='42'/%3E%3Ccircle r='12'/%3E%3C/g%3E%3Cpolygon fill='%235c401e' fill-opacity='0.18' transform='rotate(45) scale(0.62)' points='0,-46 6,-6 46,0 6,6 0,46 -6,6 -46,0 -6,-6'/%3E%3Cpolygon fill='%235c401e' fill-opacity='0.4' points='0,-46 6,-6 46,0 6,6 0,46 -6,6 -46,0 -6,-6'/%3E%3Cpolygon fill='%23efe2c4' points='0,-46 0,0 -6,-6'/%3E%3Cpolygon fill='%23efe2c4' points='46,0 0,0 6,-6'/%3E%3Cpolygon fill='%23efe2c4' points='0,46 0,0 6,6'/%3E%3Cpolygon fill='%23efe2c4' points='-46,0 0,0 -6,6'/%3E%3C/svg%3E"),
+    repeating-conic-gradient(from 0deg at calc(100% - 150px) calc(100% - 150px), rgb(92 64 30 / 0.14) 0deg 0.3deg, transparent 0.3deg 22.5deg);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 220px 220px, 100% 100%;
+  background-position: 0 0, 0 0, 0 0, calc(100% - 40px) calc(100% - 40px), 0 0;
+  background-repeat: no-repeat;
+}
+
+.star-chart[data-sky="sea_chart"] .ls-star-lit {
+  fill: var(--ls-ivory);
+  filter: none;
+}
+
+.star-chart[data-sky="sea_chart"] .ls-star-dim {
+  opacity: 0.3;
+}
+
+.star-chart[data-sky="sea_chart"] .ls-edge-lit {
+  stroke: #5c401e;
+  opacity: 0.75;
+}
+
+/* Dusk: sunset gradient over a mountain silhouette; stars stay gold. */
+.star-chart[data-sky="dusk"] {
+  --ls-night: #241a3a;
+  --ls-navy: #241a3a;
+  --ls-navy-raised: #2e2148;
+  --ls-tile: rgb(36 26 58 / 0.7);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 160' preserveAspectRatio='none'%3E%3Cpath fill='%232a1a3d' d='M0 160V95l90-38 80 30 120-62 110 54 70-22 130 48 140-70 120 60 90-26 130 40 120-50v141z'/%3E%3Cpath fill='%23140f24' d='M0 160v-40l120-30 100 26 140-46 120 44 150-36 110 30 160-48 140 42 160-24v82z'/%3E%3C/svg%3E"),
+    linear-gradient(to bottom, #15132e 0%, #2c1f4d 40%, #5a2d5c 70%, #93474f 88%, #b8604a 100%);
+  background-size: 100% 160px, 100% 100%;
+  background-position: bottom, 0 0;
+  background-repeat: no-repeat;
+}
+
+/* Radar: phosphor scanlines, range rings and a rotating sweep. */
+.star-chart[data-sky="radar"] {
+  --ls-night: #04110a;
+  --ls-navy: #061a10;
+  --ls-navy-raised: #0a2416;
+  --ls-tile: rgb(6 26 16 / 0.75);
+  --ls-line: rgb(74 222 128 / 0.25);
+  --ls-gold: #4ade80;
+  --ls-gold-hover: #86efac;
+  --ls-gold-deep: #16a34a;
+  --ls-ivory: #d1fae5;
+  --ls-muted: #7fbf9a;
+  background-image:
+    repeating-linear-gradient(to bottom, rgb(74 222 128 / 0.05) 0 1px, transparent 1px 3px),
+    repeating-radial-gradient(circle at 50% 40%, transparent 0 139px, rgb(74 222 128 / 0.12) 139px 140px),
+    linear-gradient(90deg, transparent calc(50% - 0.5px), rgb(74 222 128 / 0.12) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    radial-gradient(ellipse at 50% 40%, transparent 50%, rgb(0 0 0 / 0.55));
+}
+
+.star-chart[data-sky="radar"]::before {
+  left: 50%;
+  top: 40%;
+  width: 300vmax;
+  height: 300vmax;
+  margin: -150vmax 0 0 -150vmax;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgb(74 222 128 / 0.16), transparent 50deg);
+  animation: ls-sweep 9s linear infinite;
+}
+
+@keyframes ls-sweep {
+  to { transform: rotate(360deg); }
+}
+
+/* Synthwave: magenta sky, a striped sun and a neon grid floor. */
+.star-chart[data-sky="synthwave"] {
+  --ls-night: #1a0b2e;
+  --ls-navy: #1f0d38;
+  --ls-navy-raised: #2a1148;
+  --ls-tile: rgb(36 14 60 / 0.82);
+  --ls-line: rgb(255 113 206 / 0.25);
+  --ls-gold: #ff71ce;
+  --ls-gold-hover: #ff9ade;
+  --ls-gold-deep: #c2389b;
+  --ls-ivory: #fdf2ff;
+  --ls-muted: #c9b3e6;
+  background-image: linear-gradient(to bottom, #12062a 0%, #2b0b4a 50%, #6b1a6e calc(100% - 104px), #1a0b2e calc(100% - 104px));
+  isolation: isolate;
+}
+
+.star-chart[data-sky="synthwave"]::before {
+  left: -50%;
+  right: -50%;
+  bottom: 0;
+  height: 300px;
+  z-index: -1;
+  background-color: #1a0b2e;
+  background-image:
+    linear-gradient(rgb(255 113 206 / 0.6) 2px, transparent 2px),
+    linear-gradient(90deg, rgb(255 113 206 / 0.6) 2px, transparent 2px);
+  background-size: 60px 60px;
+  /* 300px tilted 60° under a 600px perspective projects to ~104px tall;
+     the sun's bottom sits on that horizon. */
+  transform: perspective(600px) rotateX(60deg);
+  transform-origin: 50% 100%;
+  box-shadow: 0 -2px 24px rgb(255 113 206 / 0.6);
+  animation: ls-grid-run 3s linear infinite;
+}
+
+.star-chart[data-sky="synthwave"]::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  left: 50%;
+  bottom: 104px;
+  z-index: -1;
+  width: 300px;
+  height: 150px;
+  margin-left: -150px;
+  border-radius: 150px 150px 0 0;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 12px, #4a1260 12px 17px) 0 70px / 100% 80px no-repeat,
+    linear-gradient(to bottom, #ffcf6e, #ff5fa2);
+  box-shadow: 0 0 60px rgb(255 95 162 / 0.45);
+}
+
+@keyframes ls-grid-run {
+  to { background-position: 0 60px; }
+}
+
+.star-chart[data-sky="synthwave"] .ls-star-lit {
+  fill: #fdf2ff;
+  filter: drop-shadow(0 0 4px #ff71ce);
+}
+
+.star-chart[data-sky="synthwave"] .ls-edge-lit {
+  stroke: #22d3ee;
+  opacity: 0.85;
+}
+
+/* Line styles come after the skies so they win where both set a stroke. */
 .star-chart[data-lines="dotted"] .ls-edge-lit:not(.ls-draw) {
   stroke-dasharray: 0.1 3;
   stroke-linecap: round;
@@ -976,15 +1241,45 @@ html[data-theme="light"][data-star-chart="day"] .star-chart[data-sky]::before {
   stroke-dasharray: 4 3;
 }
 
-.star-chart[data-lines="fine_ink"] .ls-edge-lit:not(.ls-draw) {
-  stroke: var(--ls-ivory);
-  stroke-width: 0.5;
-  opacity: 0.75;
+/* Uneven dashes read as hand-drawn in the Galaxy too; the wobble filter
+   only runs on the chart figures (its region is sized to their viewBox). */
+.star-chart[data-lines="sketch"] .ls-edge-lit:not(.ls-draw) {
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-dasharray: 9 1.5 5 1 12 2;
+  opacity: 0.85;
+}
+
+.star-chart[data-lines="sketch"] .ls-figure .ls-edge-lit:not(.ls-draw) {
+  filter: var(--ls-sketch);
+}
+
+.star-chart[data-lines="neon"] .ls-edge-lit:not(.ls-draw) {
+  stroke: #67e8f9;
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 1;
+  filter: drop-shadow(0 0 2px #22d3ee) drop-shadow(0 0 6px rgb(34 211 238 / 0.7));
+}
+
+.star-chart[data-lines="flowing"] .ls-edge-lit:not(.ls-draw) {
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 6 5;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 2px var(--ls-gold));
+  animation: ls-flow 1.8s linear infinite;
+}
+
+@keyframes ls-flow {
+  to { stroke-dashoffset: -11; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .star-chart[data-sky="aurora_wash"]::before,
-  .star-chart[data-glow="radiant"] .ls-map-halo {
+  .star-chart[data-sky="radar"]::before,
+  .star-chart[data-sky="synthwave"]::before,
+  .star-chart[data-lines="flowing"] .ls-edge-lit {
     animation: none;
   }
 }

@@ -25,7 +25,7 @@ import Switch from "@/components/ui/Switch";
 import GalaxyView from "@/components/starchart/GalaxyView";
 import NebulaPanel from "@/components/starchart/NebulaPanel";
 import { useCosmetics } from "@/components/starchart/CosmeticsContext";
-import { cosmeticVariant } from "@/lib/cosmetics";
+import { cosmeticVariant, OWN_PALETTE_SKIES } from "@/lib/cosmetics";
 
 const STAR_CHART_THEME_KEY = "planner_star_chart_theme";
 
@@ -134,9 +134,22 @@ export default function StarChartView({ onBack, beta = false }: Props) {
         <div
             className="sky star-chart relative min-h-full overflow-hidden bg-[var(--ls-night)] text-[var(--ls-ivory)]"
             data-sky={cosmeticVariant(appearance.sky)}
-            data-glow={cosmeticVariant(appearance.glow)}
             data-lines={cosmeticVariant(appearance.lines)}
+            data-sky-palette={OWN_PALETTE_SKIES.has(appearance.sky) ? "" : undefined}
+            // Set inline: a url(#…) written in globals.css resolves against the
+            // bundled stylesheet's URL and finds no filter.
+            style={{ "--ls-sketch": "url(#ls-sketch)" } as React.CSSProperties}
         >
+            {/* Wobble for the Pencil Sketch lines and Chalkboard sky (globals.css).
+                userSpaceOnUse: a horizontal line has a zero-height bounding box,
+                which would hide it under the default region. Sized to the
+                figures' -6..106 viewBox. */}
+            <svg width="0" height="0" className="absolute" aria-hidden="true">
+                <filter id="ls-sketch" filterUnits="userSpaceOnUse" x="-20" y="-20" width="152" height="152">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.1" numOctaves="2" seed="7" />
+                    <feDisplacementMap in="SourceGraphic" scale="4" />
+                </filter>
+            </svg>
             <StarField count={160} seed={11} />
 
             <div className="relative mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
