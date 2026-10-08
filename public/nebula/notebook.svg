@@ -18,7 +18,7 @@
 
   <rect width="1200" height="800" filter="url(#paper)" />
 
-  <g filter="url(#pen)" opacity="0.4">
+  <g filter="url(#pen)" opacity="0.32">
     <g fill="none" stroke="#2546a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <!-- Rocket with a flame. -->
       <g transform="translate(1010 120) rotate(25)">

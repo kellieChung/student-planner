@@ -23,7 +23,7 @@
     </filter>
   </defs>
 
-  <g filter="url(#chalk)" opacity="0.32">
+  <g filter="url(#chalk)" opacity="0.25">
     <g fill="#fff" font-family="'Chalkboard SE', 'Segoe Print', 'Bradley Hand', cursive">
       <text x="70" y="110" font-size="34" transform="rotate(-4 70 110)">T² ∝ a³</text>
       <text x="430" y="80" font-size="26" transform="rotate(2 430 80)">F = G m₁m₂ / r²</text>
