@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <!-- Chalkboard sky art (app/globals.css). Star math and doodles in chalk:
+       a bent stroke, a fainter stray second pass, then coarse grain, the same
+       recipe as the Pencil Sketch lines. Kept inside a margin so the tile
+       repeats without cutting anything. -->
+  <defs>
+    <filter id="chalk" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="800">
+      <feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="1" seed="2" result="bend" />
+      <feDisplacementMap in="SourceGraphic" in2="bend" scale="3" xChannelSelector="R" yChannelSelector="G" result="stroke" />
+      <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="1" seed="11" result="stray" />
+      <feDisplacementMap in="SourceGraphic" in2="stray" scale="7" xChannelSelector="G" yChannelSelector="R" result="secondPass" />
+      <feColorMatrix in="secondPass" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.35 0" result="faintPass" />
+      <feGaussianBlur in="stroke" stdDeviation="2.5" result="dustRaw" />
+      <feColorMatrix in="dustRaw" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.35 0" result="dust" />
+      <feMerge result="strokes">
+        <feMergeNode in="dust" />
+        <feMergeNode in="faintPass" />
+        <feMergeNode in="stroke" />
+      </feMerge>
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="1" seed="4" result="noise" />
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.6 2.1" result="grain" />
+      <feComposite in="strokes" in2="grain" operator="in" />
+    </filter>
+  </defs>
+
+  <g filter="url(#chalk)" opacity="0.32">
+    <g fill="#fff" font-family="'Chalkboard SE', 'Segoe Print', 'Bradley Hand', cursive">
+      <text x="70" y="110" font-size="34" transform="rotate(-4 70 110)">T² ∝ a³</text>
+      <text x="430" y="80" font-size="26" transform="rotate(2 430 80)">F = G m₁m₂ / r²</text>
+      <text x="860" y="130" font-size="30" transform="rotate(-3 860 130)">v = H₀ d</text>
+      <text x="110" y="330" font-size="24" transform="rotate(3 110 330)">m − M = 5 log₁₀(d / 10)</text>
+      <text x="640" y="300" font-size="28" transform="rotate(-2 640 300)">λ = c / f</text>
+      <text x="930" y="420" font-size="24" transform="rotate(4 930 420)">E = mc²</text>
+      <text x="60" y="610" font-size="28" transform="rotate(-3 60 610)">d ≈ 4.2 ly</text>
+      <text x="460" y="560" font-size="22" transform="rotate(2 460 560)">θ = 2 arctan(r / 2d)</text>
+      <text x="900" y="660" font-size="30" transform="rotate(-4 900 660)">π ≈ 3.14159</text>
+      <text x="370" y="720" font-size="24" transform="rotate(1 370 720)">L = 4πR²σT⁴</text>
+    </g>
+    <g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Orbit with a sun and a planet. -->
+      <ellipse cx="330" cy="200" rx="95" ry="42" transform="rotate(-12 330 200)" />
+      <circle cx="310" cy="204" r="9" />
+      <circle cx="418" cy="182" r="5" />
+      <!-- Parallax triangle with its angle. -->
+      <path d="M720 470 L860 470 L790 360 Z" />
+      <path d="M782 382 q8 -6 16 0" />
+      <!-- Axes and a parabola. -->
+      <path d="M160 480 v-110 M160 480 h150" />
+      <path d="M175 375 q60 190 120 0" />
+      <!-- Boxed answer with an arrow pointing at it. -->
+      <rect x="600" y="640" width="170" height="58" rx="4" />
+      <path d="M560 610 q20 15 34 35 m-10 -2 l10 2 l-2 -10" />
+      <!-- Underlines. -->
+      <path d="M70 122 q60 8 120 -2" />
+      <path d="M900 672 q70 6 150 -4" />
+    </g>
+  </g>
+</svg>

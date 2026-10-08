@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <!-- Blueprint sky art (app/globals.css): faint drafting drawings over
+       mottled, uneven paper like an old print. Lines get a light grain so
+       they read as printed, not vector-perfect. -->
+  <defs>
+    <filter id="mottle" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="800">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006" numOctaves="3" seed="9" stitchTiles="stitch" result="blotch" />
+      <feColorMatrix in="blotch" type="matrix" values="0 0 0 0 0.02  0 0 0 0 0.12  0 0 0 0 0.3  0 0 0 -0.9 0.55" result="dark" />
+      <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="1" stitchTiles="stitch" result="fine" />
+      <feColorMatrix in="fine" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.07 0" result="speck" />
+      <feMerge>
+        <feMergeNode in="dark" />
+        <feMergeNode in="speck" />
+      </feMerge>
+    </filter>
+    <filter id="print" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="800">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="1" seed="6" result="bend" />
+      <feDisplacementMap in="SourceGraphic" in2="bend" scale="1.5" xChannelSelector="R" yChannelSelector="G" result="stroke" />
+      <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="1" seed="2" result="noise" />
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.8" result="grain" />
+      <feComposite in="stroke" in2="grain" operator="in" />
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 1 L10 5 L0 9" fill="none" stroke="#fff" stroke-width="1.5" />
+    </marker>
+  </defs>
+
+  <rect width="1200" height="800" filter="url(#mottle)" />
+
+  <g filter="url(#print)" opacity="0.26" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round">
+    <!-- Refractor telescope, side elevation, with dimensions. -->
+    <g transform="translate(110 150) rotate(-18)">
+      <rect x="0" y="0" width="300" height="40" />
+      <rect x="-22" y="8" width="22" height="24" />
+      <rect x="300" y="-6" width="40" height="52" />
+      <path d="M150 0 v-14 M150 40 v14" stroke-dasharray="6 4" />
+      <path d="M0 -30 H340" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+      <path d="M0 -36 v12 M340 -36 v12" />
+    </g>
+    <path d="M200 220 L150 380 M200 220 L250 380 M200 220 L205 385" />
+    <circle cx="200" cy="220" r="8" />
+
+    <!-- Gear with a centre mark. -->
+    <g transform="translate(900 180)">
+      <path d="M0 -70 L10 -70 L12 -56 L26 -52 L36 -63 L44 -56 L36 -45 L44 -33 L58 -36 L61 -26 L48 -20 L50 -6 L64 -2 L64 8 L50 10 L46 24 L57 33 L50 41 L39 33 L27 41 L30 55 L20 58 L14 45 L0 47 L-4 61 L-14 59 L-12 45 L-26 40 L-36 50 L-43 43 L-34 32 L-41 19 L-55 21 L-57 11 L-44 6 L-44 -8 L-57 -13 L-54 -23 L-41 -20 L-33 -32 L-42 -42 L-34 -49 L-24 -40 L-11 -46 L-12 -60 Z" />
+      <circle r="22" />
+      <path d="M-34 0 H34 M0 -34 V34" stroke-dasharray="10 4 2 4" />
+    </g>
+
+    <!-- Rocket cross-section with station lines. -->
+    <g transform="translate(560 430)">
+      <path d="M0 -150 C30 -110 34 -40 30 60 L-30 60 C-34 -40 -30 -110 0 -150 Z" />
+      <path d="M-30 60 L-56 110 L-30 96 M30 60 L56 110 L30 96" />
+      <path d="M-31 -60 H31 M-31 0 H31" stroke-dasharray="4 4" />
+      <circle cx="0" cy="-90" r="12" />
+      <path d="M50 -150 H90 M50 60 H90" />
+      <path d="M80 -150 V60" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+    </g>
+
+    <!-- Sectioned lens with hatching. -->
+    <g transform="translate(300 560)">
+      <circle r="60" />
+      <circle r="60" stroke-dasharray="3 6" transform="scale(1.25)" />
+      <path d="M-42 -42 L42 42 M-60 0 L0 60 M0 -60 L60 0 M-52 -28 L28 52 M-28 -52 L52 28" />
+    </g>
+
+    <!-- Title block. -->
+    <g transform="translate(840 600)">
+      <rect width="320" height="140" />
+      <path d="M0 50 H320 M0 95 H320 M200 50 V140" />
+    </g>
+    <g fill="#fff" stroke="none" font-family="'Courier New', Courier, monospace" font-size="13" letter-spacing="1">
+      <text x="856" y="632">LODESTAR OBSERVATORY</text>
+      <text x="856" y="678">SCALE 1 : 100</text>
+      <text x="1074" y="678">SHEET 1</text>
+      <text x="856" y="724">DRAWN: NAVIGATOR</text>
+      <text x="1074" y="724">REV. B</text>
+      <text x="200" y="80" transform="rotate(-18 200 80)">1200 mm</text>
+      <text x="660" y="330">2.4 m</text>
+      <text x="380" y="650">LENS — SECTION A-A</text>
+      <text x="840" y="290">GEAR 48T</text>
+    </g>
+  </g>
+</svg>

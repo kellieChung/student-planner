@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <!-- Notebook sky art (app/globals.css): ballpoint doodles in the margins of
+       lined paper, over a paper-fibre texture. The pen filter bends strokes
+       slightly and lets the ink skip a little, like a real ballpoint. -->
+  <defs>
+    <filter id="paper" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="800">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="5" stitchTiles="stitch" />
+      <feColorMatrix type="matrix" values="0 0 0 0 0.45  0 0 0 0 0.38  0 0 0 0 0.25  0 0 0 0.09 0" />
+    </filter>
+    <filter id="pen" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="800">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="1" seed="8" result="bend" />
+      <feDisplacementMap in="SourceGraphic" in2="bend" scale="2.5" xChannelSelector="R" yChannelSelector="G" result="stroke" />
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="1" seed="3" result="noise" />
+      <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.4 1.75" result="skip" />
+      <feComposite in="stroke" in2="skip" operator="in" />
+    </filter>
+  </defs>
+
+  <rect width="1200" height="800" filter="url(#paper)" />
+
+  <g filter="url(#pen)" opacity="0.4">
+    <g fill="none" stroke="#2546a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Rocket with a flame. -->
+      <g transform="translate(1010 120) rotate(25)">
+        <path d="M0 -60 C18 -40 20 0 14 30 L-14 30 C-20 0 -18 -40 0 -60 Z" />
+        <circle cx="0" cy="-18" r="7" />
+        <path d="M-14 12 L-28 36 L-14 30 M14 12 L28 36 L14 30" />
+        <path d="M-8 32 L-4 50 L0 38 L4 52 L8 32" />
+      </g>
+      <!-- Ringed planet. -->
+      <circle cx="210" cy="140" r="34" />
+      <ellipse cx="210" cy="140" rx="62" ry="16" transform="rotate(-18 210 140)" />
+      <path d="M190 128 q10 -6 22 -2" />
+      <!-- Crescent moon with a sleepy face. -->
+      <path d="M560 70 a48 48 0 1 0 40 82 a38 38 0 1 1 -40 -82 Z" />
+      <path d="M556 120 q5 4 10 0 M552 140 q8 6 16 0" />
+      <!-- Spiral. -->
+      <path d="M880 470 c0 -10 16 -10 16 2 c0 18 -30 18 -30 -4 c0 -28 44 -28 44 6 c0 36 -58 36 -58 -8 c0 -44 72 -44 72 10" />
+      <!-- Shooting star with a trail. -->
+      <path d="M380 470 l7 15 16 2 -12 11 3 16 -14 -8 -14 8 3 -16 -12 -11 16 -2 Z" />
+      <path d="M362 488 h-70 M364 500 h-56 M368 512 h-40" />
+      <!-- Little stars scattered around. -->
+      <path d="M760 250 l4 9 10 1 -8 6 3 10 -9 -5 -9 5 3 -10 -8 -6 10 -1 Z" />
+      <path d="M120 420 l4 9 10 1 -8 6 3 10 -9 -5 -9 5 3 -10 -8 -6 10 -1 Z" />
+      <path d="M1100 600 l4 9 10 1 -8 6 3 10 -9 -5 -9 5 3 -10 -8 -6 10 -1 Z" />
+      <!-- Cube in perspective. -->
+      <path d="M640 600 h60 v60 h-60 Z M660 580 h60 v60 h-60 Z M640 600 l20 -20 M700 600 l20 -20 M700 660 l20 -20 M640 660 l20 -20" />
+      <!-- Hearts. -->
+      <path d="M300 700 c-10 -14 -30 -4 -20 12 l20 18 20 -18 c10 -16 -10 -26 -20 -12 Z" />
+      <path d="M1080 760 c-6 -9 -19 -3 -13 8 l13 11 13 -11 c6 -11 -7 -17 -13 -8 Z" />
+      <!-- Wavy underline and an arrow to a note. -->
+      <path d="M90 600 q15 -8 30 0 t30 0 t30 0 t30 0 t30 0" />
+      <path d="M470 330 q60 -40 120 -10 m-14 -12 l14 12 -18 4" />
+    </g>
+    <g fill="#2546a8" font-family="'Bradley Hand', 'Segoe Print', 'Chalkboard SE', cursive">
+      <text x="90" y="585" font-size="26" transform="rotate(-2 90 585)">study for test fri!!</text>
+      <text x="610" y="335" font-size="24" transform="rotate(3 610 335)">Orion = 7 stars</text>
+      <text x="940" y="270" font-size="22" transform="rotate(-4 940 270)">Polaris ↑ north</text>
+      <text x="180" y="230" font-size="20" transform="rotate(-6 180 230)">saturn :)</text>
+    </g>
+  </g>
+</svg>
