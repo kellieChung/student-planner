@@ -88,11 +88,11 @@ function checkNeighbours() {
     }
 }
 
-// Rough pace: what each region costs to fully chart, against ~50
+// Rough pace: what each region costs to fully chart, against ~62
 // Starlight per school day and ~180 school days a year.
 function printPacing() {
     console.log("\nPACING (Starlight)");
-    const perDay = 50;
+    const perDay = 62;
     let total = 0;
     let bounties = 0;
 
