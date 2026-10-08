@@ -5,3 +5,9 @@
 export function workloadWarningsEnabled(): boolean {
     return process.env.WORKLOAD_WARNINGS !== "off";
 }
+
+// Star Chart beta (Galaxy + Nebula tabs, cosmetics, ship name). On unless
+// STAR_CHART_BETA=off.
+export function starChartBetaEnabled(): boolean {
+    return process.env.STAR_CHART_BETA !== "off";
+}

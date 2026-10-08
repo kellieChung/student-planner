@@ -883,6 +883,133 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
   animation: ls-celebrate 400ms ease-out both;
 }
 
+/* ── Nebula cosmetics (Star Chart beta, lib/cosmetics.ts) ──
+   Keyed on the root's data-sky / data-glow / data-lines (the part of the
+   item key after the slot). Appearance only; the default items have no rules.
+   Overlays stay faint so --ls-ivory/--ls-muted text keeps its contrast, and
+   the Day "light chart" keeps its own paper look. */
+.star-chart[data-sky="midnight_indigo"] {
+  --ls-night: #110e2b;
+  --ls-tile: rgb(26 21 61 / 0.6);
+  background-image: radial-gradient(ellipse 120% 60% at 50% 0%, rgb(60 46 130 / 0.45), transparent 70%);
+}
+
+.star-chart[data-sky="aurora_wash"] {
+  background-image:
+    radial-gradient(ellipse 90% 35% at 30% 100%, rgb(45 212 191 / 0.13), transparent 70%),
+    radial-gradient(ellipse 70% 30% at 75% 100%, rgb(74 222 128 / 0.1), transparent 70%);
+}
+
+.star-chart[data-sky="aurora_wash"]::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 45%;
+  pointer-events: none;
+  background: linear-gradient(to top, rgb(52 211 153 / 0.09), transparent);
+  animation: ls-aurora 14s ease-in-out infinite alternate;
+}
+
+@keyframes ls-aurora {
+  from { opacity: 0.4; }
+  to { opacity: 1; }
+}
+
+.star-chart[data-sky="milky_way"] {
+  background-image: linear-gradient(
+    115deg,
+    transparent 28%,
+    rgb(214 205 255 / 0.05) 40%,
+    rgb(255 240 214 / 0.09) 50%,
+    rgb(214 205 255 / 0.05) 60%,
+    transparent 72%
+  );
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart[data-sky] {
+  background-image: none;
+}
+
+html[data-theme="light"][data-star-chart="day"] .star-chart[data-sky]::before {
+  display: none;
+}
+
+.star-chart[data-glow="crisp"] .ls-star-lit {
+  fill: #fff4d6;
+  filter: drop-shadow(0 0 1px rgb(255 248 225 / 1));
+}
+
+.star-chart[data-glow="crisp"] .ls-map-halo {
+  fill: rgb(233 196 106 / 0.05);
+}
+
+.star-chart[data-glow="radiant"] .ls-star-lit {
+  filter: drop-shadow(0 0 6px rgb(233 196 106 / 1));
+}
+
+.star-chart[data-glow="radiant"] .ls-map-halo {
+  fill: rgb(233 196 106 / 0.22);
+  animation: ls-breathe 5s ease-in-out infinite;
+}
+
+@keyframes ls-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.star-chart[data-glow="ember"] .ls-star-lit {
+  fill: #f4a261;
+  filter: drop-shadow(0 0 4px rgb(231 111 81 / 0.9));
+}
+
+.star-chart[data-glow="ember"] .ls-map-halo {
+  fill: rgb(231 111 81 / 0.16);
+}
+
+.star-chart[data-lines="dotted"] .ls-edge-lit:not(.ls-draw) {
+  stroke-dasharray: 0.1 3;
+  stroke-linecap: round;
+  stroke-width: 1.6;
+}
+
+.star-chart[data-lines="dashed"] .ls-edge-lit:not(.ls-draw) {
+  stroke-dasharray: 4 3;
+}
+
+.star-chart[data-lines="fine_ink"] .ls-edge-lit:not(.ls-draw) {
+  stroke: var(--ls-ivory);
+  stroke-width: 0.5;
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star-chart[data-sky="aurora_wash"]::before,
+  .star-chart[data-glow="radiant"] .ls-map-halo {
+    animation: none;
+  }
+}
+
+/* Galaxy view: twinkles pause while the tab is hidden. */
+.ls-galaxy[data-paused="true"] .ls-twinkle,
+.ls-galaxy[data-paused="true"] .ls-map-halo {
+  animation-play-state: paused;
+}
+
+.ls-galaxy-node:focus-visible {
+  outline: none;
+}
+
+.ls-galaxy-node:focus-visible .ls-galaxy-focus {
+  stroke: var(--ls-gold);
+  stroke-width: 1.5;
+  opacity: 1;
+}
+
+.ls-galaxy-outline .ls-map-unlit {
+  stroke-dasharray: 1 2;
+  opacity: 0.35;
+}
+
 /* Ship's Log ↔ Star Chart: pull back to the sky / push in to the console
    (gamificationSystem.md). Only applied while animating — a transform left
    on the frame would re-anchor every position:fixed modal to it. */

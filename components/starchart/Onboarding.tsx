@@ -203,7 +203,8 @@ export default function Onboarding({ onFinish }: Props) {
                         Pick a constellation and chart its stars one at a time. <strong>Orion</strong>, the{" "}
                         <strong>Big Dipper</strong>, and <strong>Cassiopeia</strong> are open now. New constellations
                         appear as your lifetime Starlight grows, and finishing a whole one is a moment worth earning.
-                        Chart far enough and you can unlock a new region, starting with the Southern Sky.
+                        Chart whole sets for <strong>Legends</strong> bounties, and go far enough to unlock new regions,
+                        starting with the Southern Sky, until you&apos;ve charted all 88.
                     </p>
                 ),
                 illustration: (

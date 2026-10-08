@@ -2295,7 +2295,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     return (
         <>
         <div className = "theme-surface planner-shell w-full flex-1 bg-slate-950 text-white p-6 rounded-2xl border border-slate-800">
-            <h1 data-tour="ships-log" className="mb-4 pr-28 text-3xl">Ship&apos;s Log</h1>
+            <h1 data-tour="ships-log" className={`${starChart.state.shipName ? "mb-1" : "mb-4"} pr-28 text-3xl`}>Ship&apos;s Log</h1>
+            {starChart.state.shipName && (
+                <p className="mb-4 text-sm text-[var(--muted)]">Aboard the {starChart.state.shipName}</p>
+            )}
 
             {(customizationsLoadFailed || customTasksLoadFailed) && (
                 <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border)] px-4 py-3 text-sm text-[var(--status-overdue-text)]">

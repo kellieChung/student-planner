@@ -10,6 +10,7 @@ import MusicWindow from "@/components/os/MusicWindow";
 import CoursesWindow from "@/components/os/CoursesWindow";
 import { FloatingLayerContext } from "@/components/os/FloatingLayerContext";
 import { StarChartProvider, useStarChart } from "@/components/starchart/StarChartContext";
+import { CosmeticsProvider } from "@/components/starchart/CosmeticsContext";
 import StarChartView from "@/components/starchart/StarChartView";
 import Onboarding from "@/components/starchart/Onboarding";
 import { StarIcon } from "@/components/brand/Icons";
@@ -44,6 +45,8 @@ export type TourMode = "normal" | "preview";
 type Props = {
     children: ReactNode;
     starChart: StarChartState;
+    // Star Chart beta (Galaxy, Nebula, ship name): lib/featureFlags.ts.
+    starChartBeta?: boolean;
     tourMode?: TourMode;
 };
 
@@ -53,15 +56,17 @@ type Transition = { from: ViewMode; to: ViewMode; phase: "out" | "in" } | null;
 const OUT_MS = 320;
 const IN_MS = 420;
 
-export default function LaptopFrame({ children, starChart, tourMode = "normal" }: Props) {
+export default function LaptopFrame({ children, starChart, starChartBeta = false, tourMode = "normal" }: Props) {
     return (
         <StarChartProvider initialState={starChart}>
-            <FrameInner tourMode={tourMode}>{children}</FrameInner>
+            <CosmeticsProvider enabled={starChartBeta}>
+                <FrameInner tourMode={tourMode} starChartBeta={starChartBeta}>{children}</FrameInner>
+            </CosmeticsProvider>
         </StarChartProvider>
     );
 }
 
-function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: TourMode }) {
+function FrameInner({ children, tourMode, starChartBeta }: { children: ReactNode; tourMode: TourMode; starChartBeta: boolean }) {
     const { state, markOnboarded } = useStarChart();
     const [view, setView] = useState<ViewMode>("log");
     const [transition, setTransition] = useState<Transition>(null);
@@ -171,7 +176,7 @@ function FrameInner({ children, tourMode }: { children: ReactNode; tourMode: Tou
 
                                 {view === "chart" && (
                                     <div className="absolute inset-0 overflow-y-auto">
-                                        <StarChartView onBack={openLog} />
+                                        <StarChartView onBack={openLog} beta={starChartBeta} />
                                     </div>
                                 )}
                             </div>

@@ -5,6 +5,7 @@ import { chartedIndexes, Constellation, starPrice } from "@/lib/constellations";
 import { useStarChart } from "@/components/starchart/StarChartContext";
 import ConstellationFigure from "@/components/starchart/ConstellationFigure";
 import { StarIcon } from "@/components/brand/Icons";
+import type { Reward } from "@/lib/legends";
 
 type Props = {
     constellation: Constellation;
@@ -18,6 +19,7 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
     const [error, setError] = useState<string | null>(null);
     const [igniting, setIgniting] = useState<Set<number>>(new Set());
     const [celebrating, setCelebrating] = useState(false);
+    const [rewards, setRewards] = useState<Reward[]>([]);
 
     const charted = chartedIndexes(constellation.id, state.charted);
     const complete = charted.size >= constellation.stars.length;
@@ -48,6 +50,7 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
 
         setIgniting(new Set([selected]));
         setSelected(null);
+        setRewards(result.claimed);
 
         if (result.completedConstellation) {
             setCelebrating(true);
@@ -129,11 +132,13 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
                             {constellation.commonName && (
                                 <p className="text-sm text-[var(--ls-muted)]">{constellation.commonName}, lit by your own work.</p>
                             )}
+                            <FieldNote fact={constellation.fact} />
                         </div>
                     ) : complete ? (
-                        <p className="text-center text-sm text-[var(--ls-muted)]">
-                            Every star in {constellation.name} is charted.
-                        </p>
+                        <div className="text-center">
+                            <p className="text-sm text-[var(--ls-muted)]">Every star in {constellation.name} is charted.</p>
+                            <FieldNote fact={constellation.fact} />
+                        </div>
                     ) : selectedStar ? (
                         <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
@@ -164,7 +169,37 @@ export default function ConstellationDetail({ constellation, onClose }: Props) {
 
                     {error && <p className="mt-2 text-xs text-[var(--ls-error)]">{error}</p>}
                 </div>
+
+                {rewards.length > 0 && (
+                    <ul className="ls-celebrate mt-3 space-y-2" aria-live="polite">
+                        {rewards.map((reward) => (
+                            <li
+                                key={reward.id}
+                                className="flex items-center justify-between gap-3 rounded-2xl border border-[var(--ls-gold)]/50 px-4 py-3"
+                            >
+                                <span>
+                                    <span className="ls-eyebrow block text-[var(--ls-gold)]">
+                                        {reward.kind === "legend" ? "Legend complete" : "Region lit"}
+                                    </span>
+                                    <span className="font-[family-name:var(--font-spectral)] text-lg text-[var(--ls-ivory)]">{reward.name}</span>
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--ls-gold)]">
+                                    <StarIcon size={14} />+{reward.bounty}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
         </div>
+    );
+}
+
+function FieldNote({ fact }: { fact: string }) {
+    return (
+        <p className="mx-auto mt-3 max-w-md text-left text-sm text-[var(--ls-ivory)]">
+            <span className="ls-eyebrow mr-2 text-[var(--ls-gold)]">Field note</span>
+            {fact}
+        </p>
     );
 }

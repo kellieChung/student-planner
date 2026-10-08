@@ -2,19 +2,30 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { ChartedStarRef } from "@/lib/constellations";
-import { chartStar, getStarChart, unlockRegion, type ChartStarResult, type StarChartState, type UnlockRegionResult } from "@/lib/starChart";
+import {
+    chartStar,
+    claimRewards,
+    getStarChart,
+    unlockRegion,
+    type ChartStarResult,
+    type ClaimRewardsResult,
+    type StarChartState,
+    type UnlockRegionResult,
+} from "@/lib/starChart";
 
 type StarChartContextValue = {
     state: StarChartState;
     // Applies the balance the server returned from an XP award
     // (POST /api/gamification) — Starlight is only ever earned there.
     applyBalance: (balance: { starlight: number; lifetimeStarlight: number }) => void;
+    setShipName: (shipName: string | null) => void;
     chart: (constellationId: string, starIndex: number) => Promise<ChartStarResult>;
     unlockRegion: (regionId: string) => Promise<UnlockRegionResult>;
+    claimRewards: () => Promise<ClaimRewardsResult>;
     markOnboarded: (onboardedAt: string | null) => void;
 };
 
-const EMPTY_STATE: StarChartState = { starlight: 0, lifetimeStarlight: 0, onboardedAt: null, unlockedRegions: [], charted: [] };
+const EMPTY_STATE: StarChartState = { starlight: 0, lifetimeStarlight: 0, onboardedAt: null, unlockedRegions: [], claimedRewards: [], shipName: null, charted: [] };
 
 // Shared between the Ship's Log (which earns Starlight on task completion and
 // shows the balance in the taskbar) and the Star Chart (which spends it) —
@@ -22,8 +33,10 @@ const EMPTY_STATE: StarChartState = { starlight: 0, lifetimeStarlight: 0, onboar
 const StarChartContext = createContext<StarChartContextValue>({
     state: EMPTY_STATE,
     applyBalance: () => {},
+    setShipName: () => {},
     chart: async () => ({ ok: false, error: "The star chart isn't available here." }),
     unlockRegion: async () => ({ ok: false, error: "The star chart isn't available here." }),
+    claimRewards: async () => ({ ok: false, error: "The star chart isn't available here." }),
     markOnboarded: () => {},
 });
 
@@ -45,6 +58,10 @@ export function StarChartProvider({ initialState, children }: Props) {
         setState((current) => ({ ...current, starlight: balance.starlight, lifetimeStarlight: balance.lifetimeStarlight }));
     }, []);
 
+    const setShipName = useCallback((shipName: string | null) => {
+        setState((current) => ({ ...current, shipName }));
+    }, []);
+
     const chart = useCallback(async (constellationId: string, starIndex: number) => {
         const result = await chartStar(constellationId, starIndex);
 
@@ -54,6 +71,7 @@ export function StarChartProvider({ initialState, children }: Props) {
                 ...current,
                 starlight: result.starlight,
                 lifetimeStarlight: result.lifetimeStarlight,
+                claimedRewards: result.claimedRewards,
                 charted,
             }));
         } else {
@@ -91,13 +109,28 @@ export function StarChartProvider({ initialState, children }: Props) {
         return result;
     }, []);
 
+    const claim = useCallback(async () => {
+        const result = await claimRewards();
+
+        if (result.ok) {
+            setState((current) => ({
+                ...current,
+                starlight: result.starlight,
+                lifetimeStarlight: result.lifetimeStarlight,
+                claimedRewards: result.claimedRewards,
+            }));
+        }
+
+        return result;
+    }, []);
+
     const markOnboarded = useCallback((onboardedAt: string | null) => {
         setState((current) => ({ ...current, onboardedAt }));
     }, []);
 
     const value = useMemo(
-        () => ({ state, applyBalance, chart, unlockRegion: unlock, markOnboarded }),
-        [state, applyBalance, chart, unlock, markOnboarded]
+        () => ({ state, applyBalance, setShipName, chart, unlockRegion: unlock, claimRewards: claim, markOnboarded }),
+        [state, applyBalance, setShipName, chart, unlock, claim, markOnboarded]
     );
 
     return <StarChartContext.Provider value={value}>{children}</StarChartContext.Provider>;

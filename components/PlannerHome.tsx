@@ -6,7 +6,8 @@ import { isDevAccountEmail } from "@/lib/devAccounts";
 import LaptopFrame, { type TourMode } from "@/components/os/LaptopFrame";
 import { StarChartState } from "@/lib/starChart";
 import { normalizeTaskLabelParts } from "@/lib/taskLabel";
-import { workloadWarningsEnabled } from "@/lib/featureFlags";
+import { starChartBetaEnabled, workloadWarningsEnabled } from "@/lib/featureFlags";
+import { countQueries } from "@/lib/queryCount";
 
 type Props = {
     user: { id: string; name: string | null; email: string | null };
@@ -15,7 +16,7 @@ type Props = {
 
 // The signed-in planner (Ship's Log + Star Chart), shared by "/" and the
 // /dev/onboarding tour replay page so both render exactly the same app.
-export default async function PlannerHome({ user, tourMode = "normal" }: Props) {
+export default countQueries("PlannerHome", async function PlannerHome({ user, tourMode = "normal" }: Props) {
     const assignments: Assignment[] = (await getAllAssignments(user.id)).map((assignment) => ({
         ...assignment,
         due: assignment.due ?? "",
@@ -25,17 +26,20 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
         prisma.starChart.findUnique({ where: { userId: user.id } }),
         prisma.chartedStar.findMany({
             where: { userId: user.id },
-            select: { constellationId: true, starIndex: true },
+            select: { constellationId: true, starIndex: true, chartedAt: true },
             orderBy: { chartedAt: "asc" },
         }),
     ]);
 
+    const starChartBeta = starChartBetaEnabled();
     const starChart: StarChartState = {
         starlight: starChartRow?.starlight ?? 0,
         lifetimeStarlight: starChartRow?.lifetimeStarlight ?? 0,
         onboardedAt: starChartRow?.onboardedAt?.toISOString() ?? null,
         unlockedRegions: starChartRow?.unlockedRegions ?? [],
-        charted: chartedStars,
+        claimedRewards: starChartRow?.claimedRewards ?? [],
+        shipName: starChartBeta ? starChartRow?.shipName ?? null : null,
+        charted: chartedStars.map((star) => ({ ...star, chartedAt: star.chartedAt.toISOString() })),
     };
 
     // AutoTaskCreation.md's Rundown screen: "is there anything new since
@@ -78,7 +82,7 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
 
     return (
         <main className="h-dvh w-full overflow-hidden">
-            <LaptopFrame starChart={starChart} tourMode={tourMode}>
+            <LaptopFrame starChart={starChart} starChartBeta={starChartBeta} tourMode={tourMode}>
                 <div className="app-header mx-auto flex min-h-full w-full flex-col px-4">
                     <WeeklyPlannerView
                         assignments={assignments}
@@ -91,4 +95,4 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
             </LaptopFrame>
         </main>
     );
-}
+});

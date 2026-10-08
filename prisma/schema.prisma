@@ -37,6 +37,9 @@ model User {
   aiTaskEvents                  AiTaskEvent[]
   starChart                     StarChart?
   chartedStars                  ChartedStar[]
+  starlightLedger               StarlightLedger[]
+  cosmetics                     UserCosmetic[]
+  cosmeticLoadout               CosmeticLoadout[]
 }
 
 model Account {
@@ -473,6 +476,10 @@ model StarChart {
   onboardedAt          DateTime?
   // Bought expansion regions (lib/constellations.ts SKY_REGIONS); "home" is implicit.
   unlockedRegions      String[]  @default([])
+  // Paid Legend/region bounties (lib/legends.ts ids), so each pays once.
+  claimedRewards       String[]  @default([])
+  // Shown only to the student (Ship's Log header). First set is free.
+  shipName             String?
   updatedAt            DateTime  @updatedAt
 }
 
@@ -487,6 +494,66 @@ model ChartedStar {
 
   @@unique([userId, constellationId, starIndex])
   @@index([userId])
+}
+
+// Audit log of Starlight moves made by the newer flows (bounties, region and
+// cosmetic purchases). Balances still live on StarChart; task awards and
+// star charting don't write here, so this is not a complete history.
+model StarlightLedger {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  delta     Int
+  // e.g. "legend:summer-triangle", "region:zodiac", "region-unlock:zodiac"
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// Nebula cosmetics (Star Chart beta): appearance only, bought once with
+// Starlight. Seeded by scripts/seed-cosmetics.ts from lib/cosmetics.ts;
+// cost-0 items are free defaults owned by everyone without rows.
+model CosmeticItem {
+  id                String            @id @default(cuid())
+  // Stable id, e.g. "sky.midnight_indigo"; rendering is keyed on it.
+  key               String            @unique
+  slot              String
+  name              String
+  description       String
+  cost              Int
+  sortOrder         Int               @default(0)
+  active            Boolean           @default(true)
+  minLifetime       Int?
+  minConstellations Int?
+  availableFrom     DateTime?
+  availableUntil    DateTime?
+  owners            UserCosmetic[]
+  loadouts          CosmeticLoadout[]
+}
+
+model UserCosmetic {
+  id         String       @id @default(cuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       CosmeticItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  acquiredAt DateTime     @default(now())
+
+  @@unique([userId, itemId])
+  @@index([userId])
+}
+
+// One equipped item per slot; no row means the slot's free default.
+model CosmeticLoadout {
+  id     String       @id @default(cuid())
+  userId String
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slot   String
+  itemId String
+  item   CosmeticItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, slot])
 }
 
 model MusicPlaylist {
