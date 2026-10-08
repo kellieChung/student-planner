@@ -64,22 +64,16 @@ export const COSMETIC_CATALOG: CosmeticCatalogItem[] = [
 ];
 // ---------------------------------------------------------------------------
 
-// Skies that set the whole chart palette (stars, lines, text) and so keep
-// their look in the Day "light chart" (app/globals.css, data-sky-palette).
-export const OWN_PALETTE_SKIES: ReadonlySet<string> = new Set([
-    "sky.notebook",
-    "sky.chalkboard",
-    "sky.blueprint",
-    "sky.sea_chart",
-    "sky.dusk",
-    "sky.radar",
-    "sky.synthwave",
-]);
-
 export const DEFAULT_LOADOUT: Record<CosmeticSlot, string> = {
     sky: "sky.deep_navy",
     lines: "lines.classic",
 };
+
+// Every bought sky sets its own palette (app/globals.css data-sky-palette)
+// and keeps it in the Day light chart, which only re-skins the default.
+export function skyHasOwnPalette(skyKey: string): boolean {
+    return skyKey !== DEFAULT_LOADOUT.sky;
+}
 
 export function isCosmeticSlot(value: unknown): value is CosmeticSlot {
     return value === "sky" || value === "lines";

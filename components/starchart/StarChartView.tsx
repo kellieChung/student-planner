@@ -25,7 +25,7 @@ import Switch from "@/components/ui/Switch";
 import GalaxyView from "@/components/starchart/GalaxyView";
 import NebulaPanel from "@/components/starchart/NebulaPanel";
 import { useCosmetics } from "@/components/starchart/CosmeticsContext";
-import { cosmeticVariant, OWN_PALETTE_SKIES } from "@/lib/cosmetics";
+import { COSMETIC_CATALOG, cosmeticVariant, skyHasOwnPalette } from "@/lib/cosmetics";
 
 const STAR_CHART_THEME_KEY = "planner_star_chart_theme";
 
@@ -54,6 +54,9 @@ export default function StarChartView({ onBack, beta = false }: Props) {
         setTabState(next);
     };
 
+    // The cosmetics provider outlives the chart, so closing it drops them too.
+    useEffect(() => () => setPreview({}), [setPreview]);
+
     useEffect(() => {
         if (beta) ensureLoaded();
     }, [beta, ensureLoaded]);
@@ -78,6 +81,10 @@ export default function StarChartView({ onBack, beta = false }: Props) {
     const [lightChart, setLightChart] = useState(
         () => typeof document !== "undefined" && document.documentElement.dataset.starChart === "day"
     );
+
+    const themedSky = skyHasOwnPalette(appearance.sky)
+        ? COSMETIC_CATALOG.find((item) => item.key === appearance.sky)?.name ?? "This sky"
+        : null;
 
     const updateLightChart = (next: boolean) => {
         setLightChart(next);
@@ -135,7 +142,7 @@ export default function StarChartView({ onBack, beta = false }: Props) {
             className="sky star-chart relative min-h-full overflow-hidden bg-[var(--ls-night)] text-[var(--ls-ivory)]"
             data-sky={cosmeticVariant(appearance.sky)}
             data-lines={cosmeticVariant(appearance.lines)}
-            data-sky-palette={OWN_PALETTE_SKIES.has(appearance.sky) ? "" : undefined}
+            data-sky-palette={skyHasOwnPalette(appearance.sky) ? "" : undefined}
             // Set inline: a url(#…) written in globals.css resolves against the
             // bundled stylesheet's URL and finds no filter.
             style={{ "--ls-sketch": "url(#ls-sketch)" } as React.CSSProperties}
@@ -163,12 +170,18 @@ export default function StarChartView({ onBack, beta = false }: Props) {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                        {isDayTheme && (
+                        {isDayTheme && (themedSky ? (
+                            // A bought sky keeps its own colours in Day mode; the
+                            // saved light-chart choice returns with Deep Navy.
+                            <p className="max-w-56 text-xs text-[var(--ls-muted)]">
+                                {themedSky} sets its own colours. Switch to Deep Navy for the light chart.
+                            </p>
+                        ) : (
                             <label className="flex items-center gap-2 text-sm font-semibold text-[var(--ls-muted)]">
                                 Light chart
                                 <Switch checked={lightChart} onChange={updateLightChart} ariaLabel="Light chart" />
                             </label>
-                        )}
+                        ))}
                         <button
                             type="button"
                             onClick={onBack}

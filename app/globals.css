@@ -472,6 +472,31 @@ html[data-theme="light"] .planner-shell [class*="bg-amber-950"] {
   --ls-error: #fca5a5;
 }
 
+/* What stars, halos and lit lines look like. Nebula skies and line styles
+   (further down) override these on their own .star-chart element; being
+   inherited, the nearest .sky wins, so a shop thumbnail nested inside the
+   chart shows its own item, not the chart's. Declared on every .sky so a
+   nested one starts from the defaults. */
+:is(.landing, .sky) {
+  --star-fill: var(--ls-gold);
+  --star-stroke: none;
+  --star-stroke-width: 0;
+  --star-filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ls-gold) 80%, transparent));
+  --star-filter-hover: drop-shadow(0 0 8px var(--ls-gold));
+  --star-dim-fill: var(--ls-ivory);
+  --star-dim-opacity: 0.45;
+  --halo: color-mix(in srgb, var(--ls-gold) 12%, transparent);
+  --halo-hover: color-mix(in srgb, var(--ls-gold) 28%, transparent);
+  --edge-stroke: var(--ls-gold);
+  --edge-width: 1;
+  --edge-opacity: 0.55;
+  --edge-dash: none;
+  --edge-cap: butt;
+  --edge-filter: none;
+  --edge-figure-filter: var(--edge-filter);
+  --edge-animation: none;
+}
+
 /* Star Chart's optional Day look (switch on the chart; ThemeScript sets
    data-star-chart before paint): a paper chart with ink stars. Scoped to
    .star-chart so the login sky and tour cards stay Night. */
@@ -489,36 +514,15 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-error: #991b1b;
 }
 
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-star-lit {
-  fill: var(--ls-ink);
-  filter: none;
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-star-dim {
-  fill: var(--ls-ink);
-  opacity: 0.35;
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-map-halo {
-  fill: rgb(27 33 64 / 0.08);
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:hover .ls-map-halo,
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:focus-visible .ls-map-halo {
-  fill: rgb(138 100 24 / 0.18);
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:hover .ls-star-lit,
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-constellation:focus-visible .ls-star-lit {
-  filter: drop-shadow(0 0 2px rgb(27 33 64 / 0.45));
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) .ls-edge-lit {
-  opacity: 0.8;
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) :is(.ls-map-unlit, .ls-edge-dim) {
-  stroke: var(--ls-ink-muted);
+html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette]) {
+  --star-fill: var(--ls-ink);
+  --star-dim-fill: var(--ls-ink);
+  --star-dim-opacity: 0.35;
+  --star-filter: none;
+  --star-filter-hover: drop-shadow(0 0 2px rgb(27 33 64 / 0.45));
+  --halo: rgb(27 33 64 / 0.08);
+  --halo-hover: rgb(138 100 24 / 0.18);
+  --edge-opacity: 0.8;
 }
 
 .landing {
@@ -583,13 +587,15 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
 
 /* Stars */
 :is(.landing, .sky) .ls-star-lit {
-  fill: var(--ls-gold);
-  filter: drop-shadow(0 0 3px rgb(233 196 106 / 0.8));
+  fill: var(--star-fill);
+  stroke: var(--star-stroke);
+  stroke-width: var(--star-stroke-width);
+  filter: var(--star-filter);
 }
 
 :is(.landing, .sky) .ls-star-dim {
-  fill: var(--ls-ivory);
-  opacity: 0.45;
+  fill: var(--star-dim-fill);
+  opacity: var(--star-dim-opacity);
 }
 
 :is(.landing, .sky) .ls-map-unlit {
@@ -600,9 +606,21 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
 }
 
 :is(.landing, .sky) .ls-edge-lit {
-  stroke: var(--ls-gold);
-  stroke-width: 1;
-  opacity: 0.55;
+  stroke: var(--edge-stroke);
+  stroke-width: var(--edge-width);
+  opacity: var(--edge-opacity);
+}
+
+/* Not while the "just charted" draw-in animation runs. */
+:is(.landing, .sky) .ls-edge-lit:not(.ls-draw) {
+  stroke-dasharray: var(--edge-dash);
+  stroke-linecap: var(--edge-cap);
+  filter: var(--edge-filter);
+  animation: var(--edge-animation);
+}
+
+:is(.landing, .sky) .ls-figure .ls-edge-lit:not(.ls-draw) {
+  filter: var(--edge-figure-filter);
 }
 
 :is(.landing, .sky) .ls-edge-dim {
@@ -613,7 +631,7 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
 }
 
 :is(.landing, .sky) .ls-map-halo {
-  fill: rgb(233 196 106 / 0.12);
+  fill: var(--halo);
   transition: fill 300ms ease;
 }
 
@@ -627,17 +645,17 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
 
 :is(.landing, .sky) .ls-constellation:hover .ls-map-halo,
 :is(.landing, .sky) .ls-constellation:focus-visible .ls-map-halo {
-  fill: rgb(233 196 106 / 0.28);
+  fill: var(--halo-hover);
 }
 
 :is(.landing, .sky) .ls-constellation:hover .ls-star-lit,
 :is(.landing, .sky) .ls-constellation:focus-visible .ls-star-lit {
-  filter: drop-shadow(0 0 8px rgb(233 196 106 / 1));
+  filter: var(--star-filter-hover);
 }
 
 :is(.landing, .sky) .ls-constellation:hover .ls-edge-lit,
 :is(.landing, .sky) .ls-constellation:focus-visible .ls-edge-lit {
-  opacity: 0.9;
+  opacity: calc(var(--edge-opacity) + 0.35);
 }
 
 :is(.landing, .sky) .ls-constellation {
@@ -884,80 +902,96 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
 }
 
 /* ── Nebula cosmetics (Star Chart beta, lib/cosmetics.ts) ──
-   Keyed on the root's data-sky / data-lines (the part of the item key after
-   the slot). Appearance only; the default items have no rules.
-   The first three skies are faint overlays that give way to the Day "light
-   chart". Skies in OWN_PALETTE_SKIES get data-sky-palette: they set the whole
-   --ls-* palette (the base star/line rules read it) and win over Day, which is
-   excluded from them with :not([data-sky-palette]). */
-.star-chart[data-sky="midnight_indigo"] {
-  --ls-night: #110e2b;
-  --ls-tile: rgb(26 21 61 / 0.6);
-  background-image: radial-gradient(ellipse 120% 60% at 50% 0%, rgb(60 46 130 / 0.45), transparent 70%);
-}
-
-.star-chart[data-sky="aurora_wash"] {
-  background-image:
-    radial-gradient(ellipse 90% 35% at 30% 100%, rgb(45 212 191 / 0.13), transparent 70%),
-    radial-gradient(ellipse 70% 30% at 75% 100%, rgb(74 222 128 / 0.1), transparent 70%);
-}
-
-.star-chart[data-sky="aurora_wash"]::before {
-  content: "";
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 45%;
-  pointer-events: none;
-  background: linear-gradient(to top, rgb(52 211 153 / 0.09), transparent);
-  animation: ls-aurora 14s ease-in-out infinite alternate;
-}
-
-@keyframes ls-aurora {
-  from { opacity: 0.4; }
-  to { opacity: 1; }
-}
-
-.star-chart[data-sky="milky_way"] {
-  background-image: linear-gradient(
-    115deg,
-    transparent 28%,
-    rgb(214 205 255 / 0.05) 40%,
-    rgb(255 240 214 / 0.09) 50%,
-    rgb(214 205 255 / 0.05) 60%,
-    transparent 72%
-  );
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette])[data-sky] {
-  background-image: none;
-}
-
-html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palette])[data-sky]::before {
-  display: none;
-}
-
-/* Shared by the palette skies: halos and glows follow --ls-gold instead of
-   the hard-coded gold. */
-.star-chart[data-sky-palette] .ls-star-lit {
-  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ls-gold) 80%, transparent));
-}
-
-.star-chart[data-sky-palette] .ls-map-halo {
-  fill: color-mix(in srgb, var(--ls-gold) 12%, transparent);
-}
-
-.star-chart[data-sky-palette] .ls-constellation:is(:hover, :focus-visible) .ls-map-halo {
-  fill: color-mix(in srgb, var(--ls-gold) 28%, transparent);
-}
-
-.star-chart[data-sky-palette] .ls-constellation:is(:hover, :focus-visible) .ls-star-lit {
-  filter: drop-shadow(0 0 6px var(--ls-gold));
-}
-
+   Keyed on a .star-chart's data-sky / data-lines (the part of the item key
+   after the slot). Every rule sets variables or paints the element itself,
+   never a descendant, so shop thumbnails (nested .star-chart elements) show
+   their own item. Every sky but the free Deep Navy gets data-sky-palette:
+   it sets its whole --ls-* palette and keeps it in the Day light chart,
+   which only re-skins Deep Navy. */
 .star-chart[data-sky-palette]::before {
   content: "";
   position: absolute;
   pointer-events: none;
+}
+
+/* Midnight Indigo: violet night with magenta and blue nebula clouds. */
+.star-chart[data-sky="midnight_indigo"] {
+  --ls-night: #120b2e;
+  --ls-navy: #1a1240;
+  --ls-navy-raised: #231852;
+  --ls-tile: rgb(30 20 70 / 0.6);
+  --ls-line: rgb(196 181 253 / 0.22);
+  --ls-gold: #d8b4fe;
+  --ls-gold-hover: #e9d5ff;
+  --ls-gold-deep: #a78bfa;
+  --ls-muted: #bdb3dd;
+  background-image:
+    radial-gradient(ellipse 55% 40% at 18% 22%, rgb(168 85 247 / 0.3), transparent 70%),
+    radial-gradient(ellipse 50% 45% at 82% 58%, rgb(59 130 246 / 0.24), transparent 70%),
+    radial-gradient(ellipse 45% 30% at 50% 100%, rgb(236 72 153 / 0.2), transparent 70%);
+}
+
+/* Aurora Wash: green curtains drifting across the top of the sky. */
+.star-chart[data-sky="aurora_wash"] {
+  --ls-night: #07141c;
+  --ls-navy: #0b1d27;
+  --ls-navy-raised: #102833;
+  --ls-tile: rgb(11 29 39 / 0.65);
+  --ls-line: rgb(94 234 212 / 0.22);
+  --ls-gold: #5eead4;
+  --ls-gold-hover: #99f6e4;
+  --ls-gold-deep: #14b8a6;
+  --ls-muted: #a7c7c4;
+  background-image:
+    radial-gradient(ellipse 80% 35% at 50% 12%, rgb(52 211 153 / 0.2), transparent 70%),
+    radial-gradient(ellipse 50% 25% at 25% 22%, rgb(167 139 250 / 0.14), transparent 70%);
+}
+
+.star-chart[data-sky="aurora_wash"]::before {
+  inset: 0 -15% auto;
+  height: 60%;
+  background: repeating-linear-gradient(
+    90deg,
+    rgb(52 211 153 / 0) 0,
+    rgb(52 211 153 / 0.22) 28px,
+    rgb(45 212 191 / 0.08) 44px,
+    rgb(52 211 153 / 0) 70px
+  );
+  mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 45%, transparent);
+  filter: blur(5px);
+  transform: skewX(-14deg);
+  animation: ls-aurora 16s ease-in-out infinite alternate;
+}
+
+@keyframes ls-aurora {
+  from { translate: -4% 0; opacity: 0.55; }
+  to { translate: 4% 0; opacity: 1; }
+}
+
+/* Milky Way Band: a bright galactic band with a dust lane and grain. */
+.star-chart[data-sky="milky_way"] {
+  --ls-night: #0c0f22;
+  --ls-tile: rgb(16 20 42 / 0.65);
+  --star-fill: #fff1d6;
+  --star-filter: drop-shadow(0 0 3px rgb(255 241 214 / 0.85));
+  --halo: rgb(255 241 214 / 0.14);
+  --halo-hover: rgb(255 241 214 / 0.3);
+  background-image:
+    linear-gradient(115deg, transparent 46%, rgb(12 15 34 / 0.6) 49.5%, rgb(12 15 34 / 0.6) 50.5%, transparent 54%),
+    linear-gradient(
+      115deg,
+      transparent 20%,
+      rgb(190 180 255 / 0.1) 34%,
+      rgb(255 236 210 / 0.3) 50%,
+      rgb(190 180 255 / 0.1) 66%,
+      transparent 80%
+    );
+}
+
+.star-chart[data-sky="milky_way"]::before {
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 0.95  0 0 0 0 0.88  0 0 0 9 -6.2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)'/%3E%3C/svg%3E");
+  mask-image: linear-gradient(115deg, transparent 28%, #000 44%, #000 56%, transparent 72%);
 }
 
 /* Blueprint: drafting paper with a minor/major grid and a drawing frame. */
@@ -973,6 +1007,11 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-ivory: #ffffff;
   --ls-muted: #c9dbf5;
   --ls-scrim: rgb(8 25 55 / 0.7);
+  --star-fill: var(--ls-night);
+  --star-stroke: #ffffff;
+  --star-stroke-width: 1.2;
+  --star-filter: none;
+  --edge-opacity: 0.9;
   background-image:
     radial-gradient(ellipse at center, transparent 55%, rgb(5 25 60 / 0.45)),
     linear-gradient(rgb(255 255 255 / 0.2) 1px, transparent 1px),
@@ -987,17 +1026,6 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   border: 1px solid rgb(255 255 255 / 0.35);
   outline: 1px solid rgb(255 255 255 / 0.15);
   outline-offset: 3px;
-}
-
-.star-chart[data-sky="blueprint"] .ls-star-lit {
-  fill: var(--ls-night);
-  stroke: #ffffff;
-  stroke-width: 1.2;
-  filter: none;
-}
-
-.star-chart[data-sky="blueprint"] .ls-edge-lit {
-  opacity: 0.9;
 }
 
 /* Notebook: ruled paper, red margin, punched holes, pencil stars. */
@@ -1015,6 +1043,11 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-ink: #22262f;
   --ls-scrim: rgb(34 38 47 / 0.35);
   --ls-error: #991b1b;
+  --star-fill: var(--ls-ivory);
+  --star-filter: none;
+  --star-dim-opacity: 0.25;
+  --edge-stroke: #3a3f4a;
+  --edge-opacity: 0.75;
   background-image:
     linear-gradient(90deg, transparent 64px, rgb(220 80 80 / 0.55) 64px, rgb(220 80 80 / 0.55) 66px, transparent 66px),
     repeating-linear-gradient(to bottom, transparent 0 31px, rgb(100 140 210 / 0.3) 31px 32px);
@@ -1024,20 +1057,6 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   inset: 0 auto 0 0;
   width: 44px;
   background: radial-gradient(circle at 22px 50%, #e6dfcd 8px, rgb(0 0 0 / 0.08) 9px, transparent 10px) 0 0 / 44px 260px repeat-y;
-}
-
-.star-chart[data-sky="notebook"] .ls-star-lit {
-  fill: var(--ls-ivory);
-  filter: none;
-}
-
-.star-chart[data-sky="notebook"] .ls-star-dim {
-  opacity: 0.25;
-}
-
-.star-chart[data-sky="notebook"] .ls-edge-lit {
-  stroke: #3a3f4a;
-  opacity: 0.75;
 }
 
 /* Chalkboard: green slate, chalk dust, a wooden frame. */
@@ -1052,27 +1071,18 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-gold-deep: #c9bd78;
   --ls-ivory: #f2f1ea;
   --ls-muted: #b9c8bf;
+  --star-fill: #f6f5ee;
+  --star-filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.6));
+  --edge-stroke: #f2f1ea;
+  --edge-width: 1.3;
+  --edge-opacity: 0.8;
+  --edge-figure-filter: var(--ls-sketch);
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"),
     radial-gradient(ellipse 40% 25% at 25% 30%, rgb(255 255 255 / 0.06), transparent 70%),
     radial-gradient(ellipse 35% 20% at 70% 65%, rgb(255 255 255 / 0.05), transparent 70%),
     radial-gradient(ellipse 50% 15% at 50% 90%, rgb(255 255 255 / 0.04), transparent 70%);
   box-shadow: inset 0 0 0 10px #6b4a2b, inset 0 0 0 12px #4a321c, inset 0 0 80px rgb(0 0 0 / 0.45);
-}
-
-.star-chart[data-sky="chalkboard"] .ls-star-lit {
-  fill: #f6f5ee;
-  filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.6));
-}
-
-.star-chart[data-sky="chalkboard"] .ls-edge-lit {
-  stroke: #f2f1ea;
-  stroke-width: 1.3;
-  opacity: 0.8;
-}
-
-.star-chart[data-sky="chalkboard"] .ls-figure .ls-edge-lit {
-  filter: var(--ls-sketch);
 }
 
 /* Old Sea Chart: parchment, a compass rose with rhumb lines, sepia ink. */
@@ -1091,6 +1101,11 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-ink-muted: #7a6345;
   --ls-scrim: rgb(59 42 23 / 0.4);
   --ls-error: #991b1b;
+  --star-fill: var(--ls-ivory);
+  --star-filter: none;
+  --star-dim-opacity: 0.3;
+  --edge-stroke: #5c401e;
+  --edge-opacity: 0.75;
   background-image:
     radial-gradient(ellipse at center, transparent 45%, rgb(120 80 30 / 0.35) 100%),
     radial-gradient(circle at 18% 22%, rgb(150 100 40 / 0.1), transparent 12%),
@@ -1100,20 +1115,6 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   background-size: 100% 100%, 100% 100%, 100% 100%, 220px 220px, 100% 100%;
   background-position: 0 0, 0 0, 0 0, calc(100% - 40px) calc(100% - 40px), 0 0;
   background-repeat: no-repeat;
-}
-
-.star-chart[data-sky="sea_chart"] .ls-star-lit {
-  fill: var(--ls-ivory);
-  filter: none;
-}
-
-.star-chart[data-sky="sea_chart"] .ls-star-dim {
-  opacity: 0.3;
-}
-
-.star-chart[data-sky="sea_chart"] .ls-edge-lit {
-  stroke: #5c401e;
-  opacity: 0.75;
 }
 
 /* Dusk: sunset gradient over a mountain silhouette; stars stay gold. */
@@ -1142,6 +1143,7 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-gold-deep: #16a34a;
   --ls-ivory: #d1fae5;
   --ls-muted: #7fbf9a;
+  --edge-opacity: 0.7;
   background-image:
     repeating-linear-gradient(to bottom, rgb(74 222 128 / 0.05) 0 1px, transparent 1px 3px),
     repeating-radial-gradient(circle at 50% 40%, transparent 0 139px, rgb(74 222 128 / 0.12) 139px 140px),
@@ -1176,6 +1178,10 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   --ls-gold-deep: #c2389b;
   --ls-ivory: #fdf2ff;
   --ls-muted: #c9b3e6;
+  --star-fill: #fdf2ff;
+  --star-filter: drop-shadow(0 0 4px #ff71ce);
+  --edge-stroke: #22d3ee;
+  --edge-opacity: 0.85;
   background-image: linear-gradient(to bottom, #12062a 0%, #2b0b4a 50%, #6b1a6e calc(100% - 104px), #1a0b2e calc(100% - 104px));
   isolation: isolate;
 }
@@ -1220,55 +1226,44 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
   to { background-position: 0 60px; }
 }
 
-.star-chart[data-sky="synthwave"] .ls-star-lit {
-  fill: #fdf2ff;
-  filter: drop-shadow(0 0 4px #ff71ce);
+/* Line styles come after the skies so their colour wins where both set
+   one. Pencil Sketch's wobble filter only runs on the chart figures (its
+   region is sized to their viewBox); uneven dashes carry it in the Galaxy. */
+.star-chart[data-lines="dotted"] {
+  --edge-dash: 0.1 3;
+  --edge-cap: round;
+  --edge-width: 1.6;
 }
 
-.star-chart[data-sky="synthwave"] .ls-edge-lit {
-  stroke: #22d3ee;
-  opacity: 0.85;
+.star-chart[data-lines="dashed"] {
+  --edge-dash: 4 3;
 }
 
-/* Line styles come after the skies so they win where both set a stroke. */
-.star-chart[data-lines="dotted"] .ls-edge-lit:not(.ls-draw) {
-  stroke-dasharray: 0.1 3;
-  stroke-linecap: round;
-  stroke-width: 1.6;
+.star-chart[data-lines="sketch"] {
+  --edge-width: 1.4;
+  --edge-cap: round;
+  --edge-dash: 9 1.5 5 1 12 2;
+  --edge-opacity: 0.85;
+  --edge-figure-filter: var(--ls-sketch);
 }
 
-.star-chart[data-lines="dashed"] .ls-edge-lit:not(.ls-draw) {
-  stroke-dasharray: 4 3;
+.star-chart[data-lines="neon"] {
+  --edge-stroke: #67e8f9;
+  --edge-width: 2;
+  --edge-cap: round;
+  --edge-opacity: 1;
+  --edge-filter: drop-shadow(0 0 2px #22d3ee) drop-shadow(0 0 6px rgb(34 211 238 / 0.7));
+  --edge-figure-filter: var(--edge-filter);
 }
 
-/* Uneven dashes read as hand-drawn in the Galaxy too; the wobble filter
-   only runs on the chart figures (its region is sized to their viewBox). */
-.star-chart[data-lines="sketch"] .ls-edge-lit:not(.ls-draw) {
-  stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-dasharray: 9 1.5 5 1 12 2;
-  opacity: 0.85;
-}
-
-.star-chart[data-lines="sketch"] .ls-figure .ls-edge-lit:not(.ls-draw) {
-  filter: var(--ls-sketch);
-}
-
-.star-chart[data-lines="neon"] .ls-edge-lit:not(.ls-draw) {
-  stroke: #67e8f9;
-  stroke-width: 2;
-  stroke-linecap: round;
-  opacity: 1;
-  filter: drop-shadow(0 0 2px #22d3ee) drop-shadow(0 0 6px rgb(34 211 238 / 0.7));
-}
-
-.star-chart[data-lines="flowing"] .ls-edge-lit:not(.ls-draw) {
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-dasharray: 6 5;
-  opacity: 0.95;
-  filter: drop-shadow(0 0 2px var(--ls-gold));
-  animation: ls-flow 1.8s linear infinite;
+.star-chart[data-lines="flowing"] {
+  --edge-width: 1.6;
+  --edge-cap: round;
+  --edge-dash: 6 5;
+  --edge-opacity: 0.95;
+  --edge-filter: drop-shadow(0 0 2px var(--ls-gold));
+  --edge-figure-filter: var(--edge-filter);
+  --edge-animation: ls-flow 1.8s linear infinite;
 }
 
 @keyframes ls-flow {
@@ -1278,9 +1273,12 @@ html[data-theme="light"][data-star-chart="day"] .star-chart:not([data-sky-palett
 @media (prefers-reduced-motion: reduce) {
   .star-chart[data-sky="aurora_wash"]::before,
   .star-chart[data-sky="radar"]::before,
-  .star-chart[data-sky="synthwave"]::before,
-  .star-chart[data-lines="flowing"] .ls-edge-lit {
+  .star-chart[data-sky="synthwave"]::before {
     animation: none;
+  }
+
+  .star-chart[data-lines="flowing"] {
+    --edge-animation: none;
   }
 }
 
