@@ -147,14 +147,26 @@ export default function StarChartView({ onBack, beta = false }: Props) {
             // bundled stylesheet's URL and finds no filter.
             style={{ "--ls-sketch": "url(#ls-sketch)" } as React.CSSProperties}
         >
-            {/* Wobble for the Pencil Sketch lines and Chalkboard sky (globals.css).
+            {/* Hand-drawn look for the Pencil Sketch lines (globals.css): a
+                gently bent stroke, a fainter second pass that strays further,
+                both masked by fine grain like graphite on paper.
                 userSpaceOnUse: a horizontal line has a zero-height bounding box,
                 which would hide it under the default region. Sized to the
                 figures' -6..106 viewBox. */}
             <svg width="0" height="0" className="absolute" aria-hidden="true">
                 <filter id="ls-sketch" filterUnits="userSpaceOnUse" x="-20" y="-20" width="152" height="152">
-                    <feTurbulence type="fractalNoise" baseFrequency="0.1" numOctaves="2" seed="7" />
-                    <feDisplacementMap in="SourceGraphic" scale="4" />
+                    <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="1" seed="2" result="bend" />
+                    <feDisplacementMap in="SourceGraphic" in2="bend" scale="2.5" xChannelSelector="R" yChannelSelector="G" result="stroke" />
+                    <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="1" seed="11" result="stray" />
+                    <feDisplacementMap in="SourceGraphic" in2="stray" scale="7" xChannelSelector="G" yChannelSelector="R" result="secondPass" />
+                    <feColorMatrix in="secondPass" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.45 0" result="faintPass" />
+                    <feMerge result="strokes">
+                        <feMergeNode in="faintPass" />
+                        <feMergeNode in="stroke" />
+                    </feMerge>
+                    <feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="4" result="noise" />
+                    <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -2.2 1.9" result="grain" />
+                    <feComposite in="strokes" in2="grain" operator="in" />
                 </filter>
             </svg>
             <StarField count={160} seed={11} />

@@ -46,7 +46,7 @@ export const COSMETIC_CATALOG: CosmeticCatalogItem[] = [
     { key: "sky.deep_navy", slot: "sky", name: "Deep Navy", description: "The original night sky.", cost: 0, sortOrder: 0 },
     { key: "sky.midnight_indigo", slot: "sky", name: "Midnight Indigo", description: "A deeper, violet-tinged night.", cost: 150, sortOrder: 1 },
     { key: "sky.notebook", slot: "sky", name: "Notebook", description: "Lined paper with a red margin, stars in pencil.", cost: 250, sortOrder: 2 },
-    { key: "sky.chalkboard", slot: "sky", name: "Chalkboard", description: "Green slate and dusty chalk lines.", cost: 300, sortOrder: 3 },
+    { key: "sky.chalkboard", slot: "sky", name: "Chalkboard", description: "Green slate scribbled with star math and doodles.", cost: 300, sortOrder: 3 },
     { key: "sky.blueprint", slot: "sky", name: "Blueprint", description: "Cobalt drafting paper with a white grid.", cost: 350, sortOrder: 4 },
     { key: "sky.aurora_wash", slot: "sky", name: "Aurora Wash", description: "A faint green and teal shimmer low on the horizon.", cost: 400, sortOrder: 5 },
     { key: "sky.sea_chart", slot: "sky", name: "Old Sea Chart", description: "Aged parchment, a compass rose and sepia ink.", cost: 450, sortOrder: 6 },
@@ -58,7 +58,7 @@ export const COSMETIC_CATALOG: CosmeticCatalogItem[] = [
     { key: "lines.classic", slot: "lines", name: "Classic", description: "The original solid gold lines.", cost: 0, sortOrder: 0 },
     { key: "lines.dotted", slot: "lines", name: "Dotted", description: "A trail of fine dots.", cost: 120, sortOrder: 1 },
     { key: "lines.dashed", slot: "lines", name: "Dashed Chart", description: "Navigator's dashes, like an old sea chart.", cost: 200, sortOrder: 2 },
-    { key: "lines.sketch", slot: "lines", name: "Pencil Sketch", description: "Wobbly, hand-drawn strokes.", cost: 200, sortOrder: 3 },
+    { key: "lines.sketch", slot: "lines", name: "Pencil Sketch", description: "Grainy graphite strokes, drawn twice by hand.", cost: 200, sortOrder: 3 },
     { key: "lines.neon", slot: "lines", name: "Neon", description: "Thick cyan tubes that glow.", cost: 300, sortOrder: 4 },
     { key: "lines.flowing", slot: "lines", name: "Flowing Light", description: "Light that travels slowly along each line.", cost: 400, sortOrder: 5 },
 ];

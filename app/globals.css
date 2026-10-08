@@ -1059,7 +1059,9 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
   background: radial-gradient(circle at 22px 50%, #e6dfcd 8px, rgb(0 0 0 / 0.08) 9px, transparent 10px) 0 0 / 44px 260px repeat-y;
 }
 
-/* Chalkboard: green slate, chalk dust, a wooden frame. */
+/* Chalkboard: green slate with star math and doodles in chalk, chalk dust,
+   a wooden frame. Lines keep the equipped style (in chalk white); Pencil
+   Sketch on top makes them chalky. */
 .star-chart[data-sky="chalkboard"] {
   --ls-night: #1f3a30;
   --ls-navy: #24443a;
@@ -1076,8 +1078,8 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
   --edge-stroke: #f2f1ea;
   --edge-width: 1.3;
   --edge-opacity: 0.8;
-  --edge-figure-filter: var(--ls-sketch);
   background-image:
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='760'%3E%3Cg fill='%23fff' font-family=%22'Chalkboard SE','Segoe Print','Bradley Hand',cursive%22%3E%3Ctext x='70' y='110' font-size='34' transform='rotate(-4 70 110)' fill-opacity='0.2'%3ET%C2%B2 %E2%88%9D a%C2%B3%3C/text%3E%3Ctext x='430' y='80' font-size='26' transform='rotate(2 430 80)' fill-opacity='0.15'%3EF = G m%E2%82%81m%E2%82%82 / r%C2%B2%3C/text%3E%3Ctext x='860' y='130' font-size='30' transform='rotate(-3 860 130)' fill-opacity='0.18'%3Ev = H%E2%82%80 d%3C/text%3E%3Ctext x='120' y='330' font-size='24' transform='rotate(3 120 330)' fill-opacity='0.14'%3Em %E2%88%92 M = 5 log%E2%82%81%E2%82%80(d / 10)%3C/text%3E%3Ctext x='640' y='300' font-size='28' transform='rotate(-2 640 300)' fill-opacity='0.16'%3E%CE%BB = c / f%3C/text%3E%3Ctext x='930' y='420' font-size='24' transform='rotate(4 930 420)' fill-opacity='0.14'%3EE = mc%C2%B2%3C/text%3E%3Ctext x='60' y='600' font-size='28' transform='rotate(-3 60 600)' fill-opacity='0.17'%3Ed %E2%89%88 4.2 ly%3C/text%3E%3Ctext x='470' y='560' font-size='22' transform='rotate(2 470 560)' fill-opacity='0.13'%3E%CE%B8 = 2 arctan(r / 2d)%3C/text%3E%3Ctext x='900' y='660' font-size='30' transform='rotate(-4 900 660)' fill-opacity='0.16'%3E%CF%80 %E2%89%88 3.14159%3C/text%3E%3Ctext x='380' y='710' font-size='24' transform='rotate(1 380 710)' fill-opacity='0.13'%3EL = 4%CF%80R%C2%B2%CF%83T%E2%81%B4%3C/text%3E%3C/g%3E%3Cg fill='none' stroke='%23fff' stroke-opacity='0.14' stroke-width='2.5' stroke-linecap='round'%3E%3Cellipse cx='330' cy='200' rx='95' ry='42' transform='rotate(-12 330 200)'/%3E%3Ccircle cx='310' cy='204' r='9'/%3E%3Ccircle cx='418' cy='182' r='5'/%3E%3Cpath d='M720 470 L860 470 L790 360 Z'/%3E%3Cpath d='M782 380 q8 -6 16 0'/%3E%3Cpath d='M160 470 v-110 M160 470 h150'/%3E%3Cpath d='M175 365 q60 190 120 0'/%3E%3Crect x='600' y='640' width='170' height='58' rx='4'/%3E%3Cpath d='M560 610 q20 15 34 35 m-10 -2 l10 2 l-2 -10'/%3E%3Cpath d='M70 122 q60 8 120 -2'/%3E%3C/g%3E%3C/svg%3E"),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.09 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E"),
     radial-gradient(ellipse 40% 25% at 25% 30%, rgb(255 255 255 / 0.06), transparent 70%),
     radial-gradient(ellipse 35% 20% at 70% 65%, rgb(255 255 255 / 0.05), transparent 70%),
@@ -1227,8 +1229,8 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
 }
 
 /* Line styles come after the skies so their colour wins where both set
-   one. Pencil Sketch's wobble filter only runs on the chart figures (its
-   region is sized to their viewBox); uneven dashes carry it in the Galaxy. */
+   one. Pencil Sketch's filter only runs on the chart figures (its region is
+   sized to their viewBox); in the Galaxy it is a plain fine line. */
 .star-chart[data-lines="dotted"] {
   --edge-dash: 0.1 3;
   --edge-cap: round;
@@ -1240,10 +1242,9 @@ html[data-theme="light"] .auth-constellation .ls-edge-dim {
 }
 
 .star-chart[data-lines="sketch"] {
-  --edge-width: 1.4;
+  --edge-width: 0.9;
   --edge-cap: round;
-  --edge-dash: 9 1.5 5 1 12 2;
-  --edge-opacity: 0.85;
+  --edge-opacity: 0.95;
   --edge-figure-filter: var(--ls-sketch);
 }
 
