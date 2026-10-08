@@ -9,6 +9,7 @@ const SELECT = {
     completionSound: true,
     completeFromCanvas: true,
     taskLabelParts: true,
+    workloadWarnings: true,
     lastRundownViewedAt: true,
 } as const;
 
@@ -43,6 +44,7 @@ export async function GET() {
             completionSound: settings?.completionSound ?? true,
             completeFromCanvas: settings?.completeFromCanvas ?? true,
             taskLabelParts: normalizeTaskLabelParts(settings?.taskLabelParts),
+            workloadWarnings: settings?.workloadWarnings ?? true,
             lastRundownViewedAt: settings?.lastRundownViewedAt?.toISOString() ?? null,
         });
     } catch (error) {
@@ -96,6 +98,7 @@ export async function PATCH(request: Request) {
             completionSound?: boolean;
             completeFromCanvas?: boolean;
             taskLabelParts?: TaskLabelPart[];
+            workloadWarnings?: boolean;
             lastRundownViewedAt?: Date | null;
         } = {};
 
@@ -127,6 +130,16 @@ export async function PATCH(request: Request) {
                 );
             }
             data.completeFromCanvas = input.completeFromCanvas;
+        }
+
+        if ("workloadWarnings" in input) {
+            if (typeof input.workloadWarnings !== "boolean") {
+                return NextResponse.json(
+                    { success: false, error: "'workloadWarnings' must be a boolean." },
+                    { status: 400 }
+                );
+            }
+            data.workloadWarnings = input.workloadWarnings;
         }
 
         if ("taskLabelParts" in input) {
@@ -186,6 +199,7 @@ export async function PATCH(request: Request) {
             completionSound: settings.completionSound,
             completeFromCanvas: settings.completeFromCanvas,
             taskLabelParts: normalizeTaskLabelParts(settings.taskLabelParts),
+            workloadWarnings: settings.workloadWarnings,
             completedCount,
             lastRundownViewedAt: settings.lastRundownViewedAt?.toISOString() ?? null,
         });

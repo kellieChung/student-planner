@@ -10,6 +10,8 @@ import {RecurringTask} from "@/types/recurringTask";
 import {expandOccurrences, shiftDateKey} from "@/lib/recurrence";
 import {RecurrenceFieldValue} from "./RecurrenceField";
 import AssignmentCard from "./AssignmentCard";
+import WorkloadIndicator from "./WorkloadIndicator";
+import {computeWorkload, type DayWorkload} from "@/lib/workload";
 import AddTaskModal from "./AddTaskModal";
 import EditTaskModal, {RecurrenceScope} from "./EditTaskModal";
 import RecurringTasksPanel from "./RecurringTasksPanel";
@@ -81,6 +83,9 @@ type InitialRundown = {
     completionSound: boolean;
     completeFromCanvas: boolean;
     taskLabelParts: TaskLabelPart[];
+    workloadWarnings: boolean;
+    // Global kill switch (lib/featureFlags.ts).
+    workloadFeature: boolean;
 };
 
 type WeeklyPlannerProps = {
@@ -257,6 +262,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     const [completionSound, setCompletionSound] = useState(initialRundown?.completionSound ?? true);
     const [completeFromCanvas, setCompleteFromCanvas] = useState(initialRundown?.completeFromCanvas ?? true);
     const [taskLabelParts, setTaskLabelParts] = useState<TaskLabelPart[]>(initialRundown?.taskLabelParts ?? DEFAULT_TASK_LABEL_PARTS);
+    const workloadFeature = initialRundown?.workloadFeature ?? true;
+    const [workloadWarnings, setWorkloadWarnings] = useState(initialRundown?.workloadWarnings ?? true);
     const [showRundown, setShowRundown] = useState(() => initialRundown?.shouldAutoShow ?? false);
     const [showStillDeciding, setShowStillDeciding] = useState(false);
     const [awardingXp, setAwardingXp] = useState(false);
@@ -531,6 +538,17 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         const type = deterministicType(task);
         return type ? estimateMinutesByType(type) : undefined;
     };
+
+    // Rolling today..today+6, independent of the visible week. Empty (and
+    // not computed) when the flag or the student's setting is off.
+    const workloadByDay = useMemo(
+        () => workloadFeature && workloadWarnings
+            ? computeWorkload(openTasks, getEstimatedMinutes, todayKey)
+            : new Map<string, DayWorkload>(),
+        // getEstimatedMinutes reads only taskCustomizations/resolvedPlanning.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [workloadFeature, workloadWarnings, openTasks, taskCustomizations, resolvedPlanning, todayKey]
+    );
 
     // Every type in play, as a string so the index effect only re-runs when
     // the set changes.
@@ -2056,6 +2074,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         savePlannerSettings({ autoAcceptAiTasks: value });
     }
 
+    function handleSetWorkloadWarnings(value: boolean) {
+        setWorkloadWarnings(value);
+        savePlannerSettings({ workloadWarnings: value });
+    }
+
     function handleSetCompletionSound(value: boolean) {
         setCompletionSound(value);
         savePlannerSettings({ completionSound: value });
@@ -2516,22 +2539,33 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             {calendarView === "weekly" ? (
                 <>
                     <div className = "grid grid-cols-7 gap-2 border-b border-slate-800 pb-4 mb-4 text-center">
-                        {days.map((day, idx) => (
-                            <div key={idx} className = "flex flex-col items-center gap-1">
-                                <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">{day.name}</span>
-                                <span className = "text-base font-semibold text-slate-200 mt-1">{day.dateNumber}</span>
-                                <Tooltip label="Add task due this day">
-                                    <button
-                                        type="button"
-                                        onClick={() => openAddTaskForDate(day.dateKey)}
-                                        className="day-add-button flex h-5 w-5 items-center justify-center rounded-full border text-xs leading-none transition-colors"
-                                        aria-label={`Add task due ${day.dateKey}`}
-                                    >
-                                        +
-                                    </button>
-                                </Tooltip>
-                            </div>
-                        ))}
+                        {days.map((day, idx) => {
+                            const workload = workloadByDay.get(day.dateKey);
+
+                            return (
+                                <div key={idx} className = "flex flex-col items-center gap-1">
+                                    <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">{day.name}</span>
+                                    <span className = "relative text-base font-semibold text-slate-200 mt-1">
+                                        {day.dateNumber}
+                                        {workload?.heavy && (
+                                            <span className="absolute left-full top-1/2 -translate-y-1/2">
+                                                <WorkloadIndicator taskCount={workload.taskCount} minutes={workload.minutes} />
+                                            </span>
+                                        )}
+                                    </span>
+                                    <Tooltip label="Add task due this day">
+                                        <button
+                                            type="button"
+                                            onClick={() => openAddTaskForDate(day.dateKey)}
+                                            className="day-add-button flex h-5 w-5 items-center justify-center rounded-full border text-xs leading-none transition-colors"
+                                            aria-label={`Add task due ${day.dateKey}`}
+                                        >
+                                            +
+                                        </button>
+                                    </Tooltip>
+                                </div>
+                            );
+                        })}
                     </div>
 
                     <div data-tour="week-grid" className = "relative min-h-[400px]">
@@ -2738,6 +2772,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             onSetCompleteFromCanvas={handleSetCompleteFromCanvas}
             taskLabelParts={taskLabelParts}
             onSetTaskLabelParts={handleSetTaskLabelParts}
+            workloadFeature={workloadFeature}
+            workloadWarnings={workloadWarnings}
+            onSetWorkloadWarnings={handleSetWorkloadWarnings}
         />
 
         {showRundown && (

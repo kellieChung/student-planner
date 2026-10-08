@@ -5,6 +5,7 @@ export type PlannerSettings = {
     completionSound: boolean;
     completeFromCanvas: boolean;
     taskLabelParts: TaskLabelPart[];
+    workloadWarnings: boolean;
     lastRundownViewedAt: string | null;
 };
 
@@ -13,6 +14,7 @@ const defaultSettings: PlannerSettings = {
     completionSound: true,
     completeFromCanvas: true,
     taskLabelParts: DEFAULT_TASK_LABEL_PARTS,
+    workloadWarnings: true,
     lastRundownViewedAt: null,
 };
 
@@ -22,6 +24,7 @@ function coerceSettings(data: Partial<PlannerSettings>): PlannerSettings {
         completionSound: typeof data.completionSound === "boolean" ? data.completionSound : true,
         completeFromCanvas: typeof data.completeFromCanvas === "boolean" ? data.completeFromCanvas : true,
         taskLabelParts: normalizeTaskLabelParts(data.taskLabelParts),
+        workloadWarnings: typeof data.workloadWarnings === "boolean" ? data.workloadWarnings : true,
         lastRundownViewedAt: typeof data.lastRundownViewedAt === "string" ? data.lastRundownViewedAt : null,
     };
 }

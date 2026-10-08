@@ -6,6 +6,7 @@ import { isDevAccountEmail } from "@/lib/devAccounts";
 import LaptopFrame, { type TourMode } from "@/components/os/LaptopFrame";
 import { StarChartState } from "@/lib/starChart";
 import { normalizeTaskLabelParts } from "@/lib/taskLabel";
+import { workloadWarningsEnabled } from "@/lib/featureFlags";
 
 type Props = {
     user: { id: string; name: string | null; email: string | null };
@@ -71,6 +72,8 @@ export default async function PlannerHome({ user, tourMode = "normal" }: Props) 
         completionSound: plannerSettingsRow?.completionSound ?? true,
         completeFromCanvas: plannerSettingsRow?.completeFromCanvas ?? true,
         taskLabelParts: normalizeTaskLabelParts(plannerSettingsRow?.taskLabelParts),
+        workloadWarnings: plannerSettingsRow?.workloadWarnings ?? true,
+        workloadFeature: workloadWarningsEnabled(),
     };
 
     return (

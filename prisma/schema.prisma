@@ -537,6 +537,8 @@ model PlannerSettings {
   // Visible card-label parts in display order (lib/taskLabel.ts's
   // TaskLabelPart); a part left out is hidden. Always includes "name".
   taskLabelParts      String[]  @default(["course", "type", "day", "name"])
+  // Gold "heavy day" mark on the next 7 day headers (lib/workload.ts).
+  workloadWarnings    Boolean   @default(true)
   // Null = never viewed — everything currently pending/added counts as
   // "new," which is also the correct behavior for a first-ever login.
   lastRundownViewedAt DateTime?

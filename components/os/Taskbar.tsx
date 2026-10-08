@@ -8,6 +8,8 @@ import Spinner from "@/components/Spinner";
 import UserMenu from "@/components/UserMenu";
 import TaskLabelSettings from "@/components/TaskLabelSettings";
 import type { TaskLabelPart } from "@/lib/taskLabel";
+import { formatEstimatedMinutes } from "@/lib/utils";
+import { WORKLOAD_THRESHOLDS } from "@/lib/workload";
 import { XpAward } from "@/types/gamification";
 import { useWindowManager } from "./WindowManagerContext";
 import { useLodestarFrame } from "@/components/os/LaptopFrame";
@@ -51,6 +53,10 @@ type Props = {
     onSetCompleteFromCanvas: (value: boolean) => void;
     taskLabelParts: TaskLabelPart[];
     onSetTaskLabelParts: (parts: TaskLabelPart[]) => void;
+    // False when the global flag is off (lib/featureFlags.ts): hides the toggle.
+    workloadFeature: boolean;
+    workloadWarnings: boolean;
+    onSetWorkloadWarnings: (value: boolean) => void;
 };
 
 function useClock(): string {
@@ -98,6 +104,9 @@ export default function Taskbar({
     onSetCompleteFromCanvas,
     taskLabelParts,
     onSetTaskLabelParts,
+    workloadFeature,
+    workloadWarnings,
+    onSetWorkloadWarnings,
 }: Props) {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const { replayOnboarding } = useLodestarFrame();
@@ -254,6 +263,17 @@ export default function Taskbar({
                                     <SunIcon size={13} /> Day
                                 </button>
                             </div>
+                            {workloadFeature && (
+                                <>
+                                    <label className="mt-2 flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-xs" style={{ color: "var(--foreground)" }}>
+                                        <span>Workload warnings</span>
+                                        <Switch checked={workloadWarnings} onChange={onSetWorkloadWarnings} ariaLabel="Workload warnings" />
+                                    </label>
+                                    <p className="px-1 text-[11px] leading-snug" style={{ color: "var(--muted)" }}>
+                                        Marks upcoming days with {formatEstimatedMinutes(WORKLOAD_THRESHOLDS.heavyMinutes)}+ of work or {WORKLOAD_THRESHOLDS.heavyTaskCount}+ open tasks.
+                                    </p>
+                                </>
+                            )}
 
                             <p className="mb-2 mt-3 text-xs font-bold uppercase tracking-wider" style={{ color: "var(--muted)" }}>
                                 Sound
