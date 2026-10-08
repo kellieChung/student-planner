@@ -444,7 +444,7 @@ export default function EditTaskModal({
                 onDeleteTask(task.id);
                 onClose();
               }}
-              className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-950/40 border border-transparent hover:border-rose-900/50 transition-all"
+              className="px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:bg-rose-950/40 border border-transparent hover:border-rose-900/50 transition-colors"
             >
               Delete Task
             </button>
@@ -453,14 +453,14 @@ export default function EditTaskModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all"
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={startAfterDue || recurrenceInvalid}
-                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-all shadow-md shadow-indigo-950 disabled:cursor-not-allowed disabled:opacity-50"
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-md shadow-indigo-950 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Save Changes
               </button>

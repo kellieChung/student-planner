@@ -5,6 +5,7 @@ import Link from "next/link";
 import { signInWithPassword, signUp, type CredentialsFormState } from "@/app/login/actions";
 import { AUTH_STAR_COUNT, useAuthProgress } from "@/components/auth/AuthProgress";
 import { MAX_PASSWORD_LENGTH, PASSWORD_RULES, passwordMeetsRules } from "@/lib/passwordRules";
+import Spinner from "@/components/Spinner";
 
 export type Mode = "signIn" | "signUp";
 
@@ -173,8 +174,9 @@ export default function CredentialsForm({ redirectTo = "/", initialMode = "signI
                 <button
                     type="submit"
                     disabled={pending || (isSignUp && !passwordAcceptable)}
-                    className="w-full rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
                 >
+                    {pending && <Spinner className="h-3.5 w-3.5" />}
                     {pending ? "Please wait…" : isSignUp ? "Create account" : "Sign in"}
                 </button>
             </form>

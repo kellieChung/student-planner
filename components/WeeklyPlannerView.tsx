@@ -30,6 +30,9 @@ import {getTaskStatus, TaskStatus} from "@/lib/taskStatus";
 import {appendProcrastinationRecord, getProcrastinationHistory, getProcrastinationIndexHours, recordTaskCompletion} from "@/lib/procrastinationHistory";
 import {ProcrastinationHistory} from "@/types/procrastination";
 import Spinner from "./Spinner";
+import Skeleton from "@/components/ui/Skeleton";
+import PlannerGridSkeleton from "@/components/PlannerGridSkeleton";
+import PolarisSkeleton from "@/components/PolarisSkeleton";
 import TaskStatusToggle from "./TaskStatusToggle";
 import Taskbar from "./os/Taskbar";
 import { usePomodoroRemote } from "./os/PomodoroRemoteContext";
@@ -249,6 +252,11 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     // False until /api/courses succeeds once, so the connect-Canvas notice
     // never flashes during load or shows after a failed fetch.
     const [coursesLoaded, setCoursesLoaded] = useState(false);
+    // Success or failure; together with the other first-load flags it gates
+    // the planner skeleton (plannerReady below).
+    const [coursesSettled, setCoursesSettled] = useState(false);
+    const [procrastinationLoaded, setProcrastinationLoaded] = useState(false);
+    const [gamificationSettled, setGamificationSettled] = useState(false);
     const [estimatingCount, setEstimatingCount] = useState(0);
     // AutoTaskCreation.md's Rundown screen. showRundown is seeded once
     // from the server-computed initialRundown.shouldAutoShow (see
@@ -602,6 +610,20 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
 
     const upNext = rankedOpenTasks[0] ?? null;
 
+    // Everything that decides what a task card shows (done/in progress,
+    // deleted, start date, estimate, course colour, ranking) arrives from
+    // separate client fetches. Until all of them have settled the planner
+    // shows a skeleton instead of cards in a wrong, provisional state (e.g.
+    // every task "not done"). Each flag only ever turns true, so later
+    // background reloads never bring the skeleton back. A failed
+    // customizations load keeps the skeleton: the "didn't load" banner
+    // replaces cards whose status would be wrong.
+    const plannerReady = (customTasksLoaded || customTasksLoadFailed)
+        && customizationsLoaded
+        && coursesSettled
+        && taskPlanningLoaded
+        && procrastinationLoaded;
+
     const activeFocusTask = useMemo(() => {
         if (!focusTaskId) return null;
 
@@ -800,6 +822,8 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             setCoursesLoaded(true);
         } catch (error) {
             console.error("Could not load courses", error);
+        } finally {
+            setCoursesSettled(true);
         }
     };
 
@@ -827,10 +851,14 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         let cancelled = false;
 
         void getGamificationState().then((savedGamification) => {
-            if (!cancelled && savedGamification) {
+            if (cancelled) return;
+
+            if (savedGamification) {
                 latestGamificationRef.current = savedGamification;
                 setGamification(savedGamification);
             }
+
+            setGamificationSettled(true);
         });
 
         return () => {
@@ -1202,7 +1230,10 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     }, []);
 
     useEffect(() => {
-        void getProcrastinationHistory().then(setProcrastinationHistory);
+        void getProcrastinationHistory().then((history) => {
+            setProcrastinationHistory(history);
+            setProcrastinationLoaded(true);
+        });
     }, []);
 
     // One-time replay of any pre-existing localStorage data from before
@@ -2367,7 +2398,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                 </p>
             )}
 
-            {upNext && (
+            {!plannerReady && <PolarisSkeleton />}
+
+            {plannerReady && upNext && (
                 <div data-tour="polaris" className="mb-5 rounded-xl border border-amber-500/60 bg-amber-950/20 p-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
@@ -2550,7 +2583,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     <span className = "text-xs font-bold text-slate-400 uppercase tracking-wider">{day.name}</span>
                                     <span className = "relative text-base font-semibold text-slate-200 mt-1">
                                         {day.dateNumber}
-                                        {workload?.heavy && (
+                                        {plannerReady && workload?.heavy && (
                                             <span className="absolute left-full top-1/2 -translate-y-1/2">
                                                 <WorkloadIndicator taskCount={workload.taskCount} minutes={workload.minutes} />
                                             </span>
@@ -2578,6 +2611,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                             ))}
                         </div>
 
+                        {!plannerReady ? <PlannerGridSkeleton /> : (
                         <div className="relative z-10 py-2" style={{ height: weekTaskLayerHeight }}>
                             {weekTaskLayouts.map(({ task, span }, layoutIndex) => {
                                 const taskCustomization = taskCustomizations[task.id];
@@ -2629,6 +2663,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                 );
                             })}
                         </div>
+                        )}
                     </div>
                 </>
             ) : (
@@ -2660,6 +2695,9 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                             </button>
                                         </Tooltip>
                                     </div>
+                                    {!plannerReady ? (
+                                        isCurrentMonth && date.getDate() % 3 !== 0 && <Skeleton className="h-4 w-full" />
+                                    ) : (
                                     <div className="space-y-1">
                                         {dayTasks.slice(0, 3).map((task) => {
                                             const completed = taskCustomizations[task.id]?.completed ?? false;
@@ -2683,6 +2721,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         })}
                                         {dayTasks.length > 3 && <p className="px-1 text-[10px] text-slate-400">+{dayTasks.length - 3} more</p>}
                                     </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -2693,12 +2732,18 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             <section className="mx-auto mt-8 max-w-2xl border-t border-slate-800 pt-6">
                 <div className="mb-4">
                     <h2 className="text-lg font-semibold text-slate-100">
-                        Tasks without a due date ({tasksWithoutDueDate.length})
+                        Tasks without a due date{plannerReady ? ` (${tasksWithoutDueDate.length})` : ""}
                     </h2>
                     <p className="text-sm text-slate-400">Click a task to view or edit its details.</p>
                 </div>
 
-                {tasksWithoutDueDate.length === 0 ? (
+                {!plannerReady ? (
+                    <div aria-busy="true" className="space-y-2">
+                        <span className="sr-only">Loading tasks…</span>
+                        <Skeleton className="h-[62px] w-full rounded-xl" />
+                        <Skeleton className="h-[62px] w-full rounded-xl" />
+                    </div>
+                ) : tasksWithoutDueDate.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-slate-700 px-4 py-8 text-center text-sm text-slate-400">
                         Every task has a due date.
                     </p>
@@ -2750,6 +2795,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
             theme={theme}
             onSetTheme={updateTheme}
             level={level}
+            xpLoaded={gamificationSettled}
             totalXp={gamification.totalXp}
             xpTowardsNextLevel={xpTowardsNextLevel}
             awardingXp={awardingXp}

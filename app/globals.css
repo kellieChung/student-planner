@@ -1038,7 +1038,27 @@ html[data-theme="light"][data-star-chart="day"] .star-chart[data-sky]::before {
 .view-push-in--out { animation: view-push-in-out 320ms ease-in forwards; }
 .view-push-in--in { animation: view-push-in-in 420ms ease-out forwards; }
 
+/* Loading placeholders. --skeleton-base follows the app theme; inside the
+   Star Chart (.sky) it follows the chart's own palette instead. */
+.skeleton {
+  --skeleton-base: color-mix(in srgb, var(--border) 45%, transparent);
+  --skeleton-shine: color-mix(in srgb, var(--border) 80%, transparent);
+  background: linear-gradient(90deg, var(--skeleton-base) 0%, var(--skeleton-shine) 50%, var(--skeleton-base) 100%) 0 0 / 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.sky .skeleton {
+  --skeleton-base: var(--ls-line);
+  --skeleton-shine: color-mix(in srgb, var(--ls-gold) 28%, transparent);
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .skeleton,
   :is(.landing, .sky) .ls-ignite,
   :is(.landing, .sky) .ls-draw,
   :is(.landing, .sky) .ls-celebrate,

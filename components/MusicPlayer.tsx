@@ -9,6 +9,7 @@ import {
     useState,
 } from "react";
 import Spinner from "@/components/Spinner";
+import Skeleton from "@/components/ui/Skeleton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import Select from "@/components/ui/Select";
 import Slider from "@/components/ui/Slider";
@@ -1932,9 +1933,17 @@ export default function MusicPlayer() {
 
     if (loading) {
         return (
-            <div className="theme-surface flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4 text-sm text-[var(--muted)]">
-                <Spinner className="h-4 w-4" />
-                Loading Comms...
+            <div aria-busy="true" className="theme-surface flex flex-col gap-4 rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4">
+                <span className="sr-only">Loading Comms…</span>
+                <Skeleton className="aspect-video w-full rounded-xl" />
+                <Skeleton className="h-4 w-2/3" />
+                <div className="flex gap-2">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                </div>
+                <Skeleton className="h-10 w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" />
             </div>
         );
     }

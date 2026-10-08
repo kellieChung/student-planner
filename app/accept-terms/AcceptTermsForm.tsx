@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { ConsentCheckboxes } from "@/components/auth/CredentialsForm";
 import { acceptTerms, declineAndDeleteAccount, declineAndSignOut, type AcceptTermsState } from "@/app/accept-terms/actions";
+import Spinner from "@/components/Spinner";
 
 type Props = {
     next: string;
@@ -35,8 +36,9 @@ export default function AcceptTermsForm({ next }: Props) {
                 <button
                     type="submit"
                     disabled={pending}
-                    className="w-full rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
                 >
+                    {pending && <Spinner className="h-3.5 w-3.5" />}
                     {pending ? "Please wait…" : "Continue"}
                 </button>
             </form>

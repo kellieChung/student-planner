@@ -797,7 +797,7 @@ export default function DetectionTriggerControls({
                     {progress && (
                         <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--border)]/30">
                             <div
-                                className="h-full rounded-full bg-[var(--accent)] transition-all"
+                                className="h-full rounded-full bg-[var(--accent)] transition-[width]"
                                 style={{
                                     width: `${progress.total > 0 ? (progress.completed / progress.total) * 100 : 0}%`,
                                 }}

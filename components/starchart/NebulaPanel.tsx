@@ -5,6 +5,8 @@ import { useCosmetics } from "@/components/starchart/CosmeticsContext";
 import { useStarChart } from "@/components/starchart/StarChartContext";
 import ConstellationFigure from "@/components/starchart/ConstellationFigure";
 import { StarIcon } from "@/components/brand/Icons";
+import Skeleton from "@/components/ui/Skeleton";
+import Spinner from "@/components/Spinner";
 import { CONSTELLATIONS, isComplete } from "@/lib/constellations";
 import {
     COSMETIC_SLOTS,
@@ -65,7 +67,20 @@ export default function NebulaPanel() {
             )}
 
             {(status === "loading" || status === "idle") && (
-                <p className="mt-6 text-sm text-[var(--ls-muted)]">Loading the Nebula…</p>
+                <div aria-busy="true">
+                    <span className="sr-only">Loading the Nebula…</span>
+                    {[0, 1].map((section) => (
+                        <div key={section} className="mt-8">
+                            <Skeleton className="h-6 w-40" />
+                            <Skeleton className="mt-2 h-3 w-64 max-w-full" />
+                            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                                {[0, 1, 2, 3].map((card) => (
+                                    <Skeleton key={card} className="h-40 rounded-2xl" />
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
             )}
 
             {cosmetics && COSMETIC_SLOTS.map((slot) => {
@@ -164,8 +179,9 @@ function CosmeticCard({ item }: { item: CosmeticItemView }) {
                         type="button"
                         disabled={pending}
                         onClick={() => run(() => equip(item.key))}
-                        className="rounded-full bg-[var(--ls-gold)] px-3 py-1.5 text-xs font-bold text-[var(--ls-navy)] transition-colors hover:bg-[var(--ls-gold-hover)] disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--ls-gold)] px-3 py-1.5 text-xs font-bold text-[var(--ls-navy)] transition-colors hover:bg-[var(--ls-gold-hover)] disabled:opacity-50"
                     >
+                        {pending && <Spinner className="h-3 w-3" />}
                         {pending ? "Equipping…" : "Equip"}
                     </button>
                 ) : confirming ? (
@@ -174,8 +190,9 @@ function CosmeticCard({ item }: { item: CosmeticItemView }) {
                             type="button"
                             disabled={pending}
                             onClick={() => run(() => buy(item.key))}
-                            className="rounded-full bg-[var(--ls-gold)] px-3 py-1.5 text-xs font-bold text-[var(--ls-navy)] transition-colors hover:bg-[var(--ls-gold-hover)] disabled:opacity-50"
+                            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--ls-gold)] px-3 py-1.5 text-xs font-bold text-[var(--ls-navy)] transition-colors hover:bg-[var(--ls-gold-hover)] disabled:opacity-50"
                         >
+                            {pending && <Spinner className="h-3 w-3" />}
                             {pending ? "Buying…" : `Spend ${item.cost}`}
                         </button>
                         <button
@@ -274,6 +291,7 @@ function ShipNameCard() {
                     disabled={pending || unchanged || draft.trim().length === 0 || shortfall > 0}
                     className="inline-flex items-center gap-1 rounded-full bg-[var(--ls-gold)] px-4 py-2 text-sm font-bold text-[var(--ls-navy)] transition-colors hover:bg-[var(--ls-gold-hover)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
+                    {pending && <Spinner className="h-3.5 w-3.5" />}
                     {pending ? "Saving…" : free ? "Name it" : (
                         <>
                             <StarIcon size={12} />

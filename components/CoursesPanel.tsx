@@ -6,6 +6,7 @@ import {Course} from "@/types/course";
 import {courseAbbreviationDefault} from "@/lib/taskLabel";
 import {courseColorDefault} from "@/lib/courseColor";
 import Spinner from "@/components/Spinner";
+import Skeleton from "@/components/ui/Skeleton";
 import Checkbox from "@/components/ui/Checkbox";
 import ColorField from "@/components/ui/ColorField";
 
@@ -268,12 +269,19 @@ export default function CoursesPanel({onChanged}: CoursesPanelProps) {
                 </button>
             </div>
 
-            {loading && (
+            {loading && (courses.length === 0 ? (
+                <div aria-busy="true" className="space-y-2">
+                    <span className="sr-only">Loading courses…</span>
+                    <Skeleton className="h-[52px] w-full rounded-lg" />
+                    <Skeleton className="h-[52px] w-full rounded-lg" />
+                    <Skeleton className="h-[52px] w-full rounded-lg" />
+                </div>
+            ) : (
                 <p className="flex items-center gap-2 text-sm text-slate-400">
                     <Spinner className="h-3.5 w-3.5" />
                     Loading courses...
                 </p>
-            )}
+            ))}
 
             {error && (
                 <p className="text-sm text-red-400">{error}</p>

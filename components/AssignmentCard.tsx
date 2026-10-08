@@ -158,7 +158,7 @@ export default function AssignmentCard({
                 width,
                 top: `${topPx ?? 0}px`,
             }}
-            className = {`group rounded-lg border shadow-sm overflow-hidden transition-all duration-200 ${completed ? "h-[28px] px-1.5 py-0.5 opacity-55 hover:opacity-90" : "h-[72px] p-1.5"} ${isFocused ? "ring-2 ring-indigo-400" : ""} ${isCompleting ? "task-card--completing" : ""} ${wasCompletedLate
+            className = {`group rounded-lg border shadow-sm overflow-hidden transition-[top,left,width,height,opacity,background-color,border-color,color,box-shadow] duration-200 ${completed ? "h-[28px] px-1.5 py-0.5 opacity-55 hover:opacity-90" : "h-[72px] p-1.5"} ${isFocused ? "ring-2 ring-indigo-400" : ""} ${isCompleting ? "task-card--completing" : ""} ${wasCompletedLate
                 ? "bg-slate-900 border-rose-900/80 text-rose-100 hover:border-rose-800"
                 : completed
                     ? "bg-green-900/40 border-slate-800 text-slate-500"

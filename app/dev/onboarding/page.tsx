@@ -1,5 +1,7 @@
 import { requireDevUser } from "@/app/dev/requireDevUser";
+import { Suspense } from "react";
 import PlannerHome from "@/components/PlannerHome";
+import PlannerHomeSkeleton from "@/components/PlannerHomeSkeleton";
 
 export const metadata = {
     title: "Dev · Onboarding tour",
@@ -11,5 +13,9 @@ export const metadata = {
 export default async function OnboardingDevPage() {
     const user = await requireDevUser();
 
-    return <PlannerHome user={user} tourMode="preview" />;
+    return (
+        <Suspense fallback={<PlannerHomeSkeleton />}>
+            <PlannerHome user={user} tourMode="preview" />
+        </Suspense>
+    );
 }

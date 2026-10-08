@@ -3,6 +3,7 @@
 import { useActionState, useState, type ReactNode } from "react";
 import { signOut } from "next-auth/react";
 import { changePassword, updateName, type AccountFormState } from "@/app/settings/account/actions";
+import Spinner from "@/components/Spinner";
 
 type Props = {
     name: string | null;
@@ -17,7 +18,7 @@ const INPUT_CLASS =
     "mt-1 w-full rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--foreground)] focus:border-[var(--accent)]";
 
 const BUTTON_CLASS =
-    "rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60";
+    "inline-flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60";
 
 export default function AccountForms({ name, email, hasPassword, hasGoogle }: Props) {
     const [nameState, nameAction, namePending] = useActionState(updateName, INITIAL_STATE);
@@ -35,6 +36,7 @@ export default function AccountForms({ name, email, hasPassword, hasGoogle }: Pr
                     </label>
                     <FormStatus state={nameState} />
                     <button type="submit" disabled={namePending} className={BUTTON_CLASS}>
+                        {namePending && <Spinner className="h-3.5 w-3.5" />}
                         {namePending ? "Saving…" : "Save name"}
                     </button>
                 </form>
@@ -75,6 +77,7 @@ export default function AccountForms({ name, email, hasPassword, hasGoogle }: Pr
                     <p className="text-xs text-[var(--muted)]">At least 8 characters, with an uppercase letter and a special character.</p>
                     <FormStatus state={passwordState} />
                     <button type="submit" disabled={passwordPending} className={BUTTON_CLASS}>
+                        {passwordPending && <Spinner className="h-3.5 w-3.5" />}
                         {passwordPending ? "Saving…" : hasPassword ? "Change password" : "Set password"}
                     </button>
                 </form>
@@ -159,8 +162,9 @@ function DeleteAccountCard() {
                         type="button"
                         onClick={handleDelete}
                         disabled={deleting}
-                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-60"
                     >
+                        {deleting && <Spinner className="h-3.5 w-3.5" />}
                         {deleting ? "Deleting…" : "Yes, delete everything"}
                     </button>
                     <button

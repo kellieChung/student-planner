@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { connectExtension } from "@/app/extension-callback/actions";
+import Spinner from "@/components/Spinner";
 
 type Props = {
     state: string;
@@ -96,8 +97,9 @@ export default function ConnectExtension({ state, email }: Props) {
                 type="button"
                 onClick={connect}
                 disabled={pending || status.kind === "waiting"}
-                className="mt-4 w-full rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-contrast)] transition-colors hover:bg-[var(--accent-hover)] disabled:opacity-60"
             >
+                {(pending || status.kind === "waiting") && <Spinner className="h-3.5 w-3.5" />}
                 {pending || status.kind === "waiting" ? "Connecting…" : "Connect extension"}
             </button>
         </div>

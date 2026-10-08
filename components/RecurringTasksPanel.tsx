@@ -9,6 +9,7 @@ import RecurrenceField, {RecurrenceFieldValue} from "./RecurrenceField";
 import CourseSelect from "./CourseSelect";
 import DueTimeField from "./DueTimeField";
 import Spinner from "./Spinner";
+import Skeleton from "@/components/ui/Skeleton";
 import useEscapeToClose from "@/components/ui/useEscapeToClose";
 
 type RecurringTasksPanelProps = {
@@ -156,12 +157,19 @@ export default function RecurringTasksPanel({isOpen, onClose, courses, onCourseC
                     </button>
                 </div>
 
-                {loading && (
+                {loading && (tasks.length === 0 ? (
+                    <div aria-busy="true" className="space-y-2">
+                        <span className="sr-only">Loading recurring tasks…</span>
+                        <Skeleton className="h-[60px] w-full rounded-lg" />
+                        <Skeleton className="h-[60px] w-full rounded-lg" />
+                        <Skeleton className="h-[60px] w-full rounded-lg" />
+                    </div>
+                ) : (
                     <p className="flex items-center gap-2 text-sm text-slate-400">
                         <Spinner className="h-3.5 w-3.5" />
                         Loading recurring tasks...
                     </p>
-                )}
+                ))}
 
                 {error && <p className="text-sm text-red-400">{error}</p>}
 

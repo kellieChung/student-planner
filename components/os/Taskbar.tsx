@@ -5,6 +5,7 @@ import Switch from "@/components/ui/Switch";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Spinner from "@/components/Spinner";
+import Skeleton from "@/components/ui/Skeleton";
 import UserMenu from "@/components/UserMenu";
 import TaskLabelSettings from "@/components/TaskLabelSettings";
 import type { TaskLabelPart } from "@/lib/taskLabel";
@@ -32,6 +33,9 @@ type Props = {
     theme: "dark" | "light";
     onSetTheme: (theme: "dark" | "light") => void;
     level: number;
+    // False until /api/gamification has answered, so a returning student
+    // never sees a provisional "Lv.1 0 XP".
+    xpLoaded: boolean;
     totalXp: number;
     xpTowardsNextLevel: number;
     awardingXp: boolean;
@@ -83,6 +87,7 @@ export default function Taskbar({
     theme,
     onSetTheme,
     level,
+    xpLoaded,
     totalXp,
     xpTowardsNextLevel,
     awardingXp,
@@ -192,22 +197,31 @@ export default function Taskbar({
             {/* System tray */}
             <div className="ml-auto flex flex-wrap items-center gap-1.5 sm:gap-2">
                 <div data-tour="taskbar-progress" className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                <TrayPill>
-                    <span className="font-bold" style={{ color: "var(--heading)" }}>Lv.{level}</span>
-                    <span style={{ color: "var(--muted)" }}>{totalXp} XP</span>
-                </TrayPill>
-                {awardingXp ? (
+                {xpLoaded ? (
+                    <>
                     <TrayPill>
-                        <Spinner className="h-3 w-3" />
-                        <span style={{ color: "var(--muted)" }}>Calculating XP...</span>
+                        <span className="font-bold" style={{ color: "var(--heading)" }}>Lv.{level}</span>
+                        <span style={{ color: "var(--muted)" }}>{totalXp} XP</span>
                     </TrayPill>
-                ) : latestXpAward ? (
-                    <TrayPill>
-                        <span style={{ color: "var(--accent)" }}>+{latestXpAward.xp} XP</span>
-                    </TrayPill>
+                    {awardingXp ? (
+                        <TrayPill>
+                            <Spinner className="h-3 w-3" />
+                            <span style={{ color: "var(--muted)" }}>Calculating XP...</span>
+                        </TrayPill>
+                    ) : latestXpAward ? (
+                        <TrayPill>
+                            <span style={{ color: "var(--accent)" }}>+{latestXpAward.xp} XP</span>
+                        </TrayPill>
+                    ) : (
+                        <TrayPill>
+                            <span style={{ color: "var(--muted)" }}>{100 - xpTowardsNextLevel} XP to Lv.{level + 1}</span>
+                        </TrayPill>
+                    )}
+                    </>
                 ) : (
                     <TrayPill>
-                        <span style={{ color: "var(--muted)" }}>{100 - xpTowardsNextLevel} XP to Lv.{level + 1}</span>
+                        <span className="sr-only">Loading XP…</span>
+                        <Skeleton className="h-4 w-28" />
                     </TrayPill>
                 )}
                 <TrayPill>

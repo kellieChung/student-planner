@@ -17,19 +17,23 @@ type Props = {
 // The signed-in planner (Ship's Log + Star Chart), shared by "/" and the
 // /dev/onboarding tour replay page so both render exactly the same app.
 export default countQueries("PlannerHome", async function PlannerHome({ user, tourMode = "normal" }: Props) {
-    const assignments: Assignment[] = (await getAllAssignments(user.id)).map((assignment) => ({
-        ...assignment,
-        due: assignment.due ?? "",
-    }));
-
-    const [starChartRow, chartedStars] = await Promise.all([
+    // Independent reads in one round trip (same query count as running them
+    // in sequence); only the Rundown counts below need plannerSettingsRow.
+    const [canvasAssignments, starChartRow, chartedStars, plannerSettingsRow] = await Promise.all([
+        getAllAssignments(user.id),
         prisma.starChart.findUnique({ where: { userId: user.id } }),
         prisma.chartedStar.findMany({
             where: { userId: user.id },
             select: { constellationId: true, starIndex: true, chartedAt: true },
             orderBy: { chartedAt: "asc" },
         }),
+        prisma.plannerSettings.findUnique({ where: { userId: user.id } }),
     ]);
+
+    const assignments: Assignment[] = canvasAssignments.map((assignment) => ({
+        ...assignment,
+        due: assignment.due ?? "",
+    }));
 
     const starChartBeta = starChartBetaEnabled();
     const starChart: StarChartState = {
@@ -48,10 +52,6 @@ export default countQueries("PlannerHome", async function PlannerHome({ user, to
     // payloads are fetched lazily by WeeklyPlannerView's own mount effect
     // (GET /api/rundown-candidates), same as every other piece of planner
     // state in this app.
-    const plannerSettingsRow = await prisma.plannerSettings.findUnique({
-        where: { userId: user.id },
-    });
-
     const lastRundownViewedAt = plannerSettingsRow?.lastRundownViewedAt ?? null;
 
     const [pendingCandidateCount, maybeCandidateCount, newCanvasAssignmentCount] = await Promise.all([
