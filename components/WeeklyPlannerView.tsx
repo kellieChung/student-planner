@@ -16,6 +16,7 @@ import AddTaskModal from "./AddTaskModal";
 import EditTaskModal, {RecurrenceScope} from "./EditTaskModal";
 import RecurringTasksPanel from "./RecurringTasksPanel";
 import {awardTaskXp, getGamificationState} from "@/lib/gamification";
+import {computeTaskXp, starlightForXp} from "@/lib/xp";
 import {GamificationState, XpAward} from "@/types/gamification";
 import {useStarChart} from "@/components/starchart/StarChartContext";
 import {StarIcon} from "@/components/brand/Icons";
@@ -609,6 +610,17 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
     }, [openTasks, resolvedPlanning, procrastinationIndexByType, todayKey, taskCustomizations]);
 
     const upNext = rankedOpenTasks[0] ?? null;
+
+    // Mirrors the server's award (lib/xpAward.ts) for a task finished
+    // today, so cards can show what checking them off pays.
+    const getStarlightReward = (task: Assignment) => starlightForXp(computeTaskXp({
+        name: task.name,
+        course: task.course,
+        due: task.due || null,
+        completedAt: todayKey,
+        assignmentType: taskPlanning[task.id]?.assignmentType,
+        canvasType: task.canvasType,
+    }));
 
     // Everything that decides what a task card shows (done/in progress,
     // deleted, start date, estimate, course colour, ranking) arrives from
@@ -1686,7 +1698,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
         starChart.applyBalance(result);
 
         if (result.awarded) {
-            setLatestXpAward({ xp: result.xp });
+            setLatestXpAward({ xp: result.xp, starlight: result.starlightEarned });
         }
     };
 
@@ -2414,8 +2426,12 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                     ? ` · Due ${parseLocalDate(upNext.task.due).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`
                                     : ""}
                             </p>
-                            <p className="mt-1 text-sm font-semibold text-amber-400">
+                            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm font-semibold text-amber-400">
                                 {describeTodayAsk(upNext.priority, taskCustomizations[upNext.task.id]?.inProgress ?? false)}
+                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 px-2 py-0.5 text-xs">
+                                    <StarIcon size={11} />
+                                    +{getStarlightReward(upNext.task)} Starlight when done
+                                </span>
                             </p>
                             <p className="text-sm text-amber-200">{upNext.priority.reason}</p>
                         </div>
@@ -2652,6 +2668,7 @@ export default function WeeklyPlannerView({ assignments, userName, userEmail, is
                                         completedFromCanvas = {taskCustomization?.completedFromCanvas ?? false}
                                         isCompleting = {pulsingIds.has(task.id)}
                                         estimatedMinutes = {getEstimatedMinutes(task)}
+                                        starlightReward = {getStarlightReward(task)}
                                         isFocused={task.id === focusTaskId}
                                         isAiDetected={Boolean(task.sourceAnnouncementId) && !task.aiTagDismissedAt}
                                         onDismissAiTag={handleDismissAiTag}

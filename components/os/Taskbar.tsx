@@ -211,6 +211,11 @@ export default function Taskbar({
                     ) : latestXpAward ? (
                         <TrayPill>
                             <span style={{ color: "var(--accent)" }}>+{latestXpAward.xp} XP</span>
+                            {latestXpAward.starlight > 0 && (
+                                <span className="flex items-center gap-0.5" style={{ color: "var(--accent)" }}>
+                                    · <StarIcon size={11} /> +{latestXpAward.starlight} Starlight
+                                </span>
+                            )}
                         </TrayPill>
                     ) : (
                         <TrayPill>

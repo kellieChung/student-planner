@@ -5,7 +5,7 @@ import {parseLocalDate, formatEstimatedMinutes} from "@/lib/utils";
 import {TaskStatus} from "@/lib/taskStatus";
 import {courseColorDefault, readableTextColor} from "@/lib/courseColor";
 import TaskStatusToggle from "./TaskStatusToggle";
-import { TimerIcon } from "@/components/brand/Icons";
+import { StarIcon, TimerIcon } from "@/components/brand/Icons";
 
 type AssignmentCardProps = {
     id: string;
@@ -52,6 +52,9 @@ type AssignmentCardProps = {
     // moves on completion.
     isCompleting?: boolean;
     estimatedMinutes?: number;
+    // Starlight this task pays if completed today (lib/xp.ts); the server
+    // makes the real award.
+    starlightReward?: number;
     isFocused?: boolean;
     // True when this task came from an AI-detected candidate
     // (sourceAnnouncementId set) and its badge hasn't been dismissed yet
@@ -85,6 +88,7 @@ export default function AssignmentCard({
     completedFromCanvas = false,
     isCompleting,
     estimatedMinutes,
+    starlightReward,
     isFocused,
     isAiDetected,
     onDismissAiTag,
@@ -242,6 +246,20 @@ export default function AssignmentCard({
                         >
                             AI
                         </button>
+                    </Tooltip>
+                )}
+
+                {!completed && starlightReward !== undefined && (
+                    <Tooltip label={`Worth ${starlightReward} Starlight when done`}>
+                        <span
+                            tabIndex={0}
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-bold leading-none text-[var(--accent)] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                            aria-label={`Worth ${starlightReward} Starlight when done`}
+                        >
+                            <StarIcon size={10} />
+                            {starlightReward}
+                        </span>
                     </Tooltip>
                 )}
 

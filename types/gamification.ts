@@ -5,4 +5,5 @@ export type GamificationState = {
 
 export type XpAward = {
     xp: number;
+    starlight: number;
 };
