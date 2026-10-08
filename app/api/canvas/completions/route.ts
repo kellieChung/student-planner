@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCanvasSyncUserId, isValidCanvasOrigin } from "@/lib/canvasIngest";
+import { countQueries } from "@/lib/queryCount";
 import {
     applyCanvasCompletions,
     CanvasCompletionItem,
@@ -13,7 +14,7 @@ const MAX_ASSIGNMENTS_PER_COURSE = 500;
 // background.js's runCompletionCheck): submission state only. Kept apart
 // from /api/canvas/sync, which treats its payload as a full snapshot and
 // prunes courses missing from it.
-export async function POST(request: Request) {
+export const POST = countQueries("POST /api/canvas/completions", async function POST(request: Request) {
     try {
         const userId = await getCanvasSyncUserId(request);
 
@@ -77,4 +78,4 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
-}
+});

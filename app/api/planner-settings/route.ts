@@ -3,6 +3,7 @@ import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { backfillCanvasCompletions } from "@/lib/canvasCompletions";
 import { isTaskLabelPart, normalizeTaskLabelParts, type TaskLabelPart } from "@/lib/taskLabel";
+import { countQueries } from "@/lib/queryCount";
 
 const SELECT = {
     autoAcceptAiTasks: true,
@@ -13,7 +14,7 @@ const SELECT = {
     lastRundownViewedAt: true,
 } as const;
 
-export async function GET() {
+export const GET = countQueries("GET /api/planner-settings", async function GET() {
     try {
         const session = await auth();
 
@@ -54,7 +55,7 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
 export async function PATCH(request: Request) {
     try {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { countQueries } from "@/lib/queryCount";
 
 // Rolling window: keep the ranking responsive to recent behavior instead of
 // averaging in a semester's worth of history. Mirrors
@@ -18,7 +19,7 @@ async function getAuthenticatedUser() {
     return sessionUserRef(session);
 }
 
-export async function GET() {
+export const GET = countQueries("GET /api/procrastination-history", async function GET() {
     try {
         const user = await getAuthenticatedUser();
 
@@ -49,9 +50,9 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
-export async function POST(request: Request) {
+export const POST = countQueries("POST /api/procrastination-history", async function POST(request: Request) {
     try {
         const user = await getAuthenticatedUser();
 
@@ -131,4 +132,4 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
-}
+});

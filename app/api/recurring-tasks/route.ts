@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { RECURRENCE_FREQUENCIES } from "@/lib/recurrence";
+import { countQueries } from "@/lib/queryCount";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_ONLY = /^\d{2}:\d{2}$/;
@@ -37,7 +38,7 @@ function serializeRecurringTask(recurringTask: {
     };
 }
 
-export async function GET() {
+export const GET = countQueries("GET /api/recurring-tasks", async function GET() {
     try {
         const session = await auth();
 
@@ -72,7 +73,7 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
 export async function POST(request: Request) {
     try {

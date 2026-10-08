@@ -4,9 +4,10 @@ import {prisma} from "@/lib/prisma";
 import { hasAcceptedCurrentTerms } from "@/lib/legal";
 import LandingPage from "@/components/landing/LandingPage";
 import PlannerHome from "@/components/PlannerHome";
+import { countQueries } from "@/lib/queryCount";
 
 
-export default async function TestPage() {
+export default countQueries("page /", async function TestPage() {
     const session = await auth();
 
     if (!session?.user?.email) {
@@ -27,4 +28,4 @@ export default async function TestPage() {
     }
 
     return <PlannerHome user={user} />;
-}
+});

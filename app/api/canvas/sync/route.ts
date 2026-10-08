@@ -8,8 +8,9 @@ import {
 } from "@/lib/canvasIngest";
 import { applyCanvasCompletions } from "@/lib/canvasCompletions";
 import { resolveClientToday } from "@/lib/utils";
+import { countQueries } from "@/lib/queryCount";
 
-export async function POST(request: Request) {
+export const POST = countQueries("POST /api/canvas/sync", async function POST(request: Request) {
     try {
         const userId = await getCanvasSyncUserId(request);
 
@@ -132,4 +133,4 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
-}
+});

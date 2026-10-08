@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isDateKey } from "@/lib/utils";
+import { countQueries } from "@/lib/queryCount";
 
 type Params = {
     params: Promise<{
@@ -13,7 +14,7 @@ const MAX_NOTES_LENGTH = 10_000;
 const LABEL_TYPES = new Set(["HW", "R", "EXAM", "TODO"]);
 const MAX_ESTIMATED_MINUTES = 24 * 60;
 
-export async function PATCH(request: Request, { params }: Params) {
+export const PATCH = countQueries("PATCH /api/task-customizations/[taskId]", async function PATCH(request: Request, { params }: Params) {
     try {
         const session = await auth();
 
@@ -254,4 +255,4 @@ export async function PATCH(request: Request, { params }: Params) {
             { status: 500 }
         );
     }
-}
+});

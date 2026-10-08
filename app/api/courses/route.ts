@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { CUSTOM_COURSE_ORIGIN } from "@/lib/canvas";
+import { countQueries } from "@/lib/queryCount";
 
 async function getAuthenticatedUser() {
     const session = await auth();
@@ -14,7 +15,7 @@ async function getAuthenticatedUser() {
     return sessionUserRef(session);
 }
 
-export async function GET() {
+export const GET = countQueries("GET /api/courses", async function GET() {
     try {
         const user = await getAuthenticatedUser();
 
@@ -56,7 +57,7 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
 export async function POST(request: Request) {
     try {

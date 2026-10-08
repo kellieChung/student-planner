@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { countQueries } from "@/lib/queryCount";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_TEXT_LENGTH = 300;
 
-export async function GET() {
+export const GET = countQueries("GET /api/custom-tasks", async function GET() {
     try {
         const session = await auth();
 
@@ -52,7 +53,7 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
 export async function POST(request: Request) {
     try {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { computeTaskXp, starlightForXp } from "@/lib/xp";
+import { computeTaskXp, starlightForXp, type XpInput } from "@/lib/xp";
 import { typeFromSubmissionTypes } from "@/lib/assignmentType";
 
 export type TaskXpAward = {
@@ -11,10 +11,14 @@ export type TaskXpAward = {
     lifetimeStarlight: number;
 };
 
+export type TaskXpSource = Omit<XpInput, "due" | "completedAt">;
+
+type AwardOptions = { due?: string; completedAt?: string; starlight?: "full" | "none" };
+
 // Awards XP and Starlight for completing a task, once per task, ever. The
-// dedup and both increments happen in one transaction against the stored
-// awardedTaskIds, so a stale tab, a second device or a replayed request
-// can't award the same task twice or overwrite the total.
+// `NOT has taskId` filter and the increment are one statement, so a stale
+// tab, a second device or a replayed request can't award the same task twice
+// or overwrite the total.
 async function awardTask(
     userId: string,
     taskId: string,
@@ -22,88 +26,116 @@ async function awardTask(
     starlight: number
 ): Promise<{ awarded: boolean; starlightEarned: number; totalXp: number; starlight: number; lifetimeStarlight: number }> {
     return prisma.$transaction(async (tx) => {
-        await tx.gamificationState.upsert({
-            where: { userId },
-            create: { userId, totalXp: 0, awardedTaskIds: [] },
-            update: {},
-        });
-
-        const { count } = await tx.gamificationState.updateMany({
+        const [updated] = await tx.gamificationState.updateManyAndReturn({
             where: { userId, NOT: { awardedTaskIds: { has: taskId } } },
             data: { totalXp: { increment: xp }, awardedTaskIds: { push: taskId } },
-        });
-
-        const awarded = count === 1;
-        let chart = await tx.starChart.upsert({ where: { userId }, create: { userId }, update: {} });
-        let starlightEarned = 0;
-
-        if (awarded && starlight > 0) {
-            starlightEarned = starlight;
-            chart = await tx.starChart.update({
-                where: { userId },
-                data: { starlight: { increment: starlight }, lifetimeStarlight: { increment: starlight } },
-            });
-        }
-
-        const state = await tx.gamificationState.findUniqueOrThrow({
-            where: { userId },
             select: { totalXp: true },
         });
+
+        let awarded = updated !== undefined;
+        let totalXp = updated?.totalXp ?? 0;
+
+        if (!updated) {
+            const state = await tx.gamificationState.findUnique({ where: { userId }, select: { totalXp: true } });
+
+            if (state) {
+                totalXp = state.totalXp;
+            } else {
+                // First-ever award. Two racing ones both get here; the
+                // loser's create hits the unique userId and grantTaskXp retries.
+                const created = await tx.gamificationState.create({
+                    data: { userId, totalXp: xp, awardedTaskIds: [taskId] },
+                    select: { totalXp: true },
+                });
+                awarded = true;
+                totalXp = created.totalXp;
+            }
+        }
+
+        const starlightEarned = awarded ? starlight : 0;
+        const select = { starlight: true, lifetimeStarlight: true };
+        const chart = starlightEarned > 0
+            ? await tx.starChart.upsert({
+                where: { userId },
+                create: { userId, starlight: starlightEarned, lifetimeStarlight: starlightEarned },
+                update: { starlight: { increment: starlightEarned }, lifetimeStarlight: { increment: starlightEarned } },
+                select,
+            })
+            : await tx.starChart.findUnique({ where: { userId }, select });
 
         return {
             awarded,
             starlightEarned,
-            totalXp: state.totalXp,
-            starlight: chart.starlight,
-            lifetimeStarlight: chart.lifetimeStarlight,
+            totalXp,
+            starlight: chart?.starlight ?? 0,
+            lifetimeStarlight: chart?.lifetimeStarlight ?? 0,
         };
     });
 }
 
-// Shared by app/api/gamification/route.ts (a student checking a task off)
-// and lib/canvasCompletions.ts (Canvas reporting it submitted). Name/course
-// and the AI type always come from stored rows. `due`/`completedAt` are the user's local
-// calendar days, which only the browser knows; they only affect the late
-// penalty. `starlight: "none"` grants XP only (Canvas catch-up of old
-// submissions). Returns null when the task isn't the user's.
-export async function grantTaskXp(
-    userId: string,
-    taskId: string,
-    options: { due?: string; completedAt?: string; starlight?: "full" | "none" }
-): Promise<TaskXpAward | null> {
-    const [assignment, customTask, estimate] = await Promise.all([
-        prisma.assignment.findFirst({
-            where: { id: taskId, userId },
-            select: { name: true, submissionTypes: true, course: { select: { name: true, displayName: true } } },
-        }),
-        prisma.customTask.findFirst({
-            where: { id: taskId, userId },
-            select: { name: true, course: true },
-        }),
-        prisma.taskPlanningEstimate.findUnique({
-            where: { userId_taskId: { userId, taskId } },
-            select: { assignmentType: true },
-        }),
+// Name/course and the AI type for each task, from stored rows only, in at
+// most three queries for any number of tasks. Custom task ids always start
+// with "custom-" (app/api/custom-tasks/route.ts enforces it), so each id only
+// needs one table. Tasks that aren't the user's are missing from the map.
+export async function loadTaskXpSources(userId: string, taskIds: string[]): Promise<Map<string, TaskXpSource>> {
+    const customIds = taskIds.filter((id) => id.startsWith("custom-"));
+    const canvasIds = taskIds.filter((id) => !id.startsWith("custom-"));
+
+    const [assignments, customTasks, estimates] = await Promise.all([
+        canvasIds.length > 0
+            ? prisma.assignment.findMany({
+                where: { userId, id: { in: canvasIds } },
+                select: { id: true, name: true, submissionTypes: true, course: { select: { name: true, displayName: true } } },
+            })
+            : [],
+        customIds.length > 0
+            ? prisma.customTask.findMany({
+                where: { userId, id: { in: customIds } },
+                select: { id: true, name: true, course: true },
+            })
+            : [],
+        taskIds.length > 0
+            ? prisma.taskPlanningEstimate.findMany({
+                where: { userId, taskId: { in: taskIds } },
+                select: { taskId: true, assignmentType: true },
+            })
+            : [],
     ]);
 
-    const task = assignment
-        ? {
+    const typeByTaskId = new Map(estimates.map((estimate) => [estimate.taskId, estimate.assignmentType]));
+    const sources = new Map<string, TaskXpSource>();
+
+    for (const assignment of assignments) {
+        sources.set(assignment.id, {
             name: assignment.name,
             course: assignment.course.displayName ?? assignment.course.name,
             canvasType: typeFromSubmissionTypes(assignment.submissionTypes, assignment.name),
-        }
-        : customTask
-            ? { name: customTask.name, course: customTask.course }
-            : null;
+            assignmentType: typeByTaskId.get(assignment.id),
+        });
+    }
 
-    if (!task) return null;
+    for (const customTask of customTasks) {
+        sources.set(customTask.id, {
+            name: customTask.name,
+            course: customTask.course,
+            assignmentType: typeByTaskId.get(customTask.id),
+        });
+    }
 
-    const xp = computeTaskXp({
-        ...task,
-        due: options.due,
-        completedAt: options.completedAt,
-        assignmentType: estimate?.assignmentType,
-    });
+    return sources;
+}
+
+// Awards one task whose source rows were already loaded (loadTaskXpSources).
+// `due`/`completedAt` are the user's local calendar days, which only the
+// browser knows; they only affect the late penalty. `starlight: "none"`
+// grants XP only (Canvas catch-up of old submissions).
+export async function awardTaskXp(
+    userId: string,
+    taskId: string,
+    source: TaskXpSource,
+    options: AwardOptions
+): Promise<TaskXpAward> {
+    const xp = computeTaskXp({ ...source, due: options.due, completedAt: options.completedAt });
     const starlight = options.starlight === "none" ? 0 : starlightForXp(xp);
 
     let result;
@@ -112,7 +144,7 @@ export async function grantTaskXp(
         result = await awardTask(userId, taskId, xp, starlight);
     } catch (error) {
         // Two first-ever awards racing to create the row: the loser's
-        // upsert hits the unique userId. Retrying sees the row.
+        // create hits the unique userId. Retrying sees the row.
         if ((error as { code?: string }).code === "P2002") {
             result = await awardTask(userId, taskId, xp, starlight);
         } else {
@@ -121,4 +153,13 @@ export async function grantTaskXp(
     }
 
     return { ...result, xp: result.awarded ? xp : 0 };
+}
+
+// Shared by app/api/gamification/route.ts (a student checking a task off);
+// lib/canvasCompletions.ts batches the loads itself. Returns null when the
+// task isn't the user's.
+export async function grantTaskXp(userId: string, taskId: string, options: AwardOptions): Promise<TaskXpAward | null> {
+    const source = (await loadTaskXpSources(userId, [taskId])).get(taskId);
+
+    return source ? awardTaskXp(userId, taskId, source, options) : null;
 }

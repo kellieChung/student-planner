@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { isDevAccountEmail } from "@/lib/devAccounts";
 import { grantTaskXp } from "@/lib/xpAward";
 import { isDateKey } from "@/lib/utils";
+import { countQueries } from "@/lib/queryCount";
 
 async function getUser() {
     const session = await auth();
@@ -14,7 +15,7 @@ async function getUser() {
     return user && { ...user, email: session.user.email };
 }
 
-export async function GET() {
+export const GET = countQueries("GET /api/gamification", async function GET() {
     try {
         const user = await getUser();
 
@@ -42,9 +43,9 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
-export async function POST(request: Request) {
+export const POST = countQueries("POST /api/gamification", async function POST(request: Request) {
     try {
         const user = await getUser();
 
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
             { status: 500 }
         );
     }
-}
+});
 
 // Full replace of XP state — only for the dev dashboard's reset tools. Normal
 // completion goes through POST (award) so a client can't set its own total.

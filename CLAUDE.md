@@ -18,7 +18,7 @@ Next.js (App Router) student planner named **Lodestar**. A Chrome extension (`ca
 - UI controls come from `components/ui/` and `DatePicker` (Radix + react-day-picker), not native `<select>`/date/time/checkbox/`confirm()`/`title=`. Don't put `focus:outline-none` on them.
 
 ## Running
-`npm run dev` · `npm run build` · `npm run lint` (has known pre-existing `set-state-in-effect` errors). **No test framework** — `lib/*.test.ts` are manual `npx tsx` scripts (prioritization needs local Ollama); never claim "tests pass". DB: `prisma/schema.prisma` → `npx prisma migrate dev` + `npx prisma generate`; client in `app/generated/prisma`. Deploy: Vercel auto-deploys `main` (`https://lodestarplanner.vercel.app`, may change); env vars live in Vercel, not `.env`. **Local and production share one database.**
+`npm run dev` (`LOG_DB_QUERIES=1` logs Prisma ops per wrapped route, `lib/queryCount.ts`) · `npm run build` · `npm run lint` (has known pre-existing `set-state-in-effect` errors). **No test framework** — `lib/*.test.ts` are manual `npx tsx` scripts (prioritization needs local Ollama); never claim "tests pass". DB: `prisma/schema.prisma` → `npx prisma migrate dev` + `npx prisma generate`; client in `app/generated/prisma`. Deploy: Vercel auto-deploys `main` (`https://lodestarplanner.vercel.app`, may change); env vars live in Vercel, not `.env`. **Local and production share one database.**
 
 ## Never
 - Commit `.env*` or secrets; hand-edit `app/generated/prisma/**`; edit the `nextjs-agent-rules` block in `AGENTS.md` (`next dev` owns it).

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { daysBetween, getTodayString, isDateKey, parseLocalDate } from "@/lib/utils";
-import { grantTaskXp } from "@/lib/xpAward";
+import { awardTaskXp, loadTaskXpSources } from "@/lib/xpAward";
 
 // One assignment's Canvas submission state, as canvas-extension/background.js
 // reports it (pickAssignment's `submitted`/`completed_day`/`due_day`). The
@@ -54,9 +54,9 @@ const MAX_COMPLETIONS_PER_CALL = 40;
 // Marks each task completed and awards its XP, skipping tasks the student
 // already completed or deleted. Same stored shape as a manual check-off
 // (app/api/task-customizations/[taskId]/route.ts): completedAt is the local
-// day at UTC midnight. With `flagSubmitted`, each Assignment is flagged
-// canvasSubmitted only once it's handled, so a failure partway leaves the
-// rest as transitions for the next check instead of losing them.
+// day at UTC midnight. With `flagSubmitted`, the Assignments are flagged
+// canvasSubmitted in one write at the end, so a failure partway leaves them
+// as transitions for the next check instead of losing them.
 // Only a recent submission earns Starlight (XP is always awarded). Turning
 // the setting on, or the first check after connecting, reports every past
 // submission at once, and that catch-up shouldn't be a Starlight windfall.
@@ -74,56 +74,90 @@ async function completeTasks(userId: string, tasks: TaskToComplete[], flagSubmit
     const deferredCount = tasks.length - batch.length;
     const taskIds = batch.map((task) => task.taskId);
 
-    const customizations = await prisma.taskCustomization.findMany({
-        where: { userId, taskId: { in: taskIds } },
-        select: { taskId: true, completed: true, deleted: true },
-    });
+    const [customizations, sources] = await Promise.all([
+        prisma.taskCustomization.findMany({
+            where: { userId, taskId: { in: taskIds } },
+            select: { taskId: true, completed: true, deleted: true },
+        }),
+        loadTaskXpSources(userId, taskIds),
+    ]);
 
     const skip = new Set(
         customizations
             .filter((customization) => customization.completed || customization.deleted)
             .map((customization) => customization.taskId)
     );
+    const hasCustomization = new Set(customizations.map((customization) => customization.taskId));
+    const toComplete = batch.filter((task) => !skip.has(task.taskId));
 
-    if (flagSubmitted && skip.size > 0) {
-        await prisma.assignment.updateMany({
-            where: { userId, id: { in: [...skip] } },
-            data: { canvasSubmitted: true },
-        });
-    }
-
-    const completedTaskIds: string[] = [];
+    // Awards before the completion writes: awards are idempotent, so a
+    // failure partway leaves the rest open and the next check redoes them.
+    // The other order could mark a task completed that never got its XP.
     let xpAwarded = 0;
 
-    for (const task of batch) {
-        if (skip.has(task.taskId)) continue;
+    for (const task of toComplete) {
+        const source = sources.get(task.taskId);
+        if (!source) continue;
 
-        const completedAt = task.completedDay ? new Date(`${task.completedDay}T00:00:00.000Z`) : null;
-
-        await prisma.taskCustomization.upsert({
-            where: { userId_taskId: { userId, taskId: task.taskId } },
-            create: { userId, taskId: task.taskId, completed: true, completedAt, completedFromCanvas: true, inProgress: false },
-            update: { completed: true, completedAt, completedFromCanvas: true, inProgress: false },
-        });
-
-        const award = await grantTaskXp(userId, task.taskId, {
+        const award = await awardTaskXp(userId, task.taskId, source, {
             due: task.dueDay ?? undefined,
             completedAt: task.completedDay ?? undefined,
             starlight: isRecentSubmission(task.completedDay) ? "full" : "none",
         });
 
-        if (flagSubmitted) {
-            await prisma.assignment.updateMany({
-                where: { userId, id: task.taskId },
-                data: { canvasSubmitted: true },
-            });
-        }
-
-        completedTaskIds.push(task.taskId);
-        xpAwarded += award?.xp ?? 0;
+        xpAwarded += award.xp;
     }
 
-    return { completedTaskIds, xpAwarded, deferredCount };
+    const completedAtFor = (task: TaskToComplete) =>
+        task.completedDay ? new Date(`${task.completedDay}T00:00:00.000Z`) : null;
+    const completion = { completed: true, completedFromCanvas: true, inProgress: false };
+
+    const missing = toComplete.filter((task) => !hasCustomization.has(task.taskId));
+
+    if (missing.length > 0) {
+        const created = await prisma.taskCustomization.createManyAndReturn({
+            data: missing.map((task) => ({ userId, taskId: task.taskId, completedAt: completedAtFor(task), ...completion })),
+            skipDuplicates: true,
+            select: { taskId: true },
+        });
+        const createdIds = new Set(created.map((row) => row.taskId));
+
+        // Created by a concurrent request since the read above.
+        for (const task of missing.filter((task) => !createdIds.has(task.taskId))) {
+            const data = { completedAt: completedAtFor(task), ...completion };
+
+            await prisma.taskCustomization.upsert({
+                where: { userId_taskId: { userId, taskId: task.taskId } },
+                create: { userId, taskId: task.taskId, ...data },
+                update: data,
+            });
+        }
+    }
+
+    // One write per distinct completion day (usually one or two).
+    const existingByDay = new Map<string | null, TaskToComplete[]>();
+
+    for (const task of toComplete) {
+        if (!hasCustomization.has(task.taskId)) continue;
+
+        existingByDay.set(task.completedDay, [...(existingByDay.get(task.completedDay) ?? []), task]);
+    }
+
+    for (const sameDay of existingByDay.values()) {
+        await prisma.taskCustomization.updateMany({
+            where: { userId, taskId: { in: sameDay.map((task) => task.taskId) } },
+            data: { completedAt: completedAtFor(sameDay[0]), ...completion },
+        });
+    }
+
+    if (flagSubmitted) {
+        await prisma.assignment.updateMany({
+            where: { userId, id: { in: taskIds } },
+            data: { canvasSubmitted: true },
+        });
+    }
+
+    return { completedTaskIds: toComplete.map((task) => task.taskId), xpAwarded, deferredCount };
 }
 
 // Records Canvas's submission state on each already-synced Assignment and,
@@ -140,36 +174,25 @@ export async function applyCanvasCompletions(
 ) {
     if (items.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
 
-    const courses = await prisma.canvasCourse.findMany({
-        where: {
-            userId,
-            canvasOrigin,
-            canvasId: { in: [...new Set(items.map((item) => item.courseCanvasId))] },
-        },
-        select: { id: true, canvasId: true },
-    });
-
-    const courseIdByCanvasId = new Map(courses.map((course) => [course.canvasId, course.id]));
-
+    // One read: the course is matched through the relation, not a second query.
     const assignments = await prisma.assignment.findMany({
         where: {
             userId,
-            courseId: { in: courses.map((course) => course.id) },
             canvasId: { in: [...new Set(items.map((item) => item.assignmentCanvasId))] },
+            course: { canvasOrigin, canvasId: { in: [...new Set(items.map((item) => item.courseCanvasId))] } },
         },
-        select: { id: true, courseId: true, canvasId: true, canvasSubmitted: true },
+        select: { id: true, canvasId: true, canvasSubmitted: true, course: { select: { canvasId: true } } },
     });
 
     const assignmentByKey = new Map(
-        assignments.map((assignment) => [`${assignment.courseId}:${assignment.canvasId}`, assignment])
+        assignments.map((assignment) => [`${assignment.course.canvasId}:${assignment.canvasId}`, assignment])
     );
 
     const nowSubmitted: TaskToComplete[] = [];
     const noLongerSubmittedIds: string[] = [];
 
     for (const item of items) {
-        const courseId = courseIdByCanvasId.get(item.courseCanvasId);
-        const assignment = courseId ? assignmentByKey.get(`${courseId}:${item.assignmentCanvasId}`) : undefined;
+        const assignment = assignmentByKey.get(`${item.courseCanvasId}:${item.assignmentCanvasId}`);
 
         if (!assignment || assignment.canvasSubmitted === item.submitted) continue;
 
@@ -187,14 +210,15 @@ export async function applyCanvasCompletions(
         });
     }
 
+    // The common no-op check: nothing flipped, so skip the settings read.
+    if (nowSubmitted.length === 0) return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
+
     if (!(await isCompleteFromCanvasOn(userId))) {
         // Recorded so turning the setting on later can backfill them.
-        if (nowSubmitted.length > 0) {
-            await prisma.assignment.updateMany({
-                where: { userId, id: { in: nowSubmitted.map((task) => task.taskId) } },
-                data: { canvasSubmitted: true },
-            });
-        }
+        await prisma.assignment.updateMany({
+            where: { userId, id: { in: nowSubmitted.map((task) => task.taskId) } },
+            data: { canvasSubmitted: true },
+        });
 
         return { completedTaskIds: [] as string[], xpAwarded: 0, deferredCount: 0 };
     }

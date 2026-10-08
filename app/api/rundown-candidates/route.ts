@@ -3,6 +3,7 @@ import { auth, sessionUserRef } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/app/generated/prisma/client";
 import { ProposedTask } from "@/types/proposedTask";
+import { countQueries } from "@/lib/queryCount";
 
 // How many "Added from Canvas" items to return — a defensive cap, not a
 // real pagination boundary (see the Rundown screen's known edge case: a
@@ -14,7 +15,7 @@ const ADDED_FROM_CANVAS_LIMIT = 200;
 // NOT run the AI detection pass itself — that only happens via the
 // manually-triggered, rate-limited app/api/ai/analyze-announcements route.
 // This route only reads what's already been persisted.
-export async function GET() {
+export const GET = countQueries("GET /api/rundown-candidates", async function GET() {
     try {
         const session = await auth();
 
@@ -106,4 +107,4 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});

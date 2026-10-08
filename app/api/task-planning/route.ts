@@ -8,6 +8,7 @@ import { calculatePriority } from "@/lib/prioritization";
 import { chunk, mapWithConcurrency } from "@/lib/concurrency";
 import { getTaskSignature } from "@/lib/taskPlanning";
 import { isAnthropicEnabled } from "@/lib/ai/anthropicClient";
+import { countQueries } from "@/lib/queryCount";
 
 type PlanningTask = {
     id: string;
@@ -37,7 +38,7 @@ async function getAuthenticatedUser() {
     return user && hasAcceptedCurrentTerms(user) ? user : null;
 }
 
-export async function GET() {
+export const GET = countQueries("GET /api/task-planning", async function GET() {
     try {
         // Reading stored estimates sends nothing to Anthropic, so this skips
         // the terms check and its user lookup.
@@ -65,7 +66,7 @@ export async function GET() {
             { status: 500 }
         );
     }
-}
+});
 
 function normalizeAnalysis(analysis: {
     importance: unknown;

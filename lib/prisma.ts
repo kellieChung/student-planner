@@ -1,5 +1,6 @@
 import { PrismaClient } from "@/app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { queryCountEnabled, recordQuery } from "@/lib/queryCount";
 
 // Reused across dev hot reloads: each reload would otherwise open a new pg
 // pool, and local dev shares the production database's connection limit.
@@ -19,9 +20,22 @@ function createPrismaClient() {
         connectionTimeoutMillis: 10_000,
     });
 
-    return new PrismaClient({
+    const client = new PrismaClient({
         adapter,
     });
+
+    if (!queryCountEnabled) return client;
+
+    // The extended client's type differs, but its API is the same for
+    // everything this app calls (no $on/$use).
+    return client.$extends({
+        query: {
+            async $allOperations({ model, operation, args, query }) {
+                recordQuery(model, operation);
+                return query(args);
+            },
+        },
+    }) as unknown as PrismaClient;
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
