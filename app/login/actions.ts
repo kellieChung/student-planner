@@ -5,7 +5,8 @@ import { signIn } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, normalizeEmail } from "@/lib/password";
 import { PASSWORD_REQUIREMENTS_MESSAGE, passwordMeetsRules } from "@/lib/passwordRules";
-import { safeRedirectPath, TERMS_VERSION, UNDERAGE_MESSAGE } from "@/lib/legal";
+import { safeRedirectPath, TERMS_VERSION } from "@/lib/legal";
+import { checkAgeGate } from "@/app/login/ageGate";
 
 export type CredentialsFormState = {
     error: string | null;
@@ -52,8 +53,10 @@ export async function signUp(_prevState: CredentialsFormState, formData: FormDat
     const password = readString(formData, "password");
     const fields = { email, name };
 
-    if (formData.get("ageConfirmed") !== "on") {
-        return { error: UNDERAGE_MESSAGE, underage: true, ...fields };
+    const ageGateFailure = await checkAgeGate(formData);
+
+    if (ageGateFailure) {
+        return { ...ageGateFailure, ...fields };
     }
 
     if (formData.get("termsAccepted") !== "on") {

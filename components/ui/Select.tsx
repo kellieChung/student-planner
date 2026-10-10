@@ -11,6 +11,8 @@ type Props = {
     options: SelectOption[];
     ariaLabel?: string;
     id?: string;
+    // Submits the value with a surrounding <form> through Radix's hidden native select.
+    name?: string;
     placeholder?: string;
     disabled?: boolean;
     // Applied to the trigger, so a call site keeps its own sizing and colours.
@@ -24,7 +26,7 @@ const EMPTY = "__empty__";
 const toRadix = (value: string) => (value === "" ? EMPTY : value);
 const fromRadix = (value: string) => (value === EMPTY ? "" : value);
 
-export default function Select({ value, onChange, options, ariaLabel, id, placeholder, disabled, className = "" }: Props) {
+export default function Select({ value, onChange, options, ariaLabel, id, name, placeholder, disabled, className = "" }: Props) {
     const hasSelection = options.some((option) => option.value === value);
 
     return (
@@ -42,6 +44,7 @@ export default function Select({ value, onChange, options, ariaLabel, id, placeh
                 onChange(fromRadix(next));
             }}
             disabled={disabled}
+            name={name}
         >
             <RadixSelect.Trigger
                 id={id}

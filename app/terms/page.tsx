@@ -21,10 +21,11 @@ export default function TermsPage() {
             <section>
                 <h2>1. Eligibility</h2>
                 <p>
-                    You must be at least {MINIMUM_AGE} years old to use the Service. If you are under 18 (or the age
-                    of majority where you live), you may use the Service only with the permission of a parent or
-                    legal guardian who agrees to these Terms on your behalf. If we learn that someone under{" "}
-                    {MINIMUM_AGE} has created an account, we will delete it.
+                    You must be at least {MINIMUM_AGE} years old to use the Service, unless a parent or legal
+                    guardian has signed our parental consent form for you (see the Privacy Policy). If you are under
+                    18 (or the age of majority where you live), you may use the Service only with the permission of a
+                    parent or legal guardian who agrees to these Terms on your behalf. If we learn that someone under{" "}
+                    {MINIMUM_AGE} has created an account without that consent, we will delete it.
                 </p>
             </section>
 

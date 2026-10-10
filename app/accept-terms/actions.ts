@@ -3,7 +3,8 @@
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { safeRedirectPath, TERMS_VERSION, UNDERAGE_MESSAGE } from "@/lib/legal";
+import { safeRedirectPath, TERMS_VERSION } from "@/lib/legal";
+import { checkAgeGate } from "@/app/login/ageGate";
 
 export type AcceptTermsState = {
     error: string | null;
@@ -17,8 +18,10 @@ export async function acceptTerms(_prevState: AcceptTermsState, formData: FormDa
         redirect("/login");
     }
 
-    if (formData.get("ageConfirmed") !== "on") {
-        return { error: UNDERAGE_MESSAGE, underage: true };
+    const ageGateFailure = await checkAgeGate(formData);
+
+    if (ageGateFailure) {
+        return ageGateFailure;
     }
 
     if (formData.get("termsAccepted") !== "on") {

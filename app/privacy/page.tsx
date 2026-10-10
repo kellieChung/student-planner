@@ -42,7 +42,8 @@ export default function PrivacyPage() {
                     </li>
                     <li>
                         <strong>Consent records:</strong> when you accepted these policies and confirmed you are{" "}
-                        {MINIMUM_AGE} or older.
+                        {MINIMUM_AGE} or older (we check your month and year of birth but don&apos;t store them), or, for a
+                        child under {MINIMUM_AGE}, the parental consent form their parent signed.
                     </li>
                 </ul>
             </section>
@@ -116,9 +117,36 @@ export default function PrivacyPage() {
             <section>
                 <h2>Children</h2>
                 <p>
-                    The Service is not intended for children under {MINIMUM_AGE}, and we don&apos;t knowingly collect
-                    personal information from them. If you believe a child under {MINIMUM_AGE} has created an
-                    account, contact <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will delete it.
+                    The Service is meant for people {MINIMUM_AGE} and older, and we don&apos;t knowingly collect
+                    personal information from children under {MINIMUM_AGE} without a parent&apos;s consent. In a
+                    small number of cases, such as beta testing, a child under {MINIMUM_AGE} may use the Service after
+                    a parent or legal guardian signs our parental consent form. We don&apos;t create the
+                    child&apos;s account until we receive it.
+                </p>
+                <p>For a child using the Service with parental consent:</p>
+                <ul>
+                    <li>
+                        We collect only the information described in &quot;What we collect&quot; above, and use it
+                        only to provide the Service. We never sell it, use it for advertising, or make it public.
+                    </li>
+                    <li>
+                        We share it only with the service providers listed above. Anthropic receives it only if the
+                        parent separately agreed to the AI features.
+                    </li>
+                    <li>
+                        We keep it while the account is active, and delete it within 30 days after the account is
+                        closed or after 12 months without activity.
+                    </li>
+                    <li>
+                        A parent can review, correct, or delete their child&apos;s information, stop further
+                        collection, or withdraw consent for AI features at any time by emailing{" "}
+                        <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. We&apos;ll confirm we&apos;re
+                        talking to the parent before sharing or deleting anything.
+                    </li>
+                </ul>
+                <p>
+                    If you believe a child under {MINIMUM_AGE} has created an account without a parent&apos;s
+                    consent, contact <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and we will delete it.
                 </p>
             </section>
 

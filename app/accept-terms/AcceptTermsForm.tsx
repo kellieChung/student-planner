@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { ConsentCheckboxes } from "@/components/auth/CredentialsForm";
+import { ConsentFields } from "@/components/auth/CredentialsForm";
 import { acceptTerms, declineAndDeleteAccount, declineAndSignOut, type AcceptTermsState } from "@/app/accept-terms/actions";
 import Spinner from "@/components/Spinner";
 
@@ -18,7 +18,7 @@ export default function AcceptTermsForm({ next }: Props) {
         <div className="mt-6 text-left">
             <form action={formAction} className="space-y-3">
                 <input type="hidden" name="next" value={next} />
-                <ConsentCheckboxes />
+                <ConsentFields />
 
                 {state.error && (
                     <p

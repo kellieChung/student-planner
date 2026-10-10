@@ -6,6 +6,7 @@ import { signInWithPassword, signUp, type CredentialsFormState } from "@/app/log
 import { AUTH_STAR_COUNT, useAuthProgress } from "@/components/auth/AuthProgress";
 import { MAX_PASSWORD_LENGTH, PASSWORD_RULES, passwordMeetsRules } from "@/lib/passwordRules";
 import Spinner from "@/components/Spinner";
+import Select from "@/components/ui/Select";
 
 export type Mode = "signIn" | "signUp";
 
@@ -27,7 +28,7 @@ function litStars(form: HTMLFormElement, isSignUp: boolean): number {
     const steps = [
         String(data.get("email") ?? "").includes("@"),
         isSignUp ? passwordMeetsRules(String(data.get("password") ?? "")) : filled("password"),
-        ...(isSignUp ? [data.get("ageConfirmed") === "on", data.get("termsAccepted") === "on"] : []),
+        ...(isSignUp ? [filled("birthMonth") && filled("birthYear"), data.get("termsAccepted") === "on"] : []),
     ];
 
     return Math.round((steps.filter(Boolean).length / steps.length) * AUTH_STAR_COUNT);
@@ -156,7 +157,7 @@ export default function CredentialsForm({ redirectTo = "/", initialMode = "signI
                     )}
                 </div>
 
-                {isSignUp && <ConsentCheckboxes />}
+                {isSignUp && <ConsentFields />}
 
                 {state.error && (
                     <p
@@ -206,10 +207,43 @@ function EyeIcon({ crossedOut }: { crossedOut: boolean }) {
     );
 }
 
-export function ConsentCheckboxes() {
+const MONTH_OPTIONS = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+].map((label, index) => ({ value: String(index + 1), label }));
+
+// Every year back to 120 years ago, under-13 years included, so the list
+// doesn't hint at the minimum age.
+function birthYearOptions() {
+    const currentYear = new Date().getFullYear();
+
+    return Array.from({ length: 121 }, (_, index) => {
+        const year = String(currentYear - index);
+        return { value: year, label: year };
+    });
+}
+
+function BirthDateField() {
+    const [month, setMonth] = useState("");
+    const [year, setYear] = useState("");
+    const [yearOptions] = useState(birthYearOptions);
+    const triggerClass = "w-full rounded-lg bg-transparent border border-[var(--field-border)] px-3 py-2 text-sm text-[var(--foreground)]";
+
     return (
-        <div className="space-y-2 text-xs text-[var(--foreground)]">
-            <Checkbox name="ageConfirmed">I am 13 years of age or older.</Checkbox>
+        <fieldset>
+            <legend className={LABEL_CLASS}>Date of birth</legend>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+                <Select name="birthMonth" value={month} onChange={setMonth} options={MONTH_OPTIONS} ariaLabel="Birth month" placeholder="Month" className={triggerClass} />
+                <Select name="birthYear" value={year} onChange={setYear} options={yearOptions} ariaLabel="Birth year" placeholder="Year" className={triggerClass} />
+            </div>
+        </fieldset>
+    );
+}
+
+export function ConsentFields() {
+    return (
+        <div className="space-y-3 text-xs text-[var(--foreground)]">
+            <BirthDateField />
             <Checkbox name="termsAccepted">
                 I agree to the{" "}
                 <Link href="/terms" target="_blank" className="underline" style={{ color: "var(--accent)" }}>
