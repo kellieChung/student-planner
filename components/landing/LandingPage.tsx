@@ -1,8 +1,8 @@
-import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import Reveal from "@/components/landing/Reveal";
 import StarField from "@/components/brand/StarField";
+import LodestarMark from "@/components/brand/LodestarMark";
 import DemoPlanner from "@/components/landing/DemoPlanner";
 import { DEMO_TASKS } from "@/components/landing/demoTasks";
 import HeroConstellation from "@/components/landing/HeroConstellation";
@@ -219,7 +219,7 @@ export default function LandingPage() {
 
                 <section className="bg-[var(--ls-cream)] text-[var(--ls-ink)]">
                     <Reveal className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-8 sm:py-24">
-                        <CompassIcon />
+                        <LodestarMark size={40} bars="var(--ls-ink)" star="var(--ls-gold-deep)" className="mx-auto" />
                         <p className="ls-serif mt-6 text-2xl leading-snug sm:text-3xl">
                             Built by a student who was tired of missing assignments buried in Canvas announcements.
                         </p>
@@ -268,19 +268,9 @@ export default function LandingPage() {
 }
 
 function Wordmark({ small = false }: { small?: boolean }) {
-    const size = small ? 28 : 36;
-
     return (
         <Link href="/" className="flex items-center gap-3">
-            <span className="block overflow-hidden rounded-lg" style={{ width: size, height: size }}>
-                <Image
-                    src="/brand/lodestar-mark-temp.png"
-                    alt=""
-                    width={size}
-                    height={size}
-                    priority={!small}
-                />
-            </span>
+            <LodestarMark size={small ? 26 : 34} bars="var(--ls-ivory)" star="var(--ls-gold)" />
             <span className={`ls-serif text-[var(--ls-ivory)] ${small ? "text-lg" : "text-2xl"}`}>Lodestar</span>
         </Link>
     );
@@ -290,15 +280,6 @@ function SparkIcon() {
     return (
         <svg viewBox="0 0 16 16" aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0">
             <path d="M8 1.5 9.4 6.6 14.5 8 9.4 9.4 8 14.5 6.6 9.4 1.5 8 6.6 6.6Z" fill="var(--ls-gold)" />
-        </svg>
-    );
-}
-
-function CompassIcon() {
-    return (
-        <svg viewBox="0 0 48 48" aria-hidden="true" className="mx-auto h-10 w-10">
-            <circle cx="24" cy="24" r="17" fill="none" stroke="var(--ls-ink)" strokeWidth="1.5" />
-            <path d="M24 4 27 21 44 24 27 27 24 44 21 27 4 24 21 21Z" fill="var(--ls-gold-deep)" />
         </svg>
     );
 }

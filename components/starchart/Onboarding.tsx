@@ -5,7 +5,8 @@ import { CONSTELLATIONS } from "@/lib/constellations";
 import ConstellationFigure from "@/components/starchart/ConstellationFigure";
 import TourSpotlight, { type TourStep } from "@/components/starchart/TourSpotlight";
 import { useLodestarFrame } from "@/components/os/LaptopFrame";
-import { CompassIcon, StarIcon } from "@/components/brand/Icons";
+import { StarIcon } from "@/components/brand/Icons";
+import LodestarMark from "@/components/brand/LodestarMark";
 import { EXTENSION_STORE_URL } from "@/lib/extensionInstall";
 
 type Props = {
@@ -49,7 +50,7 @@ export default function Onboarding({ beta, workloadFeature, onFinish }: Props) {
                         keys if you like.
                     </p>
                 ),
-                illustration: <CompassIcon size={64} className="text-[var(--ls-gold)]" />,
+                illustration: <LodestarMark size={64} bars="var(--ls-ivory)" star="var(--ls-gold)" />,
             },
             {
                 id: "extension",

@@ -131,8 +131,16 @@ section {
 .brand-mark {
     display: block;
     width: 28px;
-    height: 28px;
-    border-radius: 8px;
+    height: 27px;
+}
+
+.brand-mark-day,
+:root[data-theme="light"] .brand-mark-night {
+    display: none;
+}
+
+:root[data-theme="light"] .brand-mark-day {
+    display: block;
 }
 
 h1 {

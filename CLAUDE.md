@@ -5,7 +5,7 @@
 **Read `PROGRESS.md` first** (active TODOs, decisions, gotchas). Before ending a session, or on "wrap up"/"save progress", update it: what changed, decisions, TODOs. Re-read it after context compaction.
 
 ## What this is
-Next.js (App Router) student planner named **Lodestar**. A Chrome extension (`canvas-extension/`) bridges the student's Canvas session to the app; an LLM scans announcements for hidden tasks and scores priority/time; finished tasks earn XP + Starlight, spent to chart real constellations on the Star Chart. Weekly drag-grid planner, Pomodoro ("The Watch"), YouTube music ("Comms"). Google OAuth or email/password (NextAuth v5 beta, JWT sessions, terms/13+ gate), Postgres via Prisma 7. Logged-out `/` is the marketing page (`components/landing/`, spec `HomepageSpec.md`). The logo is a **temporary** placeholder.
+Next.js (App Router) student planner named **Lodestar**. A Chrome extension (`canvas-extension/`) bridges the student's Canvas session to the app; an LLM scans announcements for hidden tasks and scores priority/time; finished tasks earn XP + Starlight, spent to chart real constellations on the Star Chart. Weekly drag-grid planner, Pomodoro ("The Watch"), YouTube music ("Comms"). Google OAuth or email/password (NextAuth v5 beta, JWT sessions, terms/13+ gate), Postgres via Prisma 7. Logged-out `/` is the marketing page (`components/landing/`, spec `HomepageSpec.md`). The logo is the task-bar "L" with a carved star (`components/brand/LodestarMark.tsx`; SVG/PNG files in `public/brand/`, `app/icon.svg`).
 
 ## Conventions
 - 4-space indent, double quotes, semicolons (no Prettier; match surrounding code). Import via `@/*`.

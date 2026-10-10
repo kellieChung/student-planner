@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     siteName: "Lodestar",
     title: "Lodestar",
     description: DESCRIPTION,
-    images: ["/brand/lodestar-logo-temp.png"],
+    images: ["/brand/lodestar-icon-1024.png"],
   },
   twitter: {
     card: "summary",
