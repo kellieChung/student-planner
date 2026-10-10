@@ -2031,10 +2031,17 @@ export default function MusicPlayer() {
 
                                 <div className="grid gap-4 @lg:grid-cols-[minmax(0,1fr)_240px]">
                                     <section className="rounded-xl border p-3">
+                                        {/* globals.css keeps this on screen as a
+                                            mini player while Comms is hidden. */}
                                         <div
-                                            id="youtube-player"
-                                            className="aspect-video w-full overflow-hidden rounded-lg bg-black"
-                                        />
+                                            className="comms-player"
+                                            data-playing={isPlaying ? "" : undefined}
+                                        >
+                                            <div
+                                                id="youtube-player"
+                                                className="aspect-video w-full overflow-hidden rounded-lg bg-black"
+                                            />
+                                        </div>
 
                                         <div className="mt-2">
                                             <h3 className="truncate text-sm font-semibold">

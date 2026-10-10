@@ -114,6 +114,7 @@ export default function Window({ app, title, icon, children, onBeforeClose, inte
             className={`pointer-events-auto absolute flex flex-col rounded-2xl border-[3px] shadow-2xl ${
                 meta.isMinimized ? "invisible" : ""
             }`}
+            data-surface-hidden={meta.isMinimized ? "" : undefined}
             style={{
                 left: meta.position.x,
                 top: meta.position.y,

@@ -158,6 +158,7 @@ function FrameInner({
                                     timers and every planner fetch. visibility:hidden (not
                                     display:none) keeps an embedded player running. */}
                                 <div
+                                    data-surface-hidden={view === "log" ? undefined : ""}
                                     className={
                                         view === "log"
                                             ? "absolute inset-0"
