@@ -86,6 +86,17 @@ export default function TermsPage() {
                     music player). Your use of those services is governed by their own terms, and we aren&apos;t
                     responsible for them.
                 </p>
+                <p>
+                    The music player uses YouTube API Services. By using it, you agree to be bound by the{" "}
+                    <a href="https://www.youtube.com/t/terms" target="_blank" rel="noreferrer">
+                        YouTube Terms of Service
+                    </a>
+                    , and YouTube&apos;s handling of your data is covered by the{" "}
+                    <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">
+                        Google Privacy Policy
+                    </a>
+                    .
+                </p>
             </section>
 
             <section>

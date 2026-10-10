@@ -211,9 +211,11 @@ export default function AssignmentCard({
                         </Tooltip>
 
                         {detailLine && (
-                            <p className={`truncate text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-slate-400"}`}>
-                                {detailLine}
-                            </p>
+                            <Tooltip label={estimatedTime ? "Time estimate made by AI (or simple rules when AI is unavailable). It can be off." : detailLine}>
+                                <p className={`truncate text-xs ${isLate || wasCompletedLate ? "text-rose-200" : "text-slate-400"}`}>
+                                    {detailLine}
+                                </p>
+                            </Tooltip>
                         )}
 
                     </div>

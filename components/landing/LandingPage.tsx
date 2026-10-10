@@ -87,8 +87,8 @@ export default function LandingPage() {
                             is a <em className="text-[var(--ls-gold)]">new star.</em>
                         </h1>
                         <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-[var(--ls-muted)] sm:mt-6 sm:text-lg">
-                            The student planner that turns your workload into a night sky, and catches the assignments
-                            hidden in Canvas announcements before they catch you.
+                            The student planner that turns your workload into a night sky, and helps you catch the
+                            assignments hidden in Canvas announcements before they catch you.
                         </p>
                         <div className="mt-7 flex flex-col items-center justify-center gap-4 sm:mt-10 sm:flex-row">
                             <Link href={SIGN_UP_HREF} className="ls-button-gold w-full sm:w-auto">
