@@ -9,9 +9,9 @@ export const CONTACT_EMAIL = "lodestarplan@gmail.com";
 export const MINIMUM_AGE = 13;
 
 export const UNDERAGE_MESSAGE =
-    "You must be 13 or older to create an account on your own. US law (the Children's Online Privacy Protection " +
-    "Act, or COPPA) restricts collecting personal information from children under 13 without a parent's consent. " +
-    `To use Lodestar, ask a parent or guardian to email ${CONTACT_EMAIL} about our parental consent form.`;
+    "You must be 13 or older to create an account. US law (the Children's Online Privacy Protection Act, " +
+    "or COPPA) restricts collecting personal information from children under 13, so we can't create an " +
+    "account for you.";
 
 // Set when someone enters an under-13 birth date, so they can't go back and
 // pick an older one (the FTC's "neutral age screen" guidance).
